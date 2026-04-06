@@ -12,13 +12,12 @@ const app = express();
 
 // 2. Standard Middleware (UPDATED FOR VERCEL DEPLOYMENT)
 app.use(cors({
-    origin: function (origin, callback) {
-        // Automatically allow any origin (perfect for Vercel's dynamic URLs)
-        callback(null, origin);
-    },
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true // Crucial for JWT authentication
+    origin: true, // Automatically accepts any Vercel URL it receives
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"], // 👈 THE MAGIC KEY FOR YOUR TOKENS!
+    credentials: true
 }));
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
