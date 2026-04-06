@@ -12,11 +12,10 @@ const app = express();
 
 // 2. Standard Middleware (UPDATED FOR VERCEL DEPLOYMENT)
 app.use(cors({
-    origin: [
-        "http://localhost:5173",          // Local frontend testing
-        "https://voxa-ai.vercel.app",     // Live Vercel frontend
-        "https://voxa-ai-git-main.vercel.app" // Vercel preview branches
-    ],
+    origin: function (origin, callback) {
+        // Automatically allow any origin (perfect for Vercel's dynamic URLs)
+        callback(null, origin);
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true // Crucial for JWT authentication
 }));

@@ -129,10 +129,10 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         setIsLoading(true);
 
         try {
-            // 🚀 FIXED: Added /auth to the login URL!
+            // 🚀 POINTING TO THE LIVE RENDER URL
             const endpoint = isLogin
-                ? "https://voxa-backend.onrender.com/api/auth/login"
-                : "https://voxa-backend.onrender.com/api/auth/register";
+                ? "https://voxa-ai-zh5o.onrender.com/api/auth/login"
+                : "https://voxa-ai-zh5o.onrender.com/api/auth/register";
 
             const payload = isLogin
                 ? { email, password }

@@ -500,7 +500,6 @@ function ProfileScreen({ theme, user, userName, setUserName }) {
   );
 }
 
-// 🚀 FIXED: Added user prop and Authorization Header!
 function HistoryScreen({ theme, user, onClose }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -508,7 +507,8 @@ function HistoryScreen({ theme, user, onClose }) {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await fetch('https://voxa-backend.onrender.com/api/chat/history', {
+        // 🚀 LIVE RENDER URL
+        const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/chat/history', {
           headers: { "Authorization": `Bearer ${user?.token}` }
         });
         const data = await response.json();
@@ -978,8 +978,8 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
 
     try {
-      // 🚀 FIXED: Added Authorization Header for production!
-      const response = await fetch("https://voxa-backend.onrender.com/api/chat", {
+      // 🚀 POINTING TO THE LIVE RENDER URL
+      const response = await fetch("https://voxa-ai-zh5o.onrender.com/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
