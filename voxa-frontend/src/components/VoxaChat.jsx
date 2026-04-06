@@ -499,7 +499,7 @@ function HistoryScreen({ theme, user, onClose }) {
         const fetchHistory = async () => {
             try {
                 // 🚀 ADDED AUTHORIZATION HEADER
-                const response = await fetch('http://localhost:5000/api/chat/history', {
+                const response = await fetch('https://voxa-backend.onrender.com/api/chat/history', {
                     headers: { "Authorization": `Bearer ${user?.token}` }
                 });
                 const data = await response.json();
@@ -917,7 +917,7 @@ export default function VoiceAssistant({ user, onLogout }) {
 
         try {
             // 🚀 ADDED 'Authorization' HEADER SO THE REQUEST DOESN'T GET REJECTED
-            const response = await fetch('http://localhost:5000/api/chat', {
+            const response = await fetch('https://voxa-backend.onrender.com/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

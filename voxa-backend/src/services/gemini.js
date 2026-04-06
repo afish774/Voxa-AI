@@ -101,7 +101,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
     console.error("❌ Gemini Error:", error.message);
 
     if (error.message.includes("429") || error.message.includes("Quota")) {
-      const quotaMessage = "I'm sorry Afish, but your Google API quota has been completely exhausted. Please update my API key.";
+      const quotaMessage = "I'm sorry, but your Google API quota has been completely exhausted. Please update my API key.";
       return { text: quotaMessage, card: null };
     }
 

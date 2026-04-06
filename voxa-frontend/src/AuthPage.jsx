@@ -131,8 +131,8 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         try {
             // Determine if we are logging in or registering
             const endpoint = isLogin
-                ? "http://localhost:5000/api/auth/login"
-                : "http://localhost:5000/api/auth/register";
+                ? "https://voxa-backend.onrender.com/api/login"
+                : "https://voxa-backend.onrender.com/api/auth/register";
 
             const payload = isLogin
                 ? { email, password }
