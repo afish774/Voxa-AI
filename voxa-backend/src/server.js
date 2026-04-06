@@ -9,7 +9,7 @@ import authRoutes from './routes/authRoutes.js';
 // 1. Load environment variables FIRST
 dotenv.config();
 
-// Generate credentials file securely
+// 2. Generate Google Credentials file securely from Environment Variables
 if (process.env.GOOGLE_CREDENTIALS) {
     fs.writeFileSync('google-credentials.json', process.env.GOOGLE_CREDENTIALS);
     console.log('🔐 Google Credentials file securely generated from Environment Variables.');
@@ -17,36 +17,41 @@ if (process.env.GOOGLE_CREDENTIALS) {
 
 const app = express();
 
-// 2. Standard Middleware
+// 3. Bulletproof CORS Policy for Vercel
 const corsOptions = {
     origin: function (origin, callback) {
-        callback(null, true);
+        callback(null, true); // Accepts any incoming Vercel URL
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization"], // Crucial for JWT tokens
     credentials: true
 };
 
 app.use(cors(corsOptions));
 
-// 👈 FIXED: Express 5 requires '/(.*)' instead of '*' for catch-all wildcards
-app.options('/(.*)', cors(corsOptions));
+// 4. Express 5 Preflight Bypass Hack (Fixes the wildcard crash)
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// 3. Health Check Route
+// 5. Health Check Route
 app.get('/api/status', (req, res) => {
     res.json({ status: 'Voxa API is awake and listening.' });
 });
 
-// 4. API Routes
+// 6. API Routes
 app.use('/api/chat', chatRoutes);
 app.use('/api/auth', authRoutes);
 
 const PORT = process.env.PORT || 5000;
 
-// 5. Connect to Database AND THEN Start Server
+// 7. Connect to Database AND THEN Start Server
 const startServer = async () => {
     try {
         await connectDB();
