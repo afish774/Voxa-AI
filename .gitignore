@@ -1,0 +1,36 @@
+# ─────────────────────────────────────────────
+# 🛑 CRITICAL SECURITY (DO NOT TRACK)
+# ─────────────────────────────────────────────
+.env
+.env.local
+.env.development
+.env.production
+google-credentials.json
+
+# ─────────────────────────────────────────────
+# 📦 DEPENDENCIES
+# ─────────────────────────────────────────────
+node_modules/
+
+# ─────────────────────────────────────────────
+# 🏗️ BUILD OUTPUTS (Vite / React)
+# ─────────────────────────────────────────────
+dist/
+build/
+.vite/
+
+# ─────────────────────────────────────────────
+# 🗄️ LOCAL DATABASE / MEMORY
+# ─────────────────────────────────────────────
+voxa_memory.json
+
+# ─────────────────────────────────────────────
+# 📝 LOGS & SYSTEM FILES
+# ─────────────────────────────────────────────
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
