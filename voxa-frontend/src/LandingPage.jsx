@@ -155,8 +155,9 @@ function StickyTimeline() {
     };
 
     return (
-        <section ref={containerRef} id="how-it-works" style={{ position: "relative", height: "250vh", backgroundColor: "transparent" }}>
-            <div style={{ position: "sticky", top: 0, height: "100vh", display: "flex", alignItems: "center", padding: "0 5%" }}>
+        // 🚀 iOS Safari dynamically calculates 250dvh to prevent jumping during scroll
+        <section ref={containerRef} id="how-it-works" style={{ position: "relative", height: "250dvh", backgroundColor: "transparent" }}>
+            <div style={{ position: "sticky", top: 0, height: "100dvh", display: "flex", alignItems: "center", padding: "0 5%" }}>
                 <div style={{ display: "flex", width: "100%", maxWidth: 1200, margin: "0 auto", alignItems: "center", justifyContent: "space-between", gap: "8%", flexWrap: "wrap" }}>
 
                     {/* Left Text / Timeline */}
@@ -317,7 +318,7 @@ function SplitPaneFAQ() {
                             return (
                                 <button
                                     key={idx} onClick={() => setActiveIndex(idx)}
-                                    style={{ textAlign: "left", padding: "24px", borderRadius: 16, border: "none", background: "transparent", color: isActive ? "#09090b" : "#71717a", fontSize: 18, fontWeight: isActive ? 600 : 500, cursor: "pointer", transition: "color 0.2s", position: "relative", zIndex: 2, outline: "none" }}
+                                    style={{ textAlign: "left", padding: "24px", borderRadius: 16, border: "none", background: "transparent", color: isActive ? "#09090b" : "#71717a", fontSize: 18, fontWeight: isActive ? 600 : 500, cursor: "pointer", transition: "color 0.2s", position: "relative", zIndex: 2, outline: "none", WebkitTapHighlightColor: "transparent" }}
                                 >
                                     {isActive && <motion.div layoutId="faq-bg" style={{ position: "absolute", inset: 0, background: "#ffffff", borderRadius: 16, zIndex: -1, border: "1px solid #f4f4f5", boxShadow: "0 10px 30px -10px rgba(0,0,0,0.05)" }} transition={springConfig} />}
                                     <span style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -363,7 +364,6 @@ function FinalCTA({ onLaunch }) {
                         Get started now <IconArrowRight />
                     </motion.button>
 
-                    {/* NEW: Premium Light "Learn More" Button */}
                     <motion.a href="#features" whileHover={{ scale: 1.05, backgroundColor: "#fafafa" }} whileTap={{ scale: 0.95 }} style={{ background: "#ffffff", color: "#09090b", border: "1px solid #e5e5e5", padding: "0 48px", height: 64, borderRadius: 999, fontSize: 18, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", textDecoration: "none", transition: "background-color 0.3s, box-shadow 0.3s", boxShadow: "0 10px 20px -10px rgba(0,0,0,0.05)", willChange: "transform" }}>
                         Learn more
                     </motion.a>
@@ -383,12 +383,12 @@ export default function LandingPage({ onLaunch }) {
     const { scrollYProgress: heroScroll } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
 
     // CINEMATIC MATH: 
-    // 0 to 0.2: Text fades out and drifts UP (-10vh) slightly.
-    const heroTextY = useTransform(heroScroll, [0, 0.2], ["0vh", "-10vh"]);
+    // 0 to 0.2: Text fades out and drifts UP (-10dvh) slightly.
+    const heroTextY = useTransform(heroScroll, [0, 0.2], ["0dvh", "-10dvh"]);
     const heroTextOpacity = useTransform(heroScroll, [0, 0.2], [1, 0]);
 
-    // 0 to 0.25: Video shoots up from 45vh to 0vh (perfectly centered).
-    const videoContainerY = useTransform(heroScroll, [0, 0.25], ["45vh", "0vh"]);
+    // 0 to 0.25: Video shoots up from 45dvh to 0dvh (perfectly centered).
+    const videoContainerY = useTransform(heroScroll, [0, 0.25], ["45dvh", "0dvh"]);
     const videoContainerScale = useTransform(heroScroll, [0, 0.25], [0.8, 1]);
 
     // 0.25 to 0.85: The "Attention Period". The container is pinned dead-center 
@@ -396,14 +396,16 @@ export default function LandingPage({ onLaunch }) {
     const innerVideoScale = useTransform(heroScroll, [0.25, 0.85], [1, 1.25]);
 
     return (
-        <div style={{ minHeight: "100vh", backgroundColor: "#ffffff", color: "#09090b", fontFamily: "'Inter', sans-serif", WebkitFontSmoothing: "antialiased" }}>
+        <div style={{ minHeight: "100dvh", backgroundColor: "#ffffff", color: "#09090b", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased" }}>
             <AmbientMeshBackground />
 
+            {/* 🚀 Disabled overscroll behavior globally for native app feel */}
             <style>{`
                 html, body {
                     margin: 0;
                     padding: 0;
                     overflow-x: clip; 
+                    overscroll-behavior: none;
                 }
                 .bento-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 32px; }
                 @media (min-width: 768px) { .bento-grid { grid-template-columns: repeat(2, 1fr); } }
@@ -418,7 +420,7 @@ export default function LandingPage({ onLaunch }) {
             {/* ───────────────────────────────────────────── */}
             {/* NAVBAR */}
             {/* ───────────────────────────────────────────── */}
-            <motion.nav initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: customEase }} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "20px 5%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.7)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
+            <motion.nav initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: customEase }} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "clamp(12px, 2vw, 20px) 5%", paddingTop: "calc(env(safe-area-inset-top, 0px) + clamp(12px, 2vw, 20px))", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.7)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                     <VoxaLogo size={24} />
                     <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "#09090b" }}>Voxa AI</span>
@@ -438,11 +440,12 @@ export default function LandingPage({ onLaunch }) {
             {/* ───────────────────────────────────────────── */}
             {/* HERO SECTION (Sticky Attention Scroll) */}
             {/* ───────────────────────────────────────────── */}
-            <section ref={heroRef} style={{ position: "relative", height: "250vh", zIndex: 10 }}>
-                <div style={{ position: "sticky", top: 0, height: "100vh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+            {/* 🚀 Changed to 250dvh to lock exact dimensions */}
+            <section ref={heroRef} style={{ position: "relative", height: "250dvh", zIndex: 10 }}>
+                <div style={{ position: "sticky", top: 0, height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
 
                     {/* TEXT BLOCK */}
-                    <motion.div style={{ position: "absolute", top: "max(120px, 16vh)", y: heroTextY, opacity: heroTextOpacity, textAlign: "center", width: "100%", maxWidth: 1000, zIndex: 2, padding: "0 5%", willChange: "transform, opacity" }}>
+                    <motion.div style={{ position: "absolute", top: "max(120px, 16dvh)", y: heroTextY, opacity: heroTextOpacity, textAlign: "center", width: "100%", maxWidth: 1000, zIndex: 2, padding: "0 5%", willChange: "transform, opacity" }}>
                         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, ease: customEase }} style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 32, padding: "8px 24px", borderRadius: 999, background: "#fff", border: "1px solid #e5e5e5", boxShadow: "0 10px 30px -10px rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
                             <span style={{ color: themeColors.primary, fontSize: 14 }}>✦</span>
                             <span style={{ color: "#52525b", fontSize: 14, fontWeight: 600 }}>Your Voice-Enabled Web Assistant</span>
@@ -510,7 +513,8 @@ export default function LandingPage({ onLaunch }) {
             {/* ───────────────────────────────────────────── */}
             {/* FOOTER */}
             {/* ───────────────────────────────────────────── */}
-            <footer style={{ padding: "80px 5% 40px 5%", background: "#ffffff", borderTop: "1px solid #f4f4f5", position: "relative", zIndex: 10 }}>
+            {/* 🚀 Safe Area Inset added for iPhone bottom swipe bar */}
+            <footer style={{ padding: "80px 5% calc(env(safe-area-inset-bottom, 0px) + 40px) 5%", background: "#ffffff", borderTop: "1px solid #f4f4f5", position: "relative", zIndex: 10 }}>
                 <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 40 }}>
 
                     <div style={{ maxWidth: 350 }}>
@@ -520,7 +524,7 @@ export default function LandingPage({ onLaunch }) {
                         <p style={{ color: "#71717a", fontSize: 15, lineHeight: 1.6 }}>Voxa AI is a voice-first AI assistant that allows you to have natural, spoken conversations to get answers, insights, or support—hands-free and in real time.</p>
                     </div>
 
-                    <div style={{ display: "flex", gap: 80, flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", gap: "clamp(40px, 8vw, 80px)", flexWrap: "wrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
                             <h4 style={{ color: "#09090b", fontWeight: 700, marginBottom: 8, fontSize: 16 }}>Product</h4>
                             <a href="#" style={{ color: "#52525b", textDecoration: "none", fontSize: 15, transition: "color 0.2s" }} onMouseEnter={e => e.target.style.color = "#09090b"} onMouseLeave={e => e.target.style.color = "#52525b"}>Home</a>

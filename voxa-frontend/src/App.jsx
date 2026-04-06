@@ -464,7 +464,25 @@ function InputField({ theme, icon, placeholder, type = "text", defaultValue, onC
   return (
     <div style={{ position: "relative", marginBottom: 16 }}>
       <div style={{ position: "absolute", left: 16, top: 14, color: isFocused ? "#7c3aed" : theme.textFaint, transition: "color 0.2s" }}>{icon}</div>
-      <input type={type} placeholder={placeholder} defaultValue={defaultValue} onChange={onChange} disabled={disabled} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} style={{ width: "100%", padding: "14px 18px 14px 44px", borderRadius: 14, border: `1px solid ${isFocused ? "#7c3aed" : theme.inputBorder}`, background: theme.inputBg, color: disabled ? theme.textMuted : theme.text, fontSize: 14, outline: "none", fontFamily: "inherit", transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)", boxShadow: isFocused ? "0 0 0 3px rgba(124,58,237,0.15)" : "none", cursor: disabled ? "not-allowed" : "text" }} />
+      <input
+        type={type}
+        placeholder={placeholder}
+        defaultValue={defaultValue}
+        onChange={onChange}
+        disabled={disabled}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        style={{
+          width: "100%", padding: "14px 18px 14px 44px", borderRadius: 14,
+          border: `1px solid ${isFocused ? "#7c3aed" : theme.inputBorder}`,
+          background: theme.inputBg, color: disabled ? theme.textMuted : theme.text,
+          fontSize: "16px", // 🚀 Fixed to 16px to prevent iOS auto-zoom
+          outline: "none", fontFamily: "inherit", transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
+          boxShadow: isFocused ? "0 0 0 3px rgba(124,58,237,0.15)" : "none",
+          cursor: disabled ? "not-allowed" : "text",
+          WebkitAppearance: "none" // Removes default iOS styling
+        }}
+      />
     </div>
   );
 }
@@ -507,7 +525,6 @@ function HistoryScreen({ theme, user, onClose }) {
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        // 🚀 LIVE RENDER URL
         const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/chat/history', {
           headers: { "Authorization": `Bearer ${user?.token}` }
         });
@@ -594,7 +611,7 @@ function FeedbackScreen({ theme }) {
         ))}
       </div>
       <div style={{ position: "relative" }}>
-        <textarea placeholder="Tell us what you love or what could be better..." style={{ width: "100%", height: 120, padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit", transition: "border-color 0.2s" }} onFocus={e => e.target.style.borderColor = "#7c3aed"} onBlur={e => e.target.style.borderColor = theme.inputBorder} />
+        <textarea placeholder="Tell us what you love or what could be better..." style={{ width: "100%", height: 120, padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: "16px", outline: "none", resize: "none", fontFamily: "inherit", transition: "border-color 0.2s", WebkitAppearance: "none" }} onFocus={e => e.target.style.borderColor = "#7c3aed"} onBlur={e => e.target.style.borderColor = theme.inputBorder} />
       </div>
       <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg, #7c3aed, #db2777)", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", boxShadow: "0 10px 20px -10px rgba(124,58,237,0.5)" }}>Submit Feedback</motion.button>
     </div>
@@ -606,7 +623,7 @@ function SupportScreen({ theme }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.5 }}>Raise a support ticket. Our engineering team will get back to you shortly.</p>
       <div style={{ position: "relative" }}>
-        <select style={{ width: "100%", padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: 14, outline: "none", fontFamily: "inherit", WebkitAppearance: "none", cursor: "pointer" }}>
+        <select style={{ width: "100%", padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: "16px", outline: "none", fontFamily: "inherit", WebkitAppearance: "none", cursor: "pointer" }}>
           <option>General Inquiry</option>
           <option>Bug Report</option>
           <option>Feature Request</option>
@@ -615,7 +632,7 @@ function SupportScreen({ theme }) {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
         </div>
       </div>
-      <textarea placeholder="Please describe the issue in detail..." style={{ width: "100%", height: 140, padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: 14, outline: "none", resize: "none", fontFamily: "inherit" }} onFocus={e => e.target.style.borderColor = "#7c3aed"} onBlur={e => e.target.style.borderColor = theme.inputBorder} />
+      <textarea placeholder="Please describe the issue in detail..." style={{ width: "100%", height: 140, padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: "16px", outline: "none", resize: "none", fontFamily: "inherit", WebkitAppearance: "none" }} onFocus={e => e.target.style.borderColor = "#7c3aed"} onBlur={e => e.target.style.borderColor = theme.inputBorder} />
       <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} style={{ width: "100%", padding: "16px", borderRadius: 14, border: "none", background: "linear-gradient(135deg, #7c3aed, #db2777)", color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer", boxShadow: "0 10px 20px -10px rgba(124,58,237,0.5)" }}>Submit Ticket</motion.button>
     </div>
   );
@@ -978,7 +995,6 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
 
     try {
-      // 🚀 POINTING TO THE LIVE RENDER URL
       const response = await fetch("https://voxa-ai-zh5o.onrender.com/api/chat", {
         method: "POST",
         headers: {
@@ -1074,14 +1090,17 @@ export default function VoiceAssistant({ user, onLogout }) {
   }, []);
 
   return (
+    // 🚀 Changed height to 100dvh to fix Safari bottom bar overlap
     <div style={{
-      position: "fixed", inset: 0, width: "100vw", height: "100vh", background: "#000",
+      position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000",
       overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-      fontFamily: "'Inter', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
+      fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
     }}>
+      {/* 🚀 Added anti-bounce overscroll-behavior and tap-highlight removal for native feel */}
       <style>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { margin: 0; padding: 0; background: #000; overscroll-behavior-y: none; }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
         ::-webkit-scrollbar { display: none; }
         button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid #7c3aed; outline-offset: 2px; }
         input:focus, textarea:focus { border-color: rgba(124,58,237,0.5) !important; }
@@ -1107,7 +1126,8 @@ export default function VoiceAssistant({ user, onLogout }) {
               backdropFilter: "blur(48px)", WebkitBackdropFilter: "blur(48px)",
               border: `1px solid rgba(255,255,255,0.15)`,
               borderRadius: 40, padding: 28, display: "flex", flexDirection: "column", color: theme.text,
-              overflowY: "auto", boxShadow: "0 40px 100px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2)"
+              overflowY: "auto", WebkitOverflowScrolling: "touch", // 🚀 Native momentum scrolling on iOS
+              boxShadow: "0 40px 100px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2)"
             }}
           >
             <h2 style={{ margin: "0 0 24px 0", fontSize: 22, fontWeight: 600, letterSpacing: "-0.02em", color: theme.text }}>{modalData.title}</h2>
@@ -1124,12 +1144,14 @@ export default function VoiceAssistant({ user, onLogout }) {
             exit={{ opacity: 0, y: 40, scale: 0.95, filter: "blur(8px)", transition: { duration: 0.25 } }}
             transition={{ type: "spring", stiffness: 250, damping: 28 }}
             style={{
-              position: "absolute", zIndex: 100, width: "min(90vw, 540px)", maxHeight: "80vh",
+              // 🚀 Capped height at 85dvh for better mobile modal sizing
+              position: "absolute", zIndex: 100, width: "min(90vw, 540px)", maxHeight: "85dvh",
               background: isDark ? "rgba(15,15,20,0.65)" : "rgba(250,250,252,0.65)",
               backdropFilter: "blur(48px)", WebkitBackdropFilter: "blur(48px)",
               border: `1px solid rgba(255,255,255,0.15)`,
               borderRadius: 40, padding: "clamp(24px, 4vw, 40px)", display: "flex", flexDirection: "column",
-              color: theme.text, overflowY: "auto", boxShadow: "0 40px 100px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2)"
+              color: theme.text, overflowY: "auto", WebkitOverflowScrolling: "touch", // 🚀 Native momentum scrolling on iOS
+              boxShadow: "0 40px 100px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.2)"
             }}
           >
             <h2 style={{ margin: "0 0 28px 0", fontSize: 26, fontWeight: 600, letterSpacing: "-0.02em", color: theme.text }}>{modalData?.title}</h2>
@@ -1232,11 +1254,12 @@ export default function VoiceAssistant({ user, onLogout }) {
           </AnimatePresence>
         </div>
 
-        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "clamp(24px,5vh,56px)", gap: 16 }}>
+        {/* 🚀 Safe Area Insets added to the bottom padding */}
+        <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + clamp(24px, 5vh, 56px))", gap: 16 }}>
           <AnimatePresence>
             {showInput && !isCameraMode && (
               <motion.div key="textinput" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} style={{ display: "flex", gap: 10, width: "min(520px,86vw)", marginBottom: 8 }}>
-                <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === "Enter" && handleTextSubmit()} placeholder="Type your question…" style={{ flex: 1, height: 50, borderRadius: 999, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", color: theme.text, fontSize: "clamp(13px,1.5vw,15px)", fontWeight: 400, padding: "0 22px", outline: "none", fontFamily: "inherit", letterSpacing: "-0.01em", transition: "border-color 0.28s cubic-bezier(0.16,1,0.3,1), background 0.4s" }} />
+                <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === "Enter" && handleTextSubmit()} placeholder="Type your question…" style={{ flex: 1, height: 50, borderRadius: 999, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", color: theme.text, fontSize: "max(16px, 1.5vw)", fontWeight: 400, padding: "0 22px", outline: "none", fontFamily: "inherit", letterSpacing: "-0.01em", transition: "border-color 0.28s cubic-bezier(0.16,1,0.3,1), background 0.4s", WebkitAppearance: "none" }} />
                 <motion.button onClick={handleTextSubmit} whileTap={{ scale: 0.94 }} whileHover={{ scale: 1.04 }} style={{ height: 50, borderRadius: 999, border: "1px solid rgba(124,58,237,0.4)", background: "rgba(124,58,237,0.32)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", color: "rgba(255,255,255,0.9)", fontSize: "clamp(13px,1.4vw,15px)", fontWeight: 500, letterSpacing: "0.01em", padding: "0 26px", cursor: "pointer", fontFamily: "inherit", outline: "none" }}>Ask</motion.button>
               </motion.div>
             )}

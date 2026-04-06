@@ -89,11 +89,15 @@ const InputField = ({ icon, type, placeholder, value, onChange }) => {
                 onFocus={() => setIsFocused(true)}
                 onBlur={() => setIsFocused(false)}
                 style={{
-                    width: "100%", padding: "14px 16px 14px 46px", borderRadius: 12,
+                    width: "100%", padding: "16px 16px 16px 46px", borderRadius: 14,
                     border: `1px solid ${isFocused ? themeColors.primary : "#e5e5e5"}`,
-                    background: isFocused ? "#ffffff" : "#fafafa", color: "#09090b", fontSize: 15, outline: "none", boxSizing: "border-box",
-                    fontFamily: "'Inter', sans-serif", transition: "all 0.2s ease",
-                    boxShadow: isFocused ? "0 0 0 3px rgba(124, 58, 237, 0.12)" : "none"
+                    background: isFocused ? "#ffffff" : "#fafafa", color: "#09090b",
+                    fontSize: "16px", // 🚀 Anti-Zoom fix for iPhones
+                    outline: "none", boxSizing: "border-box",
+                    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+                    transition: "all 0.2s cubic-bezier(0.16, 1, 0.3, 1)",
+                    boxShadow: isFocused ? "0 0 0 4px rgba(124, 58, 237, 0.12)" : "none",
+                    WebkitAppearance: "none", // Removes default iOS styling
                 }}
             />
         </div>
@@ -117,19 +121,15 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
     useEffect(() => {
         const timer = setInterval(() => {
             setCurrentSlide((prev) => (prev + 1) % SLIDES.length);
-        }, 3000);
+        }, 4000);
         return () => clearInterval(timer);
     }, []);
 
-    // ─────────────────────────────────────────────
-    // REAL BACKEND CONNECTION
-    // ─────────────────────────────────────────────
     const handleSubmit = async (e) => {
         e.preventDefault();
         setIsLoading(true);
 
         try {
-            // 🚀 POINTING TO THE LIVE RENDER URL
             const endpoint = isLogin
                 ? "https://voxa-ai-zh5o.onrender.com/api/auth/login"
                 : "https://voxa-ai-zh5o.onrender.com/api/auth/register";
@@ -138,7 +138,6 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
                 ? { email, password }
                 : { name, email, password };
 
-            // Send request to your real Node.js backend
             const response = await fetch(endpoint, {
                 method: "POST",
                 headers: {
@@ -150,10 +149,8 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
-                // Success! Pass the real user data (and JWT token) back to main.jsx
                 if (onAuthSuccess) onAuthSuccess(data);
             } else {
-                // Handle backend errors (e.g., "Invalid password", "User already exists")
                 alert(data.message || "Authentication failed.");
             }
         } catch (error) {
@@ -165,13 +162,29 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
     };
 
     return (
-        <div style={{ display: "flex", minHeight: "100vh", fontFamily: "'Inter', sans-serif", backgroundColor: "#ffffff" }}>
+        // 🚀 Changed to 100dvh for pixel-perfect mobile height
+        <div style={{ display: "flex", minHeight: "100dvh", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", backgroundColor: "#ffffff" }}>
             <style>{`
-                html, body { margin: 0; padding: 0; }
-                * { box-sizing: border-box; }
+                html, body { margin: 0; padding: 0; background: #ffffff; overscroll-behavior-y: none; }
+                * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+                .mobile-logo { display: none; }
+                
                 @media (max-width: 900px) {
                     .split-left { display: none !important; }
-                    .split-right { width: 100% !important; flex: none !important; }
+                    .split-right { 
+                        width: 100% !important; flex: none !important; 
+                        padding: 24px !important; 
+                        justify-content: flex-start !important; 
+                        padding-top: max(10vh, 40px) !important; 
+                    }
+                    .mobile-logo { 
+                        display: flex !important; 
+                        align-items: center; 
+                        gap: 10px; 
+                        margin-bottom: 40px; 
+                        justify-content: center; 
+                    }
+                    .back-btn { top: 16px !important; right: 16px !important; padding: 8px 14px !important; }
                 }
             `}</style>
 
@@ -208,13 +221,20 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
 
             {/* RIGHT PANEL */}
             <div className="split-right" style={{ flex: 1, position: "relative", backgroundColor: "#ffffff", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", padding: "40px" }}>
-                <motion.button initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} onClick={onBack} style={{ position: "absolute", top: 40, right: 40, background: "#ffffff", border: "1px solid #e5e5e5", display: "flex", alignItems: "center", gap: 8, color: "#52525b", cursor: "pointer", zIndex: 10, fontSize: 14, fontWeight: 500, outline: "none", padding: "10px 16px", borderRadius: 999, boxShadow: "0 2px 8px rgba(0,0,0,0.02)", transition: "all 0.2s" }} whileHover={{ color: "#09090b", borderColor: "#d4d4d8", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }} whileTap={{ scale: 0.96 }}>
+                <motion.button className="back-btn" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }} onClick={onBack} style={{ position: "absolute", top: 40, right: 40, background: "#ffffff", border: "1px solid #e5e5e5", display: "flex", alignItems: "center", gap: 8, color: "#52525b", cursor: "pointer", zIndex: 10, fontSize: 14, fontWeight: 500, outline: "none", padding: "10px 16px", borderRadius: 999, boxShadow: "0 2px 8px rgba(0,0,0,0.02)", transition: "all 0.2s" }} whileHover={{ color: "#09090b", borderColor: "#d4d4d8", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }} whileTap={{ scale: 0.96 }}>
                     <IconArrowLeft /> Back to home
                 </motion.button>
 
                 <motion.div layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, ease: customEase }} style={{ width: "100%", maxWidth: 400 }}>
-                    <motion.div layout style={{ marginBottom: 40 }}>
-                        <h2 style={{ fontSize: 32, fontWeight: 700, color: "#09090b", margin: "0 0 8px 0", letterSpacing: "-0.03em" }}>
+
+                    {/* 🚀 Mobile-Only Branding Header */}
+                    <div className="mobile-logo">
+                        <VoxaLogo size={28} isDark={false} />
+                        <span style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.02em", color: "#09090b" }}>Voxa AI</span>
+                    </div>
+
+                    <motion.div layout style={{ marginBottom: 32 }}>
+                        <h2 style={{ fontSize: "clamp(28px, 4vw, 32px)", fontWeight: 700, color: "#09090b", margin: "0 0 8px 0", letterSpacing: "-0.03em" }}>
                             {isLogin ? "Welcome back" : "Create an account"}
                         </h2>
                         <p style={{ fontSize: 15, color: "#71717a", margin: 0 }}>
@@ -241,7 +261,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
 
                         {isLogin && (
                             <motion.div layout style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 4, marginBottom: 8 }}>
-                                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#71717a", cursor: "pointer" }}>
+                                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#71717a", cursor: "pointer", userSelect: "none" }}>
                                     <input type="checkbox" style={{ accentColor: themeColors.primary, width: 16, height: 16, cursor: "pointer" }} />
                                     Remember me
                                 </label>
@@ -249,14 +269,14 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
                             </motion.div>
                         )}
 
-                        <motion.button layout type="submit" disabled={isLoading} whileHover={{ scale: isLoading ? 1 : 1.01, boxShadow: isLoading ? "none" : "0 10px 25px -5px rgba(124, 58, 237, 0.4)" }} whileTap={{ scale: isLoading ? 1 : 0.98 }} style={{ background: themeColors.gradient, color: "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: 15, fontWeight: 600, cursor: isLoading ? "not-allowed" : "pointer", marginTop: 24, transition: "all 0.3s ease", opacity: isLoading ? 0.7 : 1, outline: "none", boxShadow: "0 4px 14px rgba(124, 58, 237, 0.2)" }}>
+                        <motion.button layout type="submit" disabled={isLoading} whileHover={{ scale: isLoading ? 1 : 1.01, boxShadow: isLoading ? "none" : "0 10px 25px -5px rgba(124, 58, 237, 0.4)" }} whileTap={{ scale: isLoading ? 1 : 0.96 }} style={{ background: themeColors.gradient, color: "#fff", border: "none", padding: "16px", borderRadius: 14, fontSize: 16, fontWeight: 600, cursor: isLoading ? "not-allowed" : "pointer", marginTop: 24, transition: "all 0.3s ease", opacity: isLoading ? 0.7 : 1, outline: "none", boxShadow: "0 4px 14px rgba(124, 58, 237, 0.2)" }}>
                             {isLoading ? "Authenticating..." : (isLogin ? "Sign In" : "Create Account")}
                         </motion.button>
                     </form>
 
-                    <motion.div layout style={{ marginTop: 32, textAlign: "center", fontSize: 14, color: "#71717a" }}>
+                    <motion.div layout style={{ marginTop: 32, textAlign: "center", fontSize: 15, color: "#71717a" }}>
                         {isLogin ? "Don't have an account? " : "Already have an account? "}
-                        <button type="button" onClick={() => setIsLogin(!isLogin)} style={{ background: "none", border: "none", color: "#09090b", fontWeight: 700, cursor: "pointer", padding: 0, fontFamily: "inherit", fontSize: 14, textDecoration: "underline", textDecorationColor: "transparent", transition: "text-decoration-color 0.2s" }} onMouseEnter={e => e.target.style.textDecorationColor = "#09090b"} onMouseLeave={e => e.target.style.textDecorationColor = "transparent"}>
+                        <button type="button" onClick={() => setIsLogin(!isLogin)} style={{ background: "none", border: "none", color: "#09090b", fontWeight: 700, cursor: "pointer", padding: 0, fontFamily: "inherit", fontSize: 15, textDecoration: "underline", textDecorationColor: "transparent", transition: "text-decoration-color 0.2s" }} onMouseEnter={e => e.target.style.textDecorationColor = "#09090b"} onMouseLeave={e => e.target.style.textDecorationColor = "transparent"}>
                             {isLogin ? "Sign up" : "Log in"}
                         </button>
                     </motion.div>
