@@ -469,6 +469,7 @@ function InputField({ theme, icon, placeholder, type = "text", defaultValue, onC
   );
 }
 
+// Profile Screen
 function ProfileScreen({ theme, user, userName, setUserName }) {
   const [tempName, setTempName] = useState(userName);
   const handleSave = () => {
@@ -499,18 +500,16 @@ function ProfileScreen({ theme, user, userName, setUserName }) {
   );
 }
 
-// 🚀 FIXED: Added 'user' prop so we can send the token with the request
-function HistoryScreen({ theme, user }) {
+// 🚀 FIXED: Added user prop and Authorization Header!
+function HistoryScreen({ theme, user, onClose }) {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchHistory = async () => {
       try {
-        const response = await fetch('http://localhost:5000/api/chat/history', {
-          headers: {
-            "Authorization": `Bearer ${user?.token}` // 🚀 Send Token
-          }
+        const response = await fetch('https://voxa-backend.onrender.com/api/chat/history', {
+          headers: { "Authorization": `Bearer ${user?.token}` }
         });
         const data = await response.json();
         if (Array.isArray(data)) {
@@ -534,7 +533,7 @@ function HistoryScreen({ theme, user }) {
       }
     };
     fetchHistory();
-  }, [user]); // re-run if user changes
+  }, [user]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -979,11 +978,12 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
 
     try {
-      const response = await fetch("http://localhost:5000/api/chat", {
+      // 🚀 FIXED: Added Authorization Header for production!
+      const response = await fetch("https://voxa-backend.onrender.com/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${user?.token}` // 🚀 Send Token
+          "Authorization": `Bearer ${user?.token}`
         },
         body: JSON.stringify({
           prompt: q,
@@ -1060,7 +1060,7 @@ export default function VoiceAssistant({ user, onLogout }) {
   const renderModalContent = () => {
     switch (activeModal) {
       case 'profile': return { title: "Profile Setup", component: <ProfileScreen theme={theme} user={user} userName={userName} setUserName={setUserName} /> };
-      case 'history': return { title: "Recent Activity", component: <HistoryScreen theme={theme} user={user} onClose={() => setActiveModal(null)} /> }; // 🚀 Added user prop
+      case 'history': return { title: "Recent Activity", component: <HistoryScreen theme={theme} user={user} onClose={() => setActiveModal(null)} /> };
       case 'personalization': return { title: "Personalization", component: <PersonalizationScreen theme={theme} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice} /> };
       case 'feedback': return { title: "Submit Feedback", component: <FeedbackScreen theme={theme} /> };
       case 'support': return { title: "Contact Support", component: <SupportScreen theme={theme} /> };

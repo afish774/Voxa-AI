@@ -129,9 +129,9 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         setIsLoading(true);
 
         try {
-            // Determine if we are logging in or registering
+            // 🚀 FIXED: Added /auth to the login URL!
             const endpoint = isLogin
-                ? "https://voxa-backend.onrender.com/api/login"
+                ? "https://voxa-backend.onrender.com/api/auth/login"
                 : "https://voxa-backend.onrender.com/api/auth/register";
 
             const payload = isLogin
@@ -158,7 +158,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             }
         } catch (error) {
             console.error("Auth error:", error);
-            alert("Could not connect to the backend server. Make sure your Node server is running on port 5000.");
+            alert("Could not connect to the backend server. It may be waking up, please try again in 30 seconds.");
         } finally {
             setIsLoading(false);
         }
