@@ -1,7 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import cors from 'cors';
-import fs from 'fs'; // 👈 NEW: Import the File System module
+import fs from 'fs';
 import connectDB from './config/db.js';
 import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
@@ -9,8 +9,7 @@ import authRoutes from './routes/authRoutes.js';
 // 1. Load environment variables FIRST
 dotenv.config();
 
-// 👈 NEW: MAGIC TRICK! 
-// If the secure environment variable exists, generate the JSON file on the fly so Google TTS can read it!
+// Generate credentials file securely
 if (process.env.GOOGLE_CREDENTIALS) {
     fs.writeFileSync('google-credentials.json', process.env.GOOGLE_CREDENTIALS);
     console.log('🔐 Google Credentials file securely generated from Environment Variables.');
@@ -29,7 +28,9 @@ const corsOptions = {
 };
 
 app.use(cors(corsOptions));
-app.options('*', cors(corsOptions));
+
+// 👈 FIXED: Express 5 requires '/(.*)' instead of '*' for catch-all wildcards
+app.options('/(.*)', cors(corsOptions));
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
