@@ -52,7 +52,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
     2. Do NOT use markdown formatting.
     3. WIDGET PROTOCOL: If the user asks for the WEATHER, append a hidden tag at the very end of your response formatted exactly like this: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition||
     Example: "It is currently sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
-    Condition must be one of: Sunny, Cloudy, Rain, or Storm.
+    Condition must be one of: Sunny, Autumn, Rain, or Winter.
     4. VISION OVERRIDE: If an image is provided, YOU MUST LOOK AT THE IMAGE. Describe what you see accurately and answer the user's question about it.`;
 
     const chatModel = genAI.getGenerativeModel({
