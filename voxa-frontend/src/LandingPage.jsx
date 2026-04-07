@@ -11,8 +11,8 @@ const springConfig = { type: "spring", stiffness: 100, damping: 20, mass: 1 };
 // THEME COLORS
 // ─────────────────────────────────────────────
 const themeColors = {
-    primary: "#7c3aed", // Deep Purple
-    secondary: "#db2777", // Pink
+    primary: "#7c3aed",
+    secondary: "#db2777",
     gradient: "linear-gradient(135deg, #7c3aed, #db2777)"
 };
 
@@ -101,7 +101,7 @@ function SpotlightCard({ children, className, style }) {
                     position: "absolute", inset: 0
                 }}
             />
-            <div style={{ position: "relative", zIndex: 2, padding: "clamp(24px, 4vw, 48px)", height: "100%", display: "flex", flexDirection: "column" }}>
+            <div style={{ position: "relative", zIndex: 2, padding: "clamp(24px, 5vw, 48px)", height: "100%", display: "flex", flexDirection: "column" }}>
                 {children}
             </div>
         </motion.div>
@@ -155,32 +155,34 @@ function StickyTimeline() {
 
     return (
         <section ref={containerRef} id="how-it-works" style={{ position: "relative", height: "250dvh", backgroundColor: "transparent" }}>
-            <div style={{ position: "sticky", top: 0, height: "100dvh", display: "flex", alignItems: "center", padding: "0 5%" }}>
-                <div style={{ display: "flex", width: "100%", maxWidth: 1200, margin: "0 auto", alignItems: "center", justifyContent: "space-between", gap: "clamp(40px, 8vw, 8%)", flexWrap: "wrap" }}>
+            <div style={{ position: "sticky", top: 0, height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "0 max(5%, 20px)" }}>
+
+                {/* 🚀 Mobile-optimized flex container via CSS classes */}
+                <div className="timeline-wrapper">
 
                     {/* Left Text / Timeline */}
-                    <div style={{ flex: "1 1 400px", position: "relative" }}>
-                        <div style={{ marginBottom: 60 }}>
-                            <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 16px 0" }}>How it works.</h2>
-                            <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "#52525b" }}>Three simple steps to absolute productivity.</p>
+                    <div className="timeline-text" style={{ position: "relative" }}>
+                        <div style={{ marginBottom: "clamp(30px, 6vw, 60px)" }}>
+                            <h2 style={{ fontSize: "clamp(32px, 8vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>How it works.</h2>
+                            <p style={{ fontSize: "clamp(16px, 4vw, 20px)", color: "#52525b" }}>Three simple steps to absolute productivity.</p>
                         </div>
 
-                        <div style={{ position: "relative", paddingLeft: 40, display: "flex", flexDirection: "column", gap: "clamp(40px, 6vw, 60px)" }}>
+                        <div style={{ position: "relative", paddingLeft: "clamp(24px, 5vw, 40px)", display: "flex", flexDirection: "column", gap: "clamp(30px, 6vw, 60px)" }}>
                             {/* Progress Line */}
-                            <div style={{ position: "absolute", left: 14, top: 0, bottom: 0, width: 4, background: "#f4f4f5", borderRadius: 4 }}>
+                            <div style={{ position: "absolute", left: "clamp(4px, 1.5vw, 14px)", top: 0, bottom: 0, width: 4, background: "#f4f4f5", borderRadius: 4 }}>
                                 <motion.div style={{ width: "100%", height: lineHeight, background: themeColors.gradient, borderRadius: 4 }} />
                             </div>
 
                             {["Sign In", "Start a Call", "Get Actionable Intel"].map((title, i) => (
                                 <div key={i} style={{ position: "relative", opacity: activeStep >= i ? 1 : 0.4, transition: "opacity 0.4s ease" }}>
-                                    <motion.div animate={{ scale: activeStep === i ? 1.2 : 1, borderColor: activeStep >= i ? themeColors.primary : "#e5e5e5" }} style={{ position: "absolute", left: -56, top: -4, width: 32, height: 32, borderRadius: "50%", background: "#fff", border: "4px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, color: activeStep >= i ? themeColors.primary : "#a1a1aa", zIndex: 2, transition: "border-color 0.4s ease", willChange: "transform" }}>
+                                    <motion.div animate={{ scale: activeStep === i ? 1.2 : 1, borderColor: activeStep >= i ? themeColors.primary : "#e5e5e5" }} style={{ position: "absolute", left: "calc(clamp(4px, 1.5vw, 14px) - 14px - clamp(24px, 5vw, 40px))", top: -4, width: "clamp(24px, 5vw, 32px)", height: "clamp(24px, 5vw, 32px)", borderRadius: "50%", background: "#fff", border: "4px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 700, color: activeStep >= i ? themeColors.primary : "#a1a1aa", zIndex: 2, transition: "border-color 0.4s ease", willChange: "transform" }}>
                                         {i + 1}
                                     </motion.div>
-                                    <h3 style={{ fontSize: "clamp(22px, 3vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 12, letterSpacing: "-0.02em" }}>{title}</h3>
-                                    <p style={{ fontSize: "clamp(15px, 1.8vw, 18px)", color: "#52525b", lineHeight: 1.6 }}>
+                                    <h3 style={{ fontSize: "clamp(20px, 5vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 12, letterSpacing: "-0.02em" }}>{title}</h3>
+                                    <p className="timeline-desc" style={{ fontSize: "clamp(15px, 3.5vw, 18px)", color: "#52525b", lineHeight: 1.6 }}>
                                         {i === 0 && "Create an account or log in to your Voxa dashboard. Your conversations are securely synced."}
                                         {i === 1 && "No typing required. Just speak naturally, and Voxa will listen, parse, and respond in real time."}
-                                        {i === 2 && "Voxa doesn't just talk. It generates dynamic widgets, data visualizations, and clear answers instantly."}
+                                        {i === 2 && "Voxa generates dynamic widgets, data visualizations, and clear answers instantly."}
                                     </p>
                                 </div>
                             ))}
@@ -188,8 +190,8 @@ function StickyTimeline() {
                     </div>
 
                     {/* Right Hardware Mockup */}
-                    <div style={{ flex: "1 1 400px", display: "flex", justifyContent: "center" }}>
-                        <motion.div style={{ width: "100%", maxWidth: 440, aspectRatio: "3/4", background: "#ffffff", borderRadius: 32, padding: 16, boxShadow: "0 40px 80px -20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.8)", border: "1px solid #e5e5e5" }}>
+                    <div className="timeline-visual" style={{ display: "flex", justifyContent: "center" }}>
+                        <motion.div style={{ width: "100%", maxWidth: 440, aspectRatio: "3/4", background: "#ffffff", borderRadius: 32, padding: "clamp(8px, 2vw, 16px)", boxShadow: "0 40px 80px -20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.8)", border: "1px solid #e5e5e5" }}>
                             <div style={{ width: "100%", height: "100%", background: "#05050a", borderRadius: 20, overflow: "hidden", position: "relative", boxShadow: "inset 0 4px 10px rgba(0,0,0,0.8)" }}>
                                 <AnimatePresence mode="wait">
                                     {renderTabletUI()}
@@ -212,22 +214,22 @@ const UnifiedModelsVisualizer = () => (
 
         <motion.div animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", width: "100%", height: "100%", background: "radial-gradient(circle at center, rgba(124,58,237,0.1) 0%, transparent 60%)" }} />
 
-        <motion.div animate={{ scale: [1, 1.8, 1], opacity: [0.15, 0, 0.15] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", width: 120, height: 120, border: "2px solid #7c3aed", borderRadius: "50%" }} />
-        <motion.div animate={{ scale: [1, 2.5, 1], opacity: [0.1, 0, 0.1] }} transition={{ duration: 4, delay: 0.5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", width: 120, height: 120, border: "2px dashed #db2777", borderRadius: "50%" }} />
+        <motion.div animate={{ scale: [1, 1.8, 1], opacity: [0.15, 0, 0.15] }} transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", width: "clamp(80px, 20vw, 120px)", height: "clamp(80px, 20vw, 120px)", border: "2px solid #7c3aed", borderRadius: "50%" }} />
+        <motion.div animate={{ scale: [1, 2.5, 1], opacity: [0.1, 0, 0.1] }} transition={{ duration: 4, delay: 0.5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", width: "clamp(80px, 20vw, 120px)", height: "clamp(80px, 20vw, 120px)", border: "2px dashed #db2777", borderRadius: "50%" }} />
 
-        <motion.div animate={{ y: [-15, 15, -15], rotate: [-5, 5, -5] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "15%", left: "12%", width: 56, height: 56, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
-            <img src="https://img.icons8.com/ios/100/chatgpt.png" alt="OpenAI GPT" style={{ width: 28, height: 28 }} />
+        <motion.div animate={{ y: [-15, 15, -15], rotate: [-5, 5, -5] }} transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "15%", left: "12%", width: "clamp(40px, 10vw, 56px)", height: "clamp(40px, 10vw, 56px)", background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
+            <img src="https://img.icons8.com/ios/100/chatgpt.png" alt="OpenAI GPT" style={{ width: "50%", height: "50%" }} />
         </motion.div>
 
-        <motion.div animate={{ y: [15, -15, 15], rotate: [5, -5, 5] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "20%", right: "12%", width: 56, height: 56, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
-            <img src="https://cdn.simpleicons.org/anthropic/d97757" alt="Anthropic Claude" style={{ width: 28, height: 28 }} />
+        <motion.div animate={{ y: [15, -15, 15], rotate: [5, -5, 5] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "20%", right: "12%", width: "clamp(40px, 10vw, 56px)", height: "clamp(40px, 10vw, 56px)", background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
+            <img src="https://cdn.simpleicons.org/anthropic/d97757" alt="Anthropic Claude" style={{ width: "50%", height: "50%" }} />
         </motion.div>
 
-        <motion.div animate={{ x: [-15, 15, -15], y: [-5, 5, -5] }} transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", bottom: "15%", right: "25%", width: 56, height: 56, background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
-            <img src="https://cdn.simpleicons.org/googlegemini/8E75B2" alt="Google Gemini" style={{ width: 28, height: 28 }} />
+        <motion.div animate={{ x: [-15, 15, -15], y: [-5, 5, -5] }} transition={{ duration: 5.5, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", bottom: "15%", right: "25%", width: "clamp(40px, 10vw, 56px)", height: "clamp(40px, 10vw, 56px)", background: "#fff", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 10px 20px -5px rgba(0,0,0,0.1)", border: "1px solid #f4f4f5", zIndex: 5 }}>
+            <img src="https://cdn.simpleicons.org/googlegemini/8E75B2" alt="Google Gemini" style={{ width: "50%", height: "50%" }} />
         </motion.div>
 
-        <motion.div whileHover={{ scale: 1.05 }} style={{ position: "relative", zIndex: 10, width: 88, height: 88, background: "linear-gradient(135deg, #7c3aed, #db2777)", borderRadius: "24px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 20px 40px -10px rgba(124, 58, 237, 0.5)", transform: "rotate(45deg)" }}>
+        <motion.div whileHover={{ scale: 1.05 }} style={{ position: "relative", zIndex: 10, width: "clamp(64px, 15vw, 88px)", height: "clamp(64px, 15vw, 88px)", background: "linear-gradient(135deg, #7c3aed, #db2777)", borderRadius: "24px", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 20px 40px -10px rgba(124, 58, 237, 0.5)", transform: "rotate(45deg)" }}>
             <div style={{ transform: "rotate(-45deg)" }}>
                 <VoxaLogo size={36} color="#ffffff" />
             </div>
@@ -240,22 +242,22 @@ const UnifiedModelsVisualizer = () => (
 // ─────────────────────────────────────────────
 function FeaturesSection() {
     return (
-        <section id="features" style={{ padding: "clamp(80px, 10vw, 160px) 5%", background: "transparent", position: "relative", zIndex: 10 }}>
+        <section id="features" style={{ padding: "clamp(60px, 10vh, 160px) max(5%, 20px)", background: "transparent", position: "relative", zIndex: 10 }}>
             <div style={{ maxWidth: 1200, margin: "0 auto" }}>
                 <div style={{ textAlign: "center", marginBottom: "clamp(40px, 6vw, 80px)" }}>
-                    <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 16px 0" }}>Beyond a text box.</h2>
-                    <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "#52525b", lineHeight: 1.5 }}>Designed with frontend precision and AI power.</p>
+                    <h2 style={{ fontSize: "clamp(32px, 8vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>Beyond a text box.</h2>
+                    <p style={{ fontSize: "clamp(16px, 4vw, 20px)", color: "#52525b", lineHeight: 1.5 }}>Designed with frontend precision and AI power.</p>
                 </div>
 
                 <div className="bento-grid">
-                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.6, ease: customEase }} className="col-span-2" style={{ willChange: "transform, opacity" }}>
+                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.6, ease: customEase }} className="col-span-2" style={{ willChange: "transform, opacity" }}>
                         <SpotlightCard style={{ minHeight: "auto" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 40 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "clamp(24px, 5vw, 40px)" }}>
 
                                 <div style={{ flex: "1 1 300px" }}>
-                                    <div style={{ color: "#fff", marginBottom: 32, background: themeColors.primary, width: 64, height: 64, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16, boxShadow: "0 10px 20px -5px rgba(124, 58, 237, 0.4)" }}><IconBrain /></div>
-                                    <h3 style={{ fontSize: "clamp(24px, 3vw, 40px)", fontWeight: 700, color: "#09090b", marginBottom: 16, letterSpacing: "-0.03em" }}>AI Models, Unified</h3>
-                                    <p style={{ color: "#52525b", fontSize: "clamp(15px, 1.8vw, 18px)", lineHeight: 1.6 }}>Voxa acts as an orchestration layer. It seamlessly connects to Gemini, Claude, and GPT models, dynamically routing your query to the engine best suited to answer it.</p>
+                                    <div style={{ color: "#fff", marginBottom: 32, background: themeColors.primary, width: "clamp(48px, 10vw, 64px)", height: "clamp(48px, 10vw, 64px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16, boxShadow: "0 10px 20px -5px rgba(124, 58, 237, 0.4)" }}><IconBrain /></div>
+                                    <h3 style={{ fontSize: "clamp(24px, 6vw, 40px)", fontWeight: 700, color: "#09090b", marginBottom: 16, letterSpacing: "-0.03em" }}>AI Models, Unified</h3>
+                                    <p style={{ color: "#52525b", fontSize: "clamp(15px, 4vw, 18px)", lineHeight: 1.6 }}>Voxa acts as an orchestration layer. It seamlessly connects to Gemini, Claude, and GPT models, dynamically routing your query to the engine best suited to answer it.</p>
                                 </div>
 
                                 <UnifiedModelsVisualizer />
@@ -264,19 +266,19 @@ function FeaturesSection() {
                         </SpotlightCard>
                     </motion.div>
 
-                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.6, delay: 0.1, ease: customEase }} style={{ willChange: "transform, opacity" }}>
-                        <SpotlightCard style={{ minHeight: 380 }}>
-                            <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: 56, height: 56, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16 }}><IconMic /></div>
-                            <h3 style={{ fontSize: "clamp(20px, 2.5vw, 24px)", fontWeight: 700, color: "#09090b", marginBottom: 16, letterSpacing: "-0.02em" }}>Never Miss a Word</h3>
-                            <p style={{ color: "#52525b", fontSize: "clamp(15px, 1.8vw, 16px)", lineHeight: 1.6 }}>Voxa captures every word as you speak—instantly transcribing notes and conversations with near-perfect accuracy.</p>
+                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.6, delay: 0.1, ease: customEase }} style={{ willChange: "transform, opacity" }}>
+                        <SpotlightCard style={{ minHeight: "auto" }}>
+                            <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: "clamp(48px, 10vw, 56px)", height: "clamp(48px, 10vw, 56px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16 }}><IconMic /></div>
+                            <h3 style={{ fontSize: "clamp(20px, 5vw, 24px)", fontWeight: 700, color: "#09090b", marginBottom: 12, letterSpacing: "-0.02em" }}>Never Miss a Word</h3>
+                            <p style={{ color: "#52525b", fontSize: "clamp(15px, 3.5vw, 16px)", lineHeight: 1.6 }}>Voxa captures every word as you speak—instantly transcribing notes and conversations with near-perfect accuracy.</p>
                         </SpotlightCard>
                     </motion.div>
 
-                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: 0.6, delay: 0.2, ease: customEase }} style={{ willChange: "transform, opacity" }}>
-                        <SpotlightCard style={{ minHeight: 380 }}>
-                            <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: 56, height: 56, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16 }}><IconHistory /></div>
-                            <h3 style={{ fontSize: "clamp(20px, 2.5vw, 24px)", fontWeight: 700, color: "#09090b", marginBottom: 16, letterSpacing: "-0.02em" }}>Context Stays With You</h3>
-                            <p style={{ color: "#52525b", fontSize: "clamp(15px, 1.8vw, 16px)", lineHeight: 1.6 }}>Conversations are memory-aware. Pick up exactly where you left off without having to repeat past instructions.</p>
+                    <motion.div initial={{ opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.6, delay: 0.2, ease: customEase }} style={{ willChange: "transform, opacity" }}>
+                        <SpotlightCard style={{ minHeight: "auto" }}>
+                            <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: "clamp(48px, 10vw, 56px)", height: "clamp(48px, 10vw, 56px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 16 }}><IconHistory /></div>
+                            <h3 style={{ fontSize: "clamp(20px, 5vw, 24px)", fontWeight: 700, color: "#09090b", marginBottom: 12, letterSpacing: "-0.02em" }}>Context Stays With You</h3>
+                            <p style={{ color: "#52525b", fontSize: "clamp(15px, 3.5vw, 16px)", lineHeight: 1.6 }}>Conversations are memory-aware. Pick up exactly where you left off without having to repeat past instructions.</p>
                         </SpotlightCard>
                     </motion.div>
                 </div>
@@ -298,42 +300,42 @@ function SplitPaneFAQ() {
     const [activeIndex, setActiveIndex] = useState(0);
 
     return (
-        <section id="faqs" style={{ padding: "clamp(80px, 10vw, 160px) 5%", background: "#fafafa", position: "relative", overflow: "hidden", borderTop: "1px solid #f4f4f5" }}>
+        <section id="faqs" style={{ padding: "clamp(60px, 10vh, 160px) max(5%, 20px)", background: "#fafafa", position: "relative", overflow: "hidden", borderTop: "1px solid #f4f4f5" }}>
 
             {/* Soft background glow for Light Theme */}
             <motion.div animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "20%", left: "-10%", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(124, 58, 237, 0.05) 0%, transparent 70%)", filter: "blur(80px)", pointerEvents: "none" }} />
 
             <div style={{ maxWidth: 1200, margin: "0 auto", position: "relative", zIndex: 10 }}>
                 <div style={{ marginBottom: "clamp(40px, 6vw, 80px)" }}>
-                    <h2 style={{ fontSize: "clamp(36px, 5vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 16px 0" }}>Frequently Asked.</h2>
-                    <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "#52525b", lineHeight: 1.5 }}>Explore common questions about how Voxa AI works.</p>
+                    <h2 style={{ fontSize: "clamp(32px, 8vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>Frequently Asked.</h2>
+                    <p style={{ fontSize: "clamp(16px, 4vw, 20px)", color: "#52525b", lineHeight: 1.5 }}>Explore common questions about how Voxa AI works.</p>
                 </div>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(32px, 5vw, 60px)" }}>
-                    <div style={{ flex: "1 1 400px", display: "flex", flexDirection: "column", gap: 8, position: "relative" }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(24px, 5vw, 60px)" }}>
+                    <div style={{ flex: "1 1 300px", display: "flex", flexDirection: "column", gap: 8, position: "relative" }}>
                         {faqs.map((faq, idx) => {
                             const isActive = activeIndex === idx;
                             return (
                                 <button
                                     key={idx} onClick={() => setActiveIndex(idx)}
-                                    style={{ textAlign: "left", padding: "clamp(16px, 2vw, 24px)", borderRadius: 16, border: "none", background: "transparent", color: isActive ? "#09090b" : "#71717a", fontSize: "clamp(16px, 2vw, 18px)", fontWeight: isActive ? 600 : 500, cursor: "pointer", transition: "color 0.2s", position: "relative", zIndex: 2, outline: "none", WebkitTapHighlightColor: "transparent" }}
+                                    style={{ textAlign: "left", padding: "clamp(16px, 4vw, 24px)", borderRadius: 16, border: "none", background: "transparent", color: isActive ? "#09090b" : "#71717a", fontSize: "clamp(15px, 3.5vw, 18px)", fontWeight: isActive ? 600 : 500, cursor: "pointer", transition: "color 0.2s", position: "relative", zIndex: 2, outline: "none", WebkitTapHighlightColor: "transparent" }}
                                 >
                                     {isActive && <motion.div layoutId="faq-bg" style={{ position: "absolute", inset: 0, background: "#ffffff", borderRadius: 16, zIndex: -1, border: "1px solid #f4f4f5", boxShadow: "0 10px 30px -10px rgba(0,0,0,0.05)" }} transition={springConfig} />}
-                                    <span style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                    <span style={{ position: "relative", zIndex: 2, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
                                         {faq.q}
-                                        {isActive && <motion.div layoutId="faq-dot" style={{ width: 8, height: 8, borderRadius: "50%", background: themeColors.primary, boxShadow: "0 0 10px rgba(124, 58, 237, 0.4)" }} transition={springConfig} />}
+                                        {isActive && <motion.div layoutId="faq-dot" style={{ minWidth: 8, minHeight: 8, borderRadius: "50%", background: themeColors.primary, boxShadow: "0 0 10px rgba(124, 58, 237, 0.4)" }} transition={springConfig} />}
                                     </span>
                                 </button>
                             );
                         })}
                     </div>
 
-                    <div style={{ flex: "1.5 1 400px", position: "relative", minHeight: 300, background: "#ffffff", borderRadius: 32, padding: "clamp(24px, 4vw, 48px)", border: "1px solid #f4f4f5", boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)" }}>
+                    <div style={{ flex: "1.5 1 300px", position: "relative", minHeight: "auto", background: "#ffffff", borderRadius: 32, padding: "clamp(24px, 6vw, 48px)", border: "1px solid #f4f4f5", boxShadow: "0 20px 40px -20px rgba(0,0,0,0.05)" }}>
                         <AnimatePresence mode="wait">
                             <motion.div key={activeIndex} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: customEase }} style={{ willChange: "transform, opacity" }}>
-                                <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: 48, height: 48, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}><IconBrain /></div>
-                                <h3 style={{ fontSize: "clamp(22px, 3vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 24, letterSpacing: "-0.02em" }}>{faqs[activeIndex].q}</h3>
-                                <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "#52525b", lineHeight: 1.6 }}>{faqs[activeIndex].a}</p>
+                                <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: "clamp(40px, 10vw, 48px)", height: "clamp(40px, 10vw, 48px)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}><IconBrain /></div>
+                                <h3 style={{ fontSize: "clamp(20px, 5vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 20, letterSpacing: "-0.02em" }}>{faqs[activeIndex].q}</h3>
+                                <p style={{ fontSize: "clamp(15px, 3.5vw, 20px)", color: "#52525b", lineHeight: 1.6 }}>{faqs[activeIndex].a}</p>
                             </motion.div>
                         </AnimatePresence>
                     </div>
@@ -348,21 +350,21 @@ function SplitPaneFAQ() {
 // ─────────────────────────────────────────────
 function FinalCTA({ onLaunch }) {
     return (
-        <section style={{ padding: "clamp(80px, 10vw, 160px) 5%", textAlign: "center", background: "linear-gradient(180deg, #fafafa 0%, #ffffff 100%)", position: "relative", zIndex: 10, overflow: "hidden" }}>
+        <section style={{ padding: "clamp(60px, 10vh, 160px) max(5%, 20px)", textAlign: "center", background: "linear-gradient(180deg, #fafafa 0%, #ffffff 100%)", position: "relative", zIndex: 10, overflow: "hidden" }}>
 
             {/* Soft Light Mode Glow */}
             <motion.div animate={{ scale: [1, 1.2, 1], opacity: [0.3, 0.5, 0.3] }} transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "80vw", height: "40vw", background: "radial-gradient(ellipse, rgba(219, 39, 119, 0.05) 0%, transparent 60%)", filter: "blur(100px)", pointerEvents: "none", zIndex: 0 }} />
 
             <div style={{ position: "relative", zIndex: 2 }}>
-                <p style={{ color: themeColors.primary, fontWeight: 700, fontSize: 16, marginBottom: 20, textTransform: "uppercase", letterSpacing: "0.1em" }}>Ready to get started?</p>
-                <h2 style={{ fontSize: "clamp(36px, 8vw, 80px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 48px 0" }}>Start for free today.</h2>
+                <p style={{ color: themeColors.primary, fontWeight: 700, fontSize: "clamp(12px, 3vw, 16px)", marginBottom: 16, textTransform: "uppercase", letterSpacing: "0.1em" }}>Ready to get started?</p>
+                <h2 style={{ fontSize: "clamp(36px, 10vw, 80px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 40px 0" }}>Start for free today.</h2>
 
-                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-                    <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(124, 58, 237, 0.3)" }} whileTap={{ scale: 0.95 }} style={{ background: themeColors.gradient, color: "#fff", border: "none", padding: "0 clamp(24px, 4vw, 48px)", height: 64, borderRadius: 999, fontSize: 18, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 12, transition: "box-shadow 0.3s", willChange: "transform" }}>
+                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: 16, flexWrap: "wrap", flexDirection: "row" }}>
+                    <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(124, 58, 237, 0.3)" }} whileTap={{ scale: 0.95 }} style={{ background: themeColors.gradient, color: "#fff", border: "none", padding: "0 clamp(24px, 6vw, 48px)", height: "clamp(50px, 12vw, 64px)", borderRadius: 999, fontSize: "clamp(16px, 4vw, 18px)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 12, transition: "box-shadow 0.3s", willChange: "transform" }}>
                         Get started now <IconArrowRight />
                     </motion.button>
 
-                    <motion.a href="#features" whileHover={{ scale: 1.05, backgroundColor: "#fafafa" }} whileTap={{ scale: 0.95 }} style={{ background: "#ffffff", color: "#09090b", border: "1px solid #e5e5e5", padding: "0 clamp(24px, 4vw, 48px)", height: 64, borderRadius: 999, fontSize: 18, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", textDecoration: "none", transition: "background-color 0.3s, box-shadow 0.3s", boxShadow: "0 10px 20px -10px rgba(0,0,0,0.05)", willChange: "transform" }}>
+                    <motion.a href="#features" whileHover={{ scale: 1.05, backgroundColor: "#fafafa" }} whileTap={{ scale: 0.95 }} style={{ background: "#ffffff", color: "#09090b", border: "1px solid #e5e5e5", padding: "0 clamp(24px, 6vw, 48px)", height: "clamp(50px, 12vw, 64px)", borderRadius: 999, fontSize: "clamp(16px, 4vw, 18px)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", textDecoration: "none", transition: "background-color 0.3s, box-shadow 0.3s", boxShadow: "0 10px 20px -10px rgba(0,0,0,0.05)", willChange: "transform" }}>
                         Learn more
                     </motion.a>
                 </div>
@@ -380,26 +382,26 @@ export default function LandingPage({ onLaunch }) {
     // Scroll tracking tied specifically to the hero section's viewport presence
     const { scrollYProgress: heroScroll } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
 
-    // 🚀 FIXED: Video block overlap issue
-    // The text now fades out quickly and moves up slightly
-    const heroTextY = useTransform(heroScroll, [0, 0.15], ["0%", "-20%"]);
-    const heroTextOpacity = useTransform(heroScroll, [0, 0.15], [1, 0]);
+    // 🚀 THE CINEMATIC CROSSFADE FIX
+    // Text aggressively fades out and blurs BEFORE the video ever appears.
+    // Pointer-events switch off so hidden text doesn't block mobile taps.
+    const heroTextY = useTransform(heroScroll, [0, 0.12], ["0vh", "-15vh"]);
+    const heroTextOpacity = useTransform(heroScroll, [0, 0.1], [1, 0]);
+    const heroTextBlur = useTransform(heroScroll, [0, 0.1], ["blur(0px)", "blur(12px)"]);
+    const heroTextPointerEvents = useTransform(heroScroll, v => v > 0.05 ? "none" : "auto");
 
-    // 🚀 FIXED: The video container now starts completely invisible and pushed down 60%.
-    // As you scroll, it rises to the center (0%) and fades in securely AFTER the text fades out.
-    const videoContainerY = useTransform(heroScroll, [0, 0.3], ["60%", "0%"]);
-    const videoContainerOpacity = useTransform(heroScroll, [0, 0.1, 0.25], [0, 0, 1]);
-    const videoContainerScale = useTransform(heroScroll, [0.1, 0.3], [0.8, 1]);
-
-    // 0.25 to 0.85: The "Attention Period". The container is pinned dead-center 
-    // while the video inside scales up from 1 to 1.25.
+    // Video starts completely invisible and pushed down 40vh.
+    // It only fades in and moves up AFTER scroll passes 10%.
+    const videoContainerY = useTransform(heroScroll, [0, 0.25], ["40vh", "0vh"]);
+    const videoContainerOpacity = useTransform(heroScroll, [0.05, 0.2], [0, 1]);
+    const videoContainerScale = useTransform(heroScroll, [0.05, 0.25], [0.85, 1]);
     const innerVideoScale = useTransform(heroScroll, [0.25, 0.85], [1, 1.25]);
 
     return (
         <div style={{ minHeight: "100dvh", backgroundColor: "#ffffff", color: "#09090b", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased" }}>
             <AmbientMeshBackground />
 
-            {/* 🚀 Disabled overscroll behavior globally for native app feel */}
+            {/* 🚀 Dedicated Mobile CSS Architecture */}
             <style>{`
                 html, body {
                     margin: 0;
@@ -407,23 +409,54 @@ export default function LandingPage({ onLaunch }) {
                     overflow-x: clip; 
                     overscroll-behavior: none;
                 }
-                .bento-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: 32px; }
+                
+                .bento-grid { display: grid; grid-template-columns: repeat(1, 1fr); gap: clamp(20px, 4vw, 32px); }
                 @media (min-width: 768px) { .bento-grid { grid-template-columns: repeat(2, 1fr); } }
                 @media (min-width: 1024px) { .bento-grid { grid-template-columns: repeat(2, 1fr); } }
+                
                 .col-span-2 { grid-column: span 1; }
                 @media (min-width: 1024px) { .col-span-2 { grid-column: span 2; } }
                 
                 .nav-links { display: none; gap: 36px; font-size: 15px; color: #52525b; font-weight: 500; }
                 @media (min-width: 768px) { .nav-links { display: flex; } }
+
+                /* 🚀 Responsive Sticky Timeline Fix for iPhones */
+                .timeline-wrapper {
+                    display: flex;
+                    width: 100%;
+                    max-width: 1200px;
+                    margin: 0 auto;
+                    align-items: center;
+                    justify-content: center;
+                    flex-direction: column;
+                    gap: 30px;
+                }
+                .timeline-text, .timeline-visual { width: 100%; }
+                .timeline-visual { max-width: 360px; margin-top: 10px; }
+                .timeline-desc { display: none; } /* Hide description on tiny mobile to fit 100dvh */
+
+                @media (min-width: 500px) {
+                    .timeline-desc { display: block; }
+                }
+
+                @media (min-width: 900px) {
+                    .timeline-wrapper {
+                        flex-direction: row;
+                        justify-content: space-between;
+                        gap: 8%;
+                    }
+                    .timeline-text { width: 45%; }
+                    .timeline-visual { width: 45%; max-width: 440px; margin-top: 0; }
+                }
             `}</style>
 
             {/* ───────────────────────────────────────────── */}
             {/* NAVBAR */}
             {/* ───────────────────────────────────────────── */}
-            <motion.nav initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: customEase }} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "clamp(12px, 2vw, 20px) 5%", paddingTop: "calc(env(safe-area-inset-top, 0px) + clamp(12px, 2vw, 20px))", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.7)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <motion.nav initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: customEase }} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "clamp(12px, 2vh, 20px) max(5%, 16px)", paddingTop: "calc(env(safe-area-inset-top, 0px) + clamp(12px, 2vh, 20px))", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(255,255,255,0.7)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", borderBottom: "1px solid rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <VoxaLogo size={24} />
-                    <span style={{ fontSize: 18, fontWeight: 700, letterSpacing: "-0.02em", color: "#09090b" }}>Voxa AI</span>
+                    <span style={{ fontSize: "clamp(16px, 4vw, 18px)", fontWeight: 700, letterSpacing: "-0.02em", color: "#09090b" }}>Voxa AI</span>
                 </div>
 
                 <div className="nav-links">
@@ -432,25 +465,25 @@ export default function LandingPage({ onLaunch }) {
                     <a href="#faqs" style={{ color: "inherit", textDecoration: "none", transition: "color 0.2s" }} onMouseEnter={e => e.target.style.color = "#09090b"} onMouseLeave={e => e.target.style.color = "#52525b"}>FAQs</a>
                 </div>
 
-                <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 10px 25px -5px rgba(124, 58, 237, 0.4)" }} whileTap={{ scale: 0.95 }} style={{ background: themeColors.primary, border: "none", color: "#fff", padding: "12px 28px", borderRadius: 999, fontSize: 15, fontWeight: 600, cursor: "pointer", transition: "box-shadow 0.2s", willChange: "transform" }}>
+                <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 10px 25px -5px rgba(124, 58, 237, 0.4)" }} whileTap={{ scale: 0.95 }} style={{ background: themeColors.primary, border: "none", color: "#fff", padding: "0 clamp(16px, 4vw, 28px)", minHeight: 44, borderRadius: 999, fontSize: "clamp(14px, 3.5vw, 15px)", fontWeight: 600, cursor: "pointer", transition: "box-shadow 0.2s", willChange: "transform" }}>
                     Get Started
                 </motion.button>
             </motion.nav>
 
             {/* ───────────────────────────────────────────── */}
-            {/* HERO SECTION (Sticky Attention Scroll) */}
+            {/* HERO SECTION */}
             {/* ───────────────────────────────────────────── */}
             <section ref={heroRef} style={{ position: "relative", height: "250dvh", zIndex: 10 }}>
-                <div style={{ position: "sticky", top: 0, height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                <div style={{ position: "sticky", top: 0, height: "100dvh", width: "100%", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", paddingTop: "env(safe-area-inset-top, 0px)" }}>
 
-                    {/* TEXT BLOCK (Higher z-index to ensure it stays on top while fading) */}
-                    <motion.div style={{ position: "absolute", top: "max(120px, 16dvh)", y: heroTextY, opacity: heroTextOpacity, textAlign: "center", width: "100%", maxWidth: 1000, zIndex: 20, padding: "0 5%", willChange: "transform, opacity" }}>
-                        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, ease: customEase }} style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 32, padding: "8px 24px", borderRadius: 999, background: "#fff", border: "1px solid #e5e5e5", boxShadow: "0 10px 30px -10px rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
+                    {/* 🚀 FIXED TEXT BLOCK: Fades and blurs out early */}
+                    <motion.div style={{ position: "absolute", top: "max(120px, 16dvh)", y: heroTextY, opacity: heroTextOpacity, filter: heroTextBlur, pointerEvents: heroTextPointerEvents, textAlign: "center", width: "100%", maxWidth: 1000, zIndex: 20, padding: "0 max(5%, 16px)", willChange: "transform, opacity, filter" }}>
+                        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8, ease: customEase }} style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: "clamp(16px, 4vw, 32px)", padding: "8px 20px", borderRadius: 999, background: "#fff", border: "1px solid #e5e5e5", boxShadow: "0 10px 30px -10px rgba(0,0,0,0.05)", willChange: "transform, opacity" }}>
                             <span style={{ color: themeColors.primary, fontSize: 14 }}>✦</span>
-                            <span style={{ color: "#52525b", fontSize: "clamp(12px, 1.5vw, 14px)", fontWeight: 600 }}>Your Voice-Enabled Web Assistant</span>
+                            <span style={{ color: "#52525b", fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 600 }}>Your Voice-Enabled Web Assistant</span>
                         </motion.div>
 
-                        <h1 style={{ fontSize: "clamp(42px, 8vw, 96px)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05, margin: "0 auto 24px auto", color: "#09090b", maxWidth: 900 }}>
+                        <h1 style={{ fontSize: "clamp(42px, 12vw, 96px)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05, margin: "0 auto 20px auto", color: "#09090b", maxWidth: 900 }}>
                             <RevealText text="Speak. Assist. Engage." />
                             <span style={{ display: "block" }}>
                                 <motion.span initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.8, ease: customEase }} style={{ background: themeColors.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", willChange: "transform, opacity", display: "inline-block" }}>
@@ -459,24 +492,24 @@ export default function LandingPage({ onLaunch }) {
                             </span>
                         </h1>
 
-                        <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 1, ease: customEase }} style={{ fontSize: "clamp(16px, 2vw, 22px)", color: "#52525b", fontWeight: 400, maxWidth: 650, margin: "0 auto 40px auto", lineHeight: 1.6, willChange: "transform, opacity" }}>
+                        <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 1, ease: customEase }} style={{ fontSize: "clamp(16px, 4vw, 22px)", color: "#52525b", fontWeight: 400, maxWidth: 650, margin: "0 auto 32px auto", lineHeight: 1.6, willChange: "transform, opacity" }}>
                             Your voice-first experience for smarter, humanlike web interactions. Stop typing and start achieving.
                         </motion.p>
 
-                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 1.2, ease: customEase }} style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap", willChange: "transform, opacity" }}>
-                            <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(0,0,0,0.15)" }} whileTap={{ scale: 0.95 }} style={{ background: "#09090b", color: "#fff", border: "none", padding: "0 clamp(24px, 4vw, 40px)", height: 60, borderRadius: 999, fontSize: 16, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 12, transition: "box-shadow 0.2s", willChange: "transform" }}>
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 1.2, ease: customEase }} style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap", flexDirection: "row", willChange: "transform, opacity" }}>
+                            <motion.button onClick={onLaunch} whileHover={{ scale: 1.05, boxShadow: "0 20px 40px -10px rgba(0,0,0,0.15)" }} whileTap={{ scale: 0.95 }} style={{ background: "#09090b", color: "#fff", border: "none", padding: "0 clamp(20px, 6vw, 40px)", minHeight: "clamp(50px, 12vw, 60px)", borderRadius: 999, fontSize: "clamp(15px, 4vw, 16px)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 12, transition: "box-shadow 0.2s", willChange: "transform" }}>
                                 <span style={{ width: 8, height: 8, borderRadius: "50%", background: themeColors.primary, display: "block" }} /> Start Talking
                             </motion.button>
-                            <motion.a href="#how-it-works" whileHover={{ scale: 1.05, backgroundColor: "#f4f4f5" }} whileTap={{ scale: 0.95 }} style={{ background: "#fff", color: "#09090b", border: "1px solid #e5e5e5", padding: "0 clamp(24px, 4vw, 40px)", height: 60, borderRadius: 999, fontSize: 16, fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", transition: "background-color 0.2s", willChange: "transform" }}>
+                            <motion.a href="#how-it-works" whileHover={{ scale: 1.05, backgroundColor: "#f4f4f5" }} whileTap={{ scale: 0.95 }} style={{ background: "#fff", color: "#09090b", border: "1px solid #e5e5e5", padding: "0 clamp(20px, 6vw, 40px)", minHeight: "clamp(50px, 12vw, 60px)", borderRadius: 999, fontSize: "clamp(15px, 4vw, 16px)", fontWeight: 600, cursor: "pointer", display: "inline-flex", alignItems: "center", justifyContent: "center", textDecoration: "none", transition: "background-color 0.2s", willChange: "transform" }}>
                                 See how it works
                             </motion.a>
                         </motion.div>
                     </motion.div>
 
-                    {/* 🚀 FIXED VIDEO BLOCK: Added the opacity mapping here so it is totally invisible initially */}
-                    <motion.div style={{ position: "relative", y: videoContainerY, opacity: videoContainerOpacity, scale: videoContainerScale, width: "100%", maxWidth: 1100, padding: "0 5%", zIndex: 10, willChange: "transform, opacity" }}>
-                        <div style={{ width: "100%", background: "rgba(255,255,255,0.9)", borderRadius: 32, padding: 12, border: "1px solid rgba(255,255,255,1)", boxShadow: "0 40px 80px -20px rgba(124, 58, 237, 0.25), 0 0 40px 10px rgba(255,255,255,0.8)", backdropFilter: "blur(30px)" }}>
-                            <div style={{ width: "100%", aspectRatio: "16/9", background: "#05050a", borderRadius: 20, boxShadow: "inset 0 4px 10px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" }}>
+                    {/* 🚀 FIXED VIDEO BLOCK: Invisible initially, fades in securely after text fades out */}
+                    <motion.div style={{ position: "relative", y: videoContainerY, opacity: videoContainerOpacity, scale: videoContainerScale, width: "100%", maxWidth: 1100, padding: "0 max(5%, 16px)", zIndex: 10, willChange: "transform, opacity" }}>
+                        <div style={{ width: "100%", background: "rgba(255,255,255,0.85)", borderRadius: "clamp(20px, 5vw, 32px)", padding: "clamp(8px, 2vw, 12px)", border: "1px solid rgba(255,255,255,1)", boxShadow: "0 40px 80px -20px rgba(124, 58, 237, 0.2), 0 0 30px 10px rgba(255,255,255,0.9)", backdropFilter: "blur(40px)", WebkitBackdropFilter: "blur(40px)" }}>
+                            <div style={{ width: "100%", aspectRatio: "16/9", background: "#05050a", borderRadius: "clamp(12px, 4vw, 20px)", boxShadow: "inset 0 4px 10px rgba(0,0,0,0.2)", position: "relative", overflow: "hidden" }}>
                                 <motion.video
                                     src="/Recording 2026-04-05 220447.mp4"
                                     autoPlay loop muted playsInline
@@ -490,7 +523,7 @@ export default function LandingPage({ onLaunch }) {
             </section>
 
             {/* ───────────────────────────────────────────── */}
-            {/* HOW IT WORKS (Sticky Scroll) */}
+            {/* HOW IT WORKS */}
             {/* ───────────────────────────────────────────── */}
             <StickyTimeline />
 
@@ -512,8 +545,7 @@ export default function LandingPage({ onLaunch }) {
             {/* ───────────────────────────────────────────── */}
             {/* FOOTER */}
             {/* ───────────────────────────────────────────── */}
-            {/* 🚀 Safe Area Inset added for iPhone bottom swipe bar */}
-            <footer style={{ padding: "clamp(60px, 8vw, 80px) 5% calc(env(safe-area-inset-bottom, 0px) + clamp(40px, 5vw, 60px)) 5%", background: "#ffffff", borderTop: "1px solid #f4f4f5", position: "relative", zIndex: 10 }}>
+            <footer style={{ padding: "clamp(60px, 8vw, 80px) max(5%, 20px) calc(env(safe-area-inset-bottom, 0px) + clamp(40px, 5vw, 60px)) max(5%, 20px)", background: "#ffffff", borderTop: "1px solid #f4f4f5", position: "relative", zIndex: 10 }}>
                 <div style={{ maxWidth: 1400, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 40 }}>
 
                     <div style={{ maxWidth: 350 }}>
