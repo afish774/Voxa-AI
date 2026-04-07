@@ -157,33 +157,51 @@ function StickyTimeline() {
         <section ref={containerRef} id="how-it-works" style={{ position: "relative", height: "250dvh", backgroundColor: "transparent" }}>
             <div style={{ position: "sticky", top: 0, height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center", padding: "0 max(5%, 20px)" }}>
 
-                {/* 🚀 Mobile-optimized flex container via CSS classes */}
+                {/* 🚀 Mobile-optimized responsive layout wrapper */}
                 <div className="timeline-wrapper">
 
                     {/* Left Text / Timeline */}
                     <div className="timeline-text" style={{ position: "relative" }}>
-                        <div style={{ marginBottom: "clamp(30px, 6vw, 60px)" }}>
-                            <h2 style={{ fontSize: "clamp(32px, 8vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>How it works.</h2>
-                            <p style={{ fontSize: "clamp(16px, 4vw, 20px)", color: "#52525b" }}>Three simple steps to absolute productivity.</p>
+                        <div className="timeline-header">
+                            <h2 style={{ fontSize: "clamp(32px, 8vw, 56px)", fontWeight: 700, color: "#09090b", letterSpacing: "-0.04em", margin: "0 0 8px 0" }}>How it works.</h2>
+                            <p style={{ fontSize: "clamp(16px, 4vw, 20px)", color: "#52525b", margin: 0 }}>Three simple steps to absolute productivity.</p>
                         </div>
 
-                        <div style={{ position: "relative", paddingLeft: "clamp(24px, 5vw, 40px)", display: "flex", flexDirection: "column", gap: "clamp(30px, 6vw, 60px)" }}>
+                        {/* 🚀 Pixel-Perfect Absolute Math for the Timeline Dots */}
+                        <div style={{ position: "relative", paddingLeft: 48, display: "flex", flexDirection: "column", gap: 16 }}>
+
                             {/* Progress Line */}
-                            <div style={{ position: "absolute", left: "clamp(4px, 1.5vw, 14px)", top: 0, bottom: 0, width: 4, background: "#f4f4f5", borderRadius: 4 }}>
+                            <div style={{ position: "absolute", left: 18, top: 0, bottom: 0, width: 4, background: "#f4f4f5", borderRadius: 4 }}>
                                 <motion.div style={{ width: "100%", height: lineHeight, background: themeColors.gradient, borderRadius: 4 }} />
                             </div>
 
                             {["Sign In", "Start a Call", "Get Actionable Intel"].map((title, i) => (
-                                <div key={i} style={{ position: "relative", opacity: activeStep >= i ? 1 : 0.4, transition: "opacity 0.4s ease" }}>
-                                    <motion.div animate={{ scale: activeStep === i ? 1.2 : 1, borderColor: activeStep >= i ? themeColors.primary : "#e5e5e5" }} style={{ position: "absolute", left: "calc(clamp(4px, 1.5vw, 14px) - 14px - clamp(24px, 5vw, 40px))", top: -4, width: "clamp(24px, 5vw, 32px)", height: "clamp(24px, 5vw, 32px)", borderRadius: "50%", background: "#fff", border: "4px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "clamp(12px, 3vw, 14px)", fontWeight: 700, color: activeStep >= i ? themeColors.primary : "#a1a1aa", zIndex: 2, transition: "border-color 0.4s ease", willChange: "transform" }}>
+                                <div key={i} style={{ position: "relative", opacity: activeStep === i ? 1 : 0.4, transition: "opacity 0.4s ease" }}>
+
+                                    {/* Animated Node */}
+                                    <motion.div animate={{ scale: activeStep === i ? 1.2 : 1, borderColor: activeStep >= i ? themeColors.primary : "#e5e5e5", background: activeStep >= i ? themeColors.primary : "#fff", color: activeStep >= i ? "#fff" : "#a1a1aa" }} style={{ position: "absolute", left: -44, top: -2, width: 32, height: 32, borderRadius: "50%", border: "3px solid #e5e5e5", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, zIndex: 2, transition: "all 0.4s ease", willChange: "transform" }}>
                                         {i + 1}
                                     </motion.div>
-                                    <h3 style={{ fontSize: "clamp(20px, 5vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 12, letterSpacing: "-0.02em" }}>{title}</h3>
-                                    <p className="timeline-desc" style={{ fontSize: "clamp(15px, 3.5vw, 18px)", color: "#52525b", lineHeight: 1.6 }}>
-                                        {i === 0 && "Create an account or log in to your Voxa dashboard. Your conversations are securely synced."}
-                                        {i === 1 && "No typing required. Just speak naturally, and Voxa will listen, parse, and respond in real time."}
-                                        {i === 2 && "Voxa generates dynamic widgets, data visualizations, and clear answers instantly."}
-                                    </p>
+
+                                    <h3 style={{ fontSize: "clamp(20px, 5vw, 28px)", fontWeight: 700, color: "#09090b", margin: "0 0 4px 0", letterSpacing: "-0.02em", transition: "color 0.4s ease" }}>{title}</h3>
+
+                                    {/* 🚀 The Cinematic Accordion Effect */}
+                                    <AnimatePresence initial={false}>
+                                        {activeStep === i && (
+                                            <motion.p
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: "auto", opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.3, ease: customEase }}
+                                                style={{ overflow: "hidden", fontSize: "clamp(15px, 3.5vw, 18px)", color: "#52525b", lineHeight: 1.6, margin: 0, paddingBottom: 16 }}
+                                            >
+                                                {i === 0 && "Create an account or log in to your Voxa dashboard. Your conversations are securely synced."}
+                                                {i === 1 && "No typing required. Just speak naturally, and Voxa will listen, parse, and respond in real time."}
+                                                {i === 2 && "Voxa generates dynamic widgets, data visualizations, and clear answers instantly."}
+                                            </motion.p>
+                                        )}
+                                    </AnimatePresence>
+
                                 </div>
                             ))}
                         </div>
@@ -191,7 +209,7 @@ function StickyTimeline() {
 
                     {/* Right Hardware Mockup */}
                     <div className="timeline-visual" style={{ display: "flex", justifyContent: "center" }}>
-                        <motion.div style={{ width: "100%", maxWidth: 440, aspectRatio: "3/4", background: "#ffffff", borderRadius: 32, padding: "clamp(8px, 2vw, 16px)", boxShadow: "0 40px 80px -20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.8)", border: "1px solid #e5e5e5" }}>
+                        <motion.div style={{ width: "100%", aspectRatio: "3/4", background: "#ffffff", borderRadius: 32, padding: "clamp(8px, 2vw, 16px)", boxShadow: "0 40px 80px -20px rgba(0,0,0,0.15), inset 0 2px 4px rgba(255,255,255,0.8)", border: "1px solid #e5e5e5" }}>
                             <div style={{ width: "100%", height: "100%", background: "#05050a", borderRadius: 20, overflow: "hidden", position: "relative", boxShadow: "inset 0 4px 10px rgba(0,0,0,0.8)" }}>
                                 <AnimatePresence mode="wait">
                                     {renderTabletUI()}
@@ -334,8 +352,8 @@ function SplitPaneFAQ() {
                         <AnimatePresence mode="wait">
                             <motion.div key={activeIndex} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.4, ease: customEase }} style={{ willChange: "transform, opacity" }}>
                                 <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.1)", width: "clamp(40px, 10vw, 48px)", height: "clamp(40px, 10vw, 48px)", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center" }}><IconBrain /></div>
-                                <h3 style={{ fontSize: "clamp(20px, 5vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 20, letterSpacing: "-0.02em" }}>{faqs[activeIndex].q}</h3>
-                                <p style={{ fontSize: "clamp(15px, 3.5vw, 20px)", color: "#52525b", lineHeight: 1.6 }}>{faqs[activeIndex].a}</p>
+                                <h3 style={{ fontSize: "clamp(22px, 3vw, 28px)", fontWeight: 700, color: "#09090b", marginBottom: 20, letterSpacing: "-0.02em" }}>{faqs[activeIndex].q}</h3>
+                                <p style={{ fontSize: "clamp(16px, 2vw, 20px)", color: "#52525b", lineHeight: 1.6 }}>{faqs[activeIndex].a}</p>
                             </motion.div>
                         </AnimatePresence>
                     </div>
@@ -384,14 +402,13 @@ export default function LandingPage({ onLaunch }) {
 
     // 🚀 THE CINEMATIC CROSSFADE FIX
     // Text aggressively fades out and blurs BEFORE the video ever appears.
-    // Pointer-events switch off so hidden text doesn't block mobile taps.
     const heroTextY = useTransform(heroScroll, [0, 0.12], ["0vh", "-15vh"]);
     const heroTextOpacity = useTransform(heroScroll, [0, 0.1], [1, 0]);
     const heroTextBlur = useTransform(heroScroll, [0, 0.1], ["blur(0px)", "blur(12px)"]);
     const heroTextPointerEvents = useTransform(heroScroll, v => v > 0.05 ? "none" : "auto");
 
-    // Video starts completely invisible and pushed down 40vh.
-    // It only fades in and moves up AFTER scroll passes 10%.
+    // Video starts completely invisible and pushed down.
+    // It only fades in and moves up AFTER text fades out.
     const videoContainerY = useTransform(heroScroll, [0, 0.25], ["40vh", "0vh"]);
     const videoContainerOpacity = useTransform(heroScroll, [0.05, 0.2], [0, 1]);
     const videoContainerScale = useTransform(heroScroll, [0.05, 0.25], [0.85, 1]);
@@ -401,7 +418,7 @@ export default function LandingPage({ onLaunch }) {
         <div style={{ minHeight: "100dvh", backgroundColor: "#ffffff", color: "#09090b", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased" }}>
             <AmbientMeshBackground />
 
-            {/* 🚀 Dedicated Mobile CSS Architecture */}
+            {/* 🚀 Mobile-First CSS Architecture */}
             <style>{`
                 html, body {
                     margin: 0;
@@ -431,12 +448,17 @@ export default function LandingPage({ onLaunch }) {
                     flex-direction: column;
                     gap: 30px;
                 }
-                .timeline-text, .timeline-visual { width: 100%; }
-                .timeline-visual { max-width: 360px; margin-top: 10px; }
-                .timeline-desc { display: none; } /* Hide description on tiny mobile to fit 100dvh */
+                .timeline-text { width: 100%; order: 2; }
+                .timeline-header { text-align: center; margin-bottom: 24px; }
+                
+                .timeline-visual { 
+                    width: 100%; 
+                    max-width: 260px; /* Small enough to fit with text on mobile */
+                    order: 1; 
+                }
 
-                @media (min-width: 500px) {
-                    .timeline-desc { display: block; }
+                @media (min-height: 750px) {
+                    .timeline-visual { max-width: 320px; }
                 }
 
                 @media (min-width: 900px) {
@@ -445,8 +467,9 @@ export default function LandingPage({ onLaunch }) {
                         justify-content: space-between;
                         gap: 8%;
                     }
-                    .timeline-text { width: 45%; }
-                    .timeline-visual { width: 45%; max-width: 440px; margin-top: 0; }
+                    .timeline-text { width: 45%; order: 1; }
+                    .timeline-visual { width: 45%; max-width: 440px; order: 2; }
+                    .timeline-header { text-align: left; margin-bottom: 60px; }
                 }
             `}</style>
 
