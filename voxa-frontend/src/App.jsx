@@ -259,9 +259,7 @@ function WaveCanvas({ phase, ribbonSplit, isAppMuted }) {
         { yOff: h * 0.10, f: 1.75, ph: 3.8, aS: 0.55, thickness: h * 0.016, ci: [3, 0], alpha: 0.28 },
       ];
 
-      // 🚀 THE FIX: Dynamic scaling for mobile aspect ratios
-      // This prevents the amplitude from growing massive and "folding" on tall screens,
-      // and stretches the waves out horizontally so they look smooth.
+      // Dynamic scaling for mobile aspect ratios
       const isMobile = w < h;
       const baseDim = isMobile ? w * 1.6 : h;
       const freqScale = isMobile ? 0.5 : 1.0;
@@ -271,7 +269,6 @@ function WaveCanvas({ phase, ribbonSplit, isAppMuted }) {
         const points = []; const amp = baseDim * s.currentAmplitude;
         for (let i = -10; i <= steps + 10; i++) {
           const n = i / steps;
-          // 🚀 THE FIX: Applying freqScale to the sine wave calculation
           const osc = Math.sin(n * Math.PI * 2.2 * ribbon.f * freqScale + time + ribbon.ph) * amp * ribbon.aS * 0.55
             + Math.sin(n * Math.PI * 3.7 * ribbon.f * freqScale + time * 0.67 + ribbon.ph * 1.3) * amp * ribbon.aS * 0.28
             + Math.sin(n * Math.PI * 6.1 * freqScale + time * 0.42 + ribbon.ph * 0.8) * amp * ribbon.aS * 0.12;
@@ -372,6 +369,10 @@ function SpatialCameraWindow({ isActive, onClose, videoRef }) {
             <video id="voxa-camera-feed" ref={videoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0 }} />
 
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
+              <div style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", padding: "8px 16px", borderRadius: 999, color: "#fff", fontSize: 13, fontWeight: 600, letterSpacing: "0.08em", display: "flex", alignItems: "center", border: "1px solid rgba(255,255,255,0.15)" }}>
+                <span style={{ display: "inline-block", width: 8, height: 8, background: "#22c55e", borderRadius: "50%", marginRight: 8, animation: "dotBeat 1.5s infinite" }} />
+                VISION
+              </div>
               <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(20px) saturate(150%)", WebkitBackdropFilter: "blur(20px) saturate(150%)", border: "1px solid rgba(255,255,255,0.2)", width: 44, height: 44, borderRadius: "50%", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "background 0.2s" }}>
                 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
@@ -404,8 +405,9 @@ function QuerySlider({ theme, onSelect }) {
     return () => clearInterval(t);
   }, []);
 
+  // 🚀 THE FIX: Applied the responsive class name for mobile vertical spacing
   return (
-    <div style={{ position: "relative", height: "clamp(24px, 3vw, 32px)", overflow: "hidden", width: "100%", marginTop: "6px", cursor: "pointer" }} onClick={() => onSelect(SAMPLE_QUERIES[idx])}>
+    <div className="query-slider-container" style={{ position: "relative", height: "clamp(24px, 3vw, 32px)", overflow: "hidden", width: "100%", cursor: "pointer" }} onClick={() => onSelect(SAMPLE_QUERIES[idx])}>
       <AnimatePresence mode="wait">
         <motion.p key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }} style={{ position: "absolute", width: "100%", textAlign: "inherit", fontSize: "clamp(13px, 1.5vw, 15px)", color: theme.textMuted, fontWeight: 400, letterSpacing: "-0.01em", lineHeight: 1.4, transition: "color 0.2s" }} onMouseEnter={(e) => e.target.style.color = theme.text} onMouseLeave={(e) => e.target.style.color = theme.textMuted}>
           "{SAMPLE_QUERIES[idx]}"
@@ -1109,6 +1111,10 @@ export default function VoiceAssistant({ user, onLogout }) {
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
     }}>
+      {/* 🚀 THE FIX: Added a media query directly in the global style block 
+          This ensures the query slider acts as a responsive spring. On desktop, 
+          it stays close to the text (margin-top: 6px). On mobile (max-aspect-ratio: 3/4),
+          it pushes far down (12vh) below the density of the 3D waves. */}
       <style>{`
         html, body { margin: 0; padding: 0; background: #000; overscroll-behavior-y: none; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -1118,6 +1124,15 @@ export default function VoiceAssistant({ user, onLogout }) {
         input::placeholder, textarea::placeholder { color: rgba(140,140,160,0.45); }
         @keyframes blinkCursor { 0%,100%{opacity:1} 50%{opacity:0} }
         @keyframes dotBeat { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+        
+        .query-slider-container {
+          margin-top: 6px;
+        }
+        @media (max-aspect-ratio: 3/4) { 
+          .query-slider-container {
+            margin-top: 14vh; 
+          }
+        }
       `}</style>
 
       <audio ref={handleAudioRef} style={{ display: "none" }} onEnded={handleAudioEnd} />
@@ -1209,7 +1224,9 @@ export default function VoiceAssistant({ user, onLogout }) {
               <motion.div key="greeting" initial={{ opacity: 0, y: 20, filter: "blur(10px)" }} animate={{ opacity: greetingVisible ? 1 : 0, y: greetingVisible ? 0 : -30, filter: greetingVisible ? "blur(0px)" : "blur(12px)", scale: greetingVisible ? 1 : 0.9 }} exit={{ opacity: 0, y: -30, filter: "blur(12px)", scale: 0.9 }} transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }} style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
                 <p style={{ margin: 0, fontSize: "clamp(15px, 2vw, 18px)", color: theme.textMuted, fontWeight: 400, letterSpacing: "0.01em" }}>{greetingText}, {userName?.split(' ')[0] || "Guest"}</p>
                 <p style={{ margin: 0, fontSize: "clamp(32px, 4.5vw, 46px)", color: theme.text, fontWeight: 500, letterSpacing: "-0.02em", lineHeight: 1.2 }}>How can I help you?</p>
+
                 <QuerySlider theme={theme} onSelect={handleRandomQuerySelect} />
+
               </motion.div>
             )}
 
