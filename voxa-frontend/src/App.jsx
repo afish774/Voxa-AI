@@ -259,7 +259,6 @@ function WaveCanvas({ phase, ribbonSplit, isAppMuted }) {
         { yOff: h * 0.10, f: 1.75, ph: 3.8, aS: 0.55, thickness: h * 0.016, ci: [3, 0], alpha: 0.28 },
       ];
 
-      // Dynamic scaling for mobile aspect ratios
       const isMobile = w < h;
       const baseDim = isMobile ? w * 1.6 : h;
       const freqScale = isMobile ? 0.5 : 1.0;
@@ -405,11 +404,13 @@ function QuerySlider({ theme, onSelect }) {
     return () => clearInterval(t);
   }, []);
 
-  // 🚀 THE FIX: Applied the responsive class name for mobile vertical spacing
+  // 🚀 THE FIX: Inline `height` is completely removed from the style block.
+  // The CSS class `.query-slider-container` now fully controls the height,
+  // preventing the text from being horizontally cut in half when it wraps.
   return (
-    <div className="query-slider-container" style={{ position: "relative", height: "clamp(24px, 3vw, 32px)", overflow: "hidden", width: "100%", cursor: "pointer" }} onClick={() => onSelect(SAMPLE_QUERIES[idx])}>
+    <div className="query-slider-container" style={{ position: "relative", overflow: "hidden", width: "100%", cursor: "pointer", padding: "0 10px" }} onClick={() => onSelect(SAMPLE_QUERIES[idx])}>
       <AnimatePresence mode="wait">
-        <motion.p key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }} style={{ position: "absolute", width: "100%", textAlign: "inherit", fontSize: "clamp(13px, 1.5vw, 15px)", color: theme.textMuted, fontWeight: 400, letterSpacing: "-0.01em", lineHeight: 1.4, transition: "color 0.2s" }} onMouseEnter={(e) => e.target.style.color = theme.text} onMouseLeave={(e) => e.target.style.color = theme.textMuted}>
+        <motion.p key={idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }} style={{ position: "absolute", width: "100%", left: 0, textAlign: "center", fontSize: "clamp(13px, 1.5vw, 15px)", color: theme.textMuted, fontWeight: 400, letterSpacing: "-0.01em", lineHeight: 1.4, transition: "color 0.2s" }} onMouseEnter={(e) => e.target.style.color = theme.text} onMouseLeave={(e) => e.target.style.color = theme.textMuted}>
           "{SAMPLE_QUERIES[idx]}"
         </motion.p>
       </AnimatePresence>
@@ -1111,10 +1112,6 @@ export default function VoiceAssistant({ user, onLogout }) {
       fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
       WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale",
     }}>
-      {/* 🚀 THE FIX: Added a media query directly in the global style block 
-          This ensures the query slider acts as a responsive spring. On desktop, 
-          it stays close to the text (margin-top: 6px). On mobile (max-aspect-ratio: 3/4),
-          it pushes far down (12vh) below the density of the 3D waves. */}
       <style>{`
         html, body { margin: 0; padding: 0; background: #000; overscroll-behavior-y: none; }
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -1127,10 +1124,12 @@ export default function VoiceAssistant({ user, onLogout }) {
         
         .query-slider-container {
           margin-top: 6px;
+          height: 32px;
         }
-        @media (max-aspect-ratio: 3/4) { 
+        @media (max-aspect-ratio: 3/4), (max-width: 600px) { 
           .query-slider-container {
-            margin-top: 14vh; 
+            margin-top: 12vh; 
+            height: 48px; /* Gives enough height for wrapped text to not get cut in half */
           }
         }
       `}</style>
