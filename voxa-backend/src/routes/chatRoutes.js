@@ -1,13 +1,12 @@
 import express from 'express';
-import { generateAIResponse } from '../services/gemini.js';
+import { generateAIResponse } from '../services/llm.js'; // 🚀 Pointing to new Custom Pipeline
 import { executeCommand } from '../services/system.js';
 import { Message } from '../services/memory.js';
 import { generateSpeech } from '../services/tts.js';
-import { protect } from '../middleware/authMiddleware.js'; // 🚀 Import the Security Guard
+import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
 
-// 🚀 Use 'protect' and filter history by req.user._id
 router.get('/history', protect, async (req, res) => {
     try {
         const history = await Message.find({ user: req.user._id }).sort({ timestamp: -1 }).limit(50).lean();
@@ -17,7 +16,6 @@ router.get('/history', protect, async (req, res) => {
     }
 });
 
-// 🚀 Use 'protect' on the main chat route
 router.post('/', protect, async (req, res) => {
     try {
         const { prompt, image, voice } = req.body;
@@ -26,25 +24,26 @@ router.post('/', protect, async (req, res) => {
         console.log(`🗣️ User [${req.user.name}] said: "${prompt}"`);
         if (image) console.log(`📥 Server received image payload.`);
 
-        // 💾 Save User's prompt to MongoDB
         await Message.create({ user: req.user._id, role: 'user', text: prompt });
 
         const commandResponse = executeCommand(prompt);
         if (commandResponse) {
             console.log(`⚡ System Command Executed.`);
             const audio = await generateSpeech(commandResponse, voice || 'female');
-
-            // 💾 Save Command response to MongoDB
             await Message.create({ user: req.user._id, role: 'ai', text: commandResponse });
-
             return res.json({ text: commandResponse, audio, success: true });
         }
 
-        // NOTE: We pass req.user._id to Gemini in case your RAG vault needs it!
+        // Send to RAG Pipeline
         const aiResponse = await generateAIResponse(prompt, image, req.user._id);
+
+        // 🛡️ Graceful Error Handling
+        if (aiResponse.error) {
+            return res.status(200).json({ text: aiResponse.text, success: false });
+        }
+
         console.log(`🤖 Voxa thought: "${aiResponse.text}"`);
 
-        // 💾 Save Gemini response to MongoDB
         await Message.create({ user: req.user._id, role: 'ai', text: aiResponse.text });
 
         const base64Audio = await generateSpeech(aiResponse.text, voice || 'female');

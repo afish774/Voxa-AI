@@ -23,13 +23,13 @@ const corsOptions = {
         callback(null, true); // Accepts any incoming Vercel URL
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"], // Crucial for JWT tokens
+    allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
 };
 
 app.use(cors(corsOptions));
 
-// 4. Express 5 Preflight Bypass Hack (Fixes the wildcard crash)
+// 4. Express 5 Preflight Bypass Hack 
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
         return res.sendStatus(200);
