@@ -1,6 +1,6 @@
 import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
-import { TavilySearch } from "@langchain/tavily"; // 🚀 FIXED: Using the new dedicated package!
+import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
 import dotenv from 'dotenv';
 
@@ -9,18 +9,17 @@ dotenv.config();
 // 🧠 1. Initialize High-Speed Groq Models (Llama 3)
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    modelName: "llama3-70b-8192",
+    model: "llama3-70b-8192", // 🚀 FIXED: Changed from 'modelName' to 'model'
     temperature: 0.7,
 });
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    modelName: "llama-3.2-11b-vision-preview",
+    model: "llama-3.2-11b-vision-preview", // 🚀 FIXED: Changed from 'modelName' to 'model'
     temperature: 0.7,
 });
 
 // 🌐 2. Initialize Live Web Search Tool
-// 🚀 FIXED: Updated to use the new TavilySearch class
 const searchTool = new TavilySearch({
     maxResults: 2, // Keeps context window small and fast
     apiKey: process.env.TAVILY_API_KEY,
@@ -67,7 +66,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
 
         let messages = [new SystemMessage(systemInstruction)];
 
-        // 👁️ Vision Routing (Vision models generally don't use external tools)
+        // 👁️ Vision Routing
         let result;
         if (base64Image && base64Image.length > 100) {
             const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
@@ -95,7 +94,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
 
                 // Execute the search tool
                 for (const toolCall of result.tool_calls) {
-                    // 🚀 FIXED: The new package registers the tool with the name 'tavily_search_results_json' by default
                     if (toolCall.name === "tavily_search_results_json" || toolCall.name === searchTool.name) {
                         const searchData = await searchTool.invoke(toolCall.args);
 
