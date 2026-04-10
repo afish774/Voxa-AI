@@ -1,39 +1,43 @@
 import textToSpeech from '@google-cloud/text-to-speech';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const rootDir = path.resolve(__dirname, '../../');
+dotenv.config();
 
-const keyFilename = path.join(rootDir, 'google-credentials.json');
+// 🚀 FIXED: Initialize Google TTS Client directly from memory! No files needed.
+let clientOptions = {};
 
-const client = new textToSpeech.TextToSpeechClient({
-    keyFilename: keyFilename
-});
+try {
+    if (process.env.GOOGLE_CREDENTIALS) {
+        // Parse the raw JSON string directly from the Render environment variable
+        clientOptions.credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+        console.log("🔐 Google TTS Authenticated securely from memory.");
+    } else {
+        console.warn("⚠️ GOOGLE_CREDENTIALS environment variable is missing.");
+    }
+} catch (e) {
+    console.error("❌ Failed to parse GOOGLE_CREDENTIALS JSON:", e.message);
+}
 
-export const generateSpeech = async (text, voicePreference) => {
+const client = new textToSpeech.TextToSpeechClient(clientOptions);
+
+export const generateSpeech = async (text, voicePref = 'female') => {
     try {
-        const spokenText = text.replace(/\|\|CARD:[^|]+\|\|/g, '').trim();
-
-        // 🚀 UPGRADED: Using Google's absolute best premium Neural2 voices
-        const voiceName = voicePreference === 'male' ? 'en-US-Neural2-J' : 'en-US-Neural2-F';
+        // Map user preferences to high-quality Google Wavenet/Journey voices
+        let voiceName = 'en-US-Journey-F'; // Default Female
+        if (voicePref === 'male') voiceName = 'en-US-Journey-D';
 
         const request = {
-            input: { text: spokenText },
+            input: { text: text },
             voice: { languageCode: 'en-US', name: voiceName },
-            audioConfig: {
-                audioEncoding: 'MP3',
-                // Drop the pitch by 2 semitones if male for a deeper, richer sound
-                pitch: voicePreference === 'male' ? -2.0 : 0.0,
-                speakingRate: 1.05
-            },
+            audioConfig: { audioEncoding: 'MP3' },
         };
 
         const [response] = await client.synthesizeSpeech(request);
+
+        // Return base64 string to stream to the frontend
         return response.audioContent.toString('base64');
-    } catch (err) {
-        console.error("❌ TTS Error:", err.message);
-        return null;
+    } catch (error) {
+        console.error("❌ Google TTS Generation Error:", error.message);
+        return null; // Return null so the app doesn't crash, it just skips audio
     }
 };
