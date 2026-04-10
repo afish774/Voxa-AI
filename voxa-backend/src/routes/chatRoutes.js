@@ -63,13 +63,13 @@ router.post('/', protect, async (req, res) => {
         }
 
         // 3. ⚡ INSTANT TEXT DELIVERY ⚡
-        // The UI will update with text and widgets immediately without waiting for audio!
+        // The UI will update with text and widgets immediately!
         console.log(`🤖 Voxa thought: "${aiResponse.text}"`);
         sendStreamEvent('text', { text: aiResponse.text, card: aiResponse.card });
         await Message.create({ user: req.user._id, role: 'ai', text: aiResponse.text });
 
         // 4. GENERATE AUDIO IN BACKGROUND
-        sendStreamEvent('status', { text: 'Synthesizing voice...' });
+        // 🚀 FIXED: Removed the 'Synthesizing voice...' status so it stops overwriting the actual text!
         const base64Audio = await generateSpeech(aiResponse.text, voice || 'female');
 
         // 5. SEND AUDIO AND CLOSE CONNECTION
