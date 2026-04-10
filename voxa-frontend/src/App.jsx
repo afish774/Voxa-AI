@@ -72,6 +72,7 @@ const IconUser = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="non
 const IconMail = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>;
 const IconClock = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
 const IconTrash = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
+const IconImage = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>;
 
 const VoxaLogo = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -587,7 +588,6 @@ function HistoryScreen({ theme, user, onClose }) {
   );
 }
 
-// 🚀 NEW: THE MEMORY DASHBOARD SCREEN
 function MemoryScreen({ theme, user }) {
   const [memories, setMemories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -607,7 +607,6 @@ function MemoryScreen({ theme, user }) {
   };
 
   const deleteMemory = async (id) => {
-    // Optimistic UI update
     setMemories(memories.filter(m => m._id !== id));
     try {
       await fetch(`https://voxa-ai-zh5o.onrender.com/api/memory/${id}`, {
@@ -616,7 +615,7 @@ function MemoryScreen({ theme, user }) {
       });
     } catch (error) {
       console.error("Failed to delete memory", error);
-      fetchMemories(); // Re-fetch if it fails
+      fetchMemories();
     }
   };
 
@@ -740,7 +739,7 @@ function SettingsDropdown({ theme, isDark, onToggleTheme, onClose, onOpenModal, 
     { label: isDark ? "Light Mode" : "Dark Mode", action: onToggleTheme },
     { label: "Profile Setup", action: () => onOpenModal("profile") },
     { label: "Chat History", action: () => onOpenModal("history") },
-    { label: "Core Memories (Brain)", action: () => onOpenModal("brain") }, // 🚀 NEW MENU ITEM
+    { label: "Core Memories (Brain)", action: () => onOpenModal("brain") },
     { label: "Voice Personalization", action: () => onOpenModal("personalization") },
     { label: "Submit Feedback", action: () => onOpenModal("feedback") },
     { label: "Contact Support", action: () => onOpenModal("support") },
@@ -858,6 +857,10 @@ export default function VoiceAssistant({ user, onLogout }) {
   const [activeModal, setActiveModal] = useState(null);
   const [isDockHovered, setIsDockHovered] = useState(false);
 
+  // 🚀 NEW: File Upload State
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const fileInputRef = useRef(null);
+
   const [showGreeting, setShowGreeting] = useState(true);
   const [showQuery, setShowQuery] = useState(false);
   const [greetingVisible, setGreetingVisible] = useState(true);
@@ -911,6 +914,18 @@ export default function VoiceAssistant({ user, onLogout }) {
       }
     }
   }, []);
+
+  // 🚀 NEW: File Upload Handler
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setUploadedImage(reader.result);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = ''; // Reset so they can upload the same file again if needed
+  };
 
   // ─────────────────────────────────────────────
   // THE ENGINE
@@ -1062,7 +1077,9 @@ export default function VoiceAssistant({ user, onLogout }) {
     setCurrentResponse("Thinking...");
     setCurrentCard(null);
 
-    let capturedImageData = null;
+    // 🚀 NEW: Combine Uploaded Image and Live Camera Data
+    let finalImage = uploadedImage;
+
     if (cameraModeRef.current) {
       try {
         const videoElement = document.getElementById("voxa-camera-feed");
@@ -1072,7 +1089,7 @@ export default function VoiceAssistant({ user, onLogout }) {
           canvas.height = videoElement.videoHeight || 1920;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-          capturedImageData = canvas.toDataURL("image/jpeg", 0.5);
+          finalImage = canvas.toDataURL("image/jpeg", 0.5);
         }
       } catch (err) { }
     }
@@ -1086,7 +1103,7 @@ export default function VoiceAssistant({ user, onLogout }) {
         },
         body: JSON.stringify({
           prompt: q,
-          image: capturedImageData,
+          image: finalImage,
           voice: selectedVoice
         }),
       });
@@ -1178,6 +1195,7 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
 
     runQuery(q);
+    setUploadedImage(null); // 🚀 NEW: Clear image after sending
   };
 
   const handleRandomQuerySelect = (query) => {
@@ -1189,12 +1207,11 @@ export default function VoiceAssistant({ user, onLogout }) {
     setTyping(false);
   };
 
-  // 🚀 UPDATED: Render the new Brain Screen
   const renderModalContent = () => {
     switch (activeModal) {
       case 'profile': return { title: "Profile Setup", component: <ProfileScreen theme={theme} user={user} userName={userName} setUserName={setUserName} /> };
       case 'history': return { title: "Recent Activity", component: <HistoryScreen theme={theme} user={user} onClose={() => setActiveModal(null)} /> };
-      case 'brain': return { title: "Voxa's Brain", component: <MemoryScreen theme={theme} user={user} /> }; // 🚀 NEW MODAL ROUTE
+      case 'brain': return { title: "Voxa's Brain", component: <MemoryScreen theme={theme} user={user} /> };
       case 'personalization': return { title: "Personalization", component: <PersonalizationScreen theme={theme} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice} /> };
       case 'feedback': return { title: "Submit Feedback", component: <FeedbackScreen theme={theme} /> };
       case 'support': return { title: "Contact Support", component: <SupportScreen theme={theme} /> };
@@ -1387,9 +1404,37 @@ export default function VoiceAssistant({ user, onLogout }) {
         <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 20, display: "flex", flexDirection: "column", alignItems: "center", paddingBottom: "calc(env(safe-area-inset-bottom, 12px) + clamp(24px, 5vh, 56px))", gap: 16 }}>
           <AnimatePresence>
             {showInput && !isCameraMode && (
-              <motion.div key="textinput" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} style={{ display: "flex", gap: 10, width: "min(520px,86vw)", marginBottom: 8 }}>
-                <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === "Enter" && handleTextSubmit()} placeholder="Type your question…" style={{ flex: 1, height: 50, borderRadius: 999, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", color: theme.text, fontSize: "16px", fontWeight: 400, padding: "0 22px", outline: "none", fontFamily: "inherit", letterSpacing: "-0.01em", transition: "border-color 0.28s cubic-bezier(0.16,1,0.3,1), background 0.4s", WebkitAppearance: "none" }} />
-                <motion.button onClick={handleTextSubmit} whileTap={{ scale: 0.94 }} whileHover={{ scale: 1.04 }} style={{ height: 50, borderRadius: 999, border: "1px solid rgba(124,58,237,0.4)", background: "rgba(124,58,237,0.32)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", color: "rgba(255,255,255,0.9)", fontSize: "clamp(13px,1.4vw,15px)", fontWeight: 500, letterSpacing: "0.01em", padding: "0 26px", cursor: "pointer", fontFamily: "inherit", outline: "none" }}>Ask</motion.button>
+              <motion.div key="textinput" initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 14 }} transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }} style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "min(520px,86vw)", marginBottom: 8 }}>
+
+                {/* 🚀 NEW: Thumbnail Preview for Uploaded Images */}
+                <AnimatePresence>
+                  {uploadedImage && (
+                    <motion.div initial={{ opacity: 0, y: 10, height: 0 }} animate={{ opacity: 1, y: 0, height: "auto" }} exit={{ opacity: 0, height: 0 }} style={{ width: "100%", display: "flex", justifyContent: "flex-start", marginBottom: 12 }}>
+                      <div style={{ position: "relative", width: 80, height: 80, borderRadius: 12, border: `1px solid ${theme.buttonBorder}`, overflow: "hidden", boxShadow: "0 4px 12px rgba(0,0,0,0.2)" }}>
+                        <img src={uploadedImage} alt="Upload preview" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        <button onClick={() => setUploadedImage(null)} style={{ position: "absolute", top: 4, right: 4, width: 20, height: 20, borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", fontSize: 12 }}>✕</button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div style={{ display: "flex", gap: 10, width: "100%" }}>
+                  {/* 🚀 NEW: Hidden File Picker and Attachment Button */}
+                  <input type="file" accept="image/*" ref={fileInputRef} onChange={handleFileChange} style={{ display: "none" }} />
+
+                  <motion.button
+                    onClick={() => fileInputRef.current?.click()}
+                    whileTap={{ scale: 0.94 }}
+                    whileHover={{ scale: 1.04 }}
+                    style={{ height: 50, width: 50, borderRadius: "50%", border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", color: theme.text, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", flexShrink: 0, outline: "none" }}
+                  >
+                    <IconImage />
+                  </motion.button>
+
+                  <input autoFocus value={inputValue} onChange={e => setInputValue(e.target.value)} onKeyDown={e => e.key === "Enter" && handleTextSubmit()} placeholder="Type your question…" style={{ flex: 1, height: 50, borderRadius: 999, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, backdropFilter: "blur(28px)", WebkitBackdropFilter: "blur(28px)", color: theme.text, fontSize: "16px", fontWeight: 400, padding: "0 22px", outline: "none", fontFamily: "inherit", letterSpacing: "-0.01em", transition: "border-color 0.28s cubic-bezier(0.16,1,0.3,1), background 0.4s", WebkitAppearance: "none" }} />
+
+                  <motion.button onClick={handleTextSubmit} whileTap={{ scale: 0.94 }} whileHover={{ scale: 1.04 }} style={{ height: 50, borderRadius: 999, border: "1px solid rgba(124,58,237,0.4)", background: "rgba(124,58,237,0.32)", backdropFilter: "blur(24px)", WebkitBackdropFilter: "blur(24px)", color: "rgba(255,255,255,0.9)", fontSize: "clamp(13px,1.4vw,15px)", fontWeight: 500, letterSpacing: "0.01em", padding: "0 26px", cursor: "pointer", fontFamily: "inherit", outline: "none" }}>Ask</motion.button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
