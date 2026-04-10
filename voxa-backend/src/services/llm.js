@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool } from './tools.js'; // 🚀 IMPORTED NEW TOOL
+import { createReminderTool, getCryptoPriceTool } from './tools.js'; // 🚀 IMPORTED BOTH TOOLS
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -58,7 +58,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-        5. TOOL USAGE: If you use a tool, you MUST synthesize the results into a spoken response for the user.`;
+        5. TOOL USAGE: If you use a tool, you MUST synthesize the results into a spoken response for the user. Make sure to clearly state numbers and prices.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -75,9 +75,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         } else {
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // 🚀 DYNAMIC BINDING: We bind the tools here so they have access to your specific user ID
+            // 🚀 DYNAMIC BINDING: Give Llama 3 access to all three tools!
             const reminderTool = createReminderTool(userId);
-            const activeTools = [searchTool, reminderTool];
+            const activeTools = [searchTool, reminderTool, getCryptoPriceTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
             result = await groqChatWithTools.invoke(messages);
@@ -100,6 +100,11 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                         else if (toolCall.name === "save_reminder") {
                             if (onStatusUpdate) onStatusUpdate("Accessing secure database...");
                             toolResultText = await reminderTool.invoke(toolCall.args);
+                        }
+                        else if (toolCall.name === "get_crypto_price") {
+                            // 🚀 NEW ROUTE: Trigger the financial API
+                            if (onStatusUpdate) onStatusUpdate("Fetching live market data...");
+                            toolResultText = await getCryptoPriceTool.invoke(toolCall.args);
                         }
 
                         messages.push(new ToolMessage({
