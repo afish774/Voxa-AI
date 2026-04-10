@@ -6,10 +6,10 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// 🧠 1. Initialize High-Speed Groq Models (Upgraded to Llama 3.3!)
+// 🧠 1. Initialize High-Speed Groq Models (Llama 3.3!)
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama-3.3-70b-versatile", // 🚀 FIXED: Pointing to Groq's newest active model
+    model: "llama-3.3-70b-versatile",
     temperature: 0.7,
 });
 
@@ -21,7 +21,7 @@ const groqVision = new ChatGroq({
 
 // 🌐 2. Initialize Live Web Search Tool
 const searchTool = new TavilySearch({
-    maxResults: 2, // Keeps context window small and fast
+    maxResults: 2,
     apiKey: process.env.TAVILY_API_KEY,
 });
 
@@ -62,7 +62,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
         3. WIDGET PROTOCOL: If the user asks for the WEATHER, append a hidden tag: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition||
         Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
-        4. VISION OVERRIDE: If an image is provided, describe what you see accurately.`;
+        4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
+        5. TOOL USAGE: If you use a search tool, you MUST synthesize the results into a spoken response for the user.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -82,36 +83,51 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
             // 🌐 Standard Agentic Routing
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // First Pass: Does Llama want to use a tool?
+            // 🚀 FIXED: Implemented a true Agentic Loop
             result = await groqChatWithTools.invoke(messages);
+            let loopCount = 0;
 
-            // If the model decides it needs live data, it will return tool_calls
-            if (result.tool_calls && result.tool_calls.length > 0) {
-                console.log("🌐 Voxa detected a gap in knowledge. Searching the live web...");
+            // Allow the AI to search multiple times if needed, but cap it to prevent infinite loops
+            while (result.tool_calls && result.tool_calls.length > 0 && loopCount < 3) {
+                console.log(`🌐 Voxa searching the live web (Loop ${loopCount + 1})...`);
 
-                // Append the AI's request to use the tool to the message history
                 messages.push(result);
 
-                // Execute the search tool
                 for (const toolCall of result.tool_calls) {
-                    if (toolCall.name === "tavily_search_results_json" || toolCall.name === searchTool.name) {
+                    try {
                         const searchData = await searchTool.invoke(toolCall.args);
-
-                        // Append the live internet results back to the AI
                         messages.push(new ToolMessage({
                             content: typeof searchData === 'string' ? searchData : JSON.stringify(searchData),
+                            tool_call_id: toolCall.id,
+                            name: toolCall.name
+                        }));
+                    } catch (err) {
+                        messages.push(new ToolMessage({
+                            content: "Search failed.",
                             tool_call_id: toolCall.id,
                             name: toolCall.name
                         }));
                     }
                 }
 
-                // Second Pass: Llama reads the live internet data and answers you
-                result = await groqChatWithTools.invoke(messages);
+                // On the final pass, we use standard groqChat (no tools attached) to FORCE it to answer verbally
+                if (loopCount === 2) {
+                    result = await groqChat.invoke(messages);
+                } else {
+                    result = await groqChatWithTools.invoke(messages);
+                }
+
+                loopCount++;
             }
         }
 
         let responseText = result.content;
+
+        // 🛡️ Final Fallback: If it stubbornly refuses to generate text, intercept it gracefully
+        if (!responseText || responseText.trim() === "") {
+            responseText = "I found the live data, but I am having trouble translating it into speech right now.";
+        }
+
         let cardData = null;
 
         // 🃏 Extract Widget Cards for the UI
