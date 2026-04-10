@@ -969,7 +969,7 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
   }, [endCall, startSilenceTimer]);
 
-  // 🚀 FIXED: Upgraded runQuery to handle real-time Server-Sent Events (SSE)
+  // 🚀 FIXED: Implemented a buffer to safely handle massive audio chunks
   const runQuery = async (q) => {
     loopRef.current.isBotSpeaking = true;
     if (loopRef.current.silenceTimer) clearTimeout(loopRef.current.silenceTimer);
@@ -1026,55 +1026,59 @@ export default function VoiceAssistant({ user, onLogout }) {
 
       if (!response.body) throw new Error("No readable stream available");
 
-      // 📡 Open the real-time pipeline to the server
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let done = false;
+      let buffer = ""; // 🚀 The new waiting room for incomplete data chunks
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
         done = readerDone;
 
         if (value) {
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n');
+          buffer += decoder.decode(value, { stream: true });
+          // Split the buffer by the SSE event terminator (\n\n)
+          const events = buffer.split('\n\n');
 
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                // Parse the specific event from the server
-                const data = JSON.parse(line.substring(6));
+          // The last element is always the incomplete remainder, so put it back in the buffer!
+          buffer = events.pop();
 
-                if (data.type === 'status') {
-                  // Update UI immediately while Llama 3 is thinking or searching
-                  setCurrentResponse(data.text);
-                }
-                else if (data.type === 'text') {
-                  // Text is ready! Show it instantly.
-                  setPhase(PHASES.RESPONDING);
-                  setCurrentResponse(data.text);
-                  if (data.card) setCurrentCard(data.card);
-                  setTyping(true);
-                }
-                else if (data.type === 'audio') {
-                  // Audio arrived! Play it.
-                  if (!isAppMuted && data.audio && loopRef.current.audioPlayer) {
-                    loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${data.audio}`;
-                    loopRef.current.audioPlayer.play().catch(e => {
-                      console.error("Audio playback blocked:", e);
+          for (const event of events) {
+            const lines = event.split('\n');
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                try {
+                  const data = JSON.parse(line.substring(6));
+
+                  if (data.type === 'status') {
+                    setCurrentResponse(data.text);
+                  }
+                  else if (data.type === 'text') {
+                    setPhase(PHASES.RESPONDING);
+                    setCurrentResponse(data.text);
+                    if (data.card) setCurrentCard(data.card);
+                    setTyping(true);
+                  }
+                  else if (data.type === 'audio') {
+                    if (!isAppMuted && data.audio && loopRef.current.audioPlayer) {
+                      loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${data.audio}`;
+                      loopRef.current.audioPlayer.play().catch(e => {
+                        console.error("Audio playback blocked:", e);
+                        triggerVoiceContinuation();
+                      });
+                    } else {
                       triggerVoiceContinuation();
-                    });
-                  } else {
+                    }
+                  }
+                  else if (data.type === 'error') {
+                    setPhase(PHASES.RESPONDING);
+                    setCurrentResponse(data.text);
                     triggerVoiceContinuation();
                   }
+                } catch (e) {
+                  // We should never hit this block anymore because the buffer protects the JSON!
+                  console.error("Failed to parse safe SSE line:", e);
                 }
-                else if (data.type === 'error') {
-                  setPhase(PHASES.RESPONDING);
-                  setCurrentResponse(data.text);
-                  triggerVoiceContinuation();
-                }
-              } catch (e) {
-                console.error("Failed to parse SSE line:", line);
               }
             }
           }
