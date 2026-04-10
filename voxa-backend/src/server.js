@@ -12,19 +12,14 @@ connectDB();
 
 const app = express();
 
-// 🛡️ THE CORS FIX: Whitelisting trusted frontends
+// 🛡️ THE ULTIMATE CORS FIX: Dynamically trust any Vercel URL
 app.use(cors({
-    origin: [
-        "http://localhost:5173", // Local Vite frontend
-        "http://localhost:3000", // Local CRA frontend
-        "https://voxa-jqhqd6cgi-afishmv-7650s-projects.vercel.app", // Your specific Vercel build
-        /\.vercel\.app$/ // Safely allows any future Vercel deployments
-    ],
+    origin: true, // This bounces the trusted origin back automatically
     methods: ["GET", "POST", "PUT", "DELETE"],
     credentials: true // Crucial for passing JWT tokens securely
 }));
 
-// Body parser with increased limit to handle large Base64 image payloads for the Vision model
+// Body parser with increased limit to handle large Base64 image payloads
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
