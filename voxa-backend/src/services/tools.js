@@ -86,7 +86,8 @@ export const sendEmailTool = tool(
         name: "send_email",
         description: "Sends an email to a specified email address. Use this when the user asks you to email someone, send a message, or draft an email.",
         schema: z.object({
-            to: z.string().email().describe("The exact email address to send the message to. If the user does not provide an email address, ask them for it."),
+            // 🚀 FIXED: Removed the .email() constraint to prevent the Groq API from crashing
+            to: z.string().describe("The exact email address to send the message to. If the user does not provide an email address, ask them for it."),
             subject: z.string().describe("A brief, professional subject line for the email."),
             body: z.string().describe("The main text content of the email.")
         }),
