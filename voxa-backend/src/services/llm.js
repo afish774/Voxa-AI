@@ -2,6 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
+import { createReminderTool } from './tools.js'; // 🚀 IMPORTED NEW TOOL
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -25,8 +26,6 @@ const searchTool = new TavilySearch({
     apiKey: process.env.TAVILY_API_KEY,
 });
 
-const groqChatWithTools = groqChat.bindTools([searchTool]);
-
 // 🧠 3. Background Fact Extractor
 const extractBackgroundFacts = async (userId, userText) => {
     try {
@@ -37,7 +36,7 @@ const extractBackgroundFacts = async (userId, userText) => {
     } catch (err) { }
 };
 
-// 🧠 4. Core Agentic RAG Pipeline (Now supports real-time status updates!)
+// 🧠 4. Core Agentic RAG Pipeline
 export const generateAIResponse = async (userPrompt, base64Image = null, userId, onStatusUpdate) => {
     try {
         if (!userId) throw new Error("userId is missing!");
@@ -59,7 +58,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-        5. TOOL USAGE: If you use a search tool, you MUST synthesize the results into a spoken response for the user.`;
+        5. TOOL USAGE: If you use a tool, you MUST synthesize the results into a spoken response for the user.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -76,25 +75,40 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         } else {
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
+            // 🚀 DYNAMIC BINDING: We bind the tools here so they have access to your specific user ID
+            const reminderTool = createReminderTool(userId);
+            const activeTools = [searchTool, reminderTool];
+            const groqChatWithTools = groqChat.bindTools(activeTools);
+
             result = await groqChatWithTools.invoke(messages);
             let loopCount = 0;
 
             while (result.tool_calls && result.tool_calls.length > 0 && loopCount < 3) {
-                // 🚀 REAL-TIME UPDATE: Tell the frontend we are searching the web!
-                if (onStatusUpdate) onStatusUpdate("Scanning the live internet...");
 
                 messages.push(result);
 
                 for (const toolCall of result.tool_calls) {
                     try {
-                        const searchData = await searchTool.invoke(toolCall.args);
+                        let toolResultText = "";
+
+                        // 🔀 Route to the correct tool based on what Llama 3 decides
+                        if (toolCall.name === "tavily_search_results_json" || toolCall.name === searchTool.name) {
+                            if (onStatusUpdate) onStatusUpdate("Scanning the live internet...");
+                            const searchData = await searchTool.invoke(toolCall.args);
+                            toolResultText = typeof searchData === 'string' ? searchData : JSON.stringify(searchData);
+                        }
+                        else if (toolCall.name === "save_reminder") {
+                            if (onStatusUpdate) onStatusUpdate("Accessing secure database...");
+                            toolResultText = await reminderTool.invoke(toolCall.args);
+                        }
+
                         messages.push(new ToolMessage({
-                            content: typeof searchData === 'string' ? searchData : JSON.stringify(searchData),
+                            content: toolResultText,
                             tool_call_id: toolCall.id,
                             name: toolCall.name
                         }));
                     } catch (err) {
-                        messages.push(new ToolMessage({ content: "Search failed.", tool_call_id: toolCall.id, name: toolCall.name }));
+                        messages.push(new ToolMessage({ content: "Tool execution failed.", tool_call_id: toolCall.id, name: toolCall.name }));
                     }
                 }
 
@@ -109,7 +123,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         let responseText = result.content;
         if (!responseText || responseText.trim() === "") {
-            responseText = "I found the live data, but I am having trouble translating it into speech right now.";
+            responseText = "I completed the task, but I am having trouble translating it into speech right now.";
         }
 
         let cardData = null;
