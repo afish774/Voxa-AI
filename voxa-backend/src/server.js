@@ -1,66 +1,44 @@
 import express from 'express';
-import dotenv from 'dotenv';
 import cors from 'cors';
-import fs from 'fs';
+import dotenv from 'dotenv';
 import connectDB from './config/db.js';
-import chatRoutes from './routes/chatRoutes.js';
 import authRoutes from './routes/authRoutes.js';
+import chatRoutes from './routes/chatRoutes.js';
 
-// 1. Load environment variables FIRST
 dotenv.config();
 
-// 2. Generate Google Credentials file securely from Environment Variables
-if (process.env.GOOGLE_CREDENTIALS) {
-    fs.writeFileSync('google-credentials.json', process.env.GOOGLE_CREDENTIALS);
-    console.log('🔐 Google Credentials file securely generated from Environment Variables.');
-}
+// Initialize MongoDB
+connectDB();
 
 const app = express();
 
-// 3. Bulletproof CORS Policy for Vercel
-const corsOptions = {
-    origin: function (origin, callback) {
-        callback(null, true); // Accepts any incoming Vercel URL
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
-};
+// 🛡️ THE CORS FIX: Whitelisting trusted frontends
+app.use(cors({
+    origin: [
+        "http://localhost:5173", // Local Vite frontend
+        "http://localhost:3000", // Local CRA frontend
+        "https://voxa-jqhqd6cgi-afishmv-7650s-projects.vercel.app", // Your specific Vercel build
+        /\.vercel\.app$/ // Safely allows any future Vercel deployments
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true // Crucial for passing JWT tokens securely
+}));
 
-app.use(cors(corsOptions));
-
-// 4. Express 5 Preflight Bypass Hack 
-app.use((req, res, next) => {
-    if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
-    }
-    next();
-});
-
+// Body parser with increased limit to handle large Base64 image payloads for the Vision model
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// 5. Health Check Route
-app.get('/api/status', (req, res) => {
-    res.json({ status: 'Voxa API is awake and listening.' });
-});
-
-// 6. API Routes
-app.use('/api/chat', chatRoutes);
+// 🛣️ API Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/chat', chatRoutes);
+
+// Basic health check route for Render
+app.get('/', (req, res) => {
+    res.send('Voxa AI Backend is running securely.');
+});
 
 const PORT = process.env.PORT || 5000;
 
-// 7. Connect to Database AND THEN Start Server
-const startServer = async () => {
-    try {
-        await connectDB();
-        app.listen(PORT, () => {
-            console.log(`🚀 Voxa Engine live at http://localhost:${PORT}`);
-        });
-    } catch (error) {
-        console.error("❌ Critical: Failed to start Voxa Engine due to DB error.");
-    }
-};
-
-startServer();
+app.listen(PORT, () => {
+    console.log(`🚀 Voxa Engine live on port ${PORT}`);
+});
