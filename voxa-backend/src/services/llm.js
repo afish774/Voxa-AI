@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool, sendEmailTool } from './tools.js';
+import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool } from './tools.js'; // 🚀 IMPORTED GLOBAL SPORTS TOOL
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -50,7 +50,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 THE FIX: We added "FULL AUTHORITY" to explicitly override her safety training!
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -60,7 +59,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
         5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities. You MUST use the 'send_email' tool to complete the request.
-        6. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user.`;
+        6. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -77,8 +76,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         } else {
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
+            // 🚀 DYNAMIC BINDING: Llama 3 now has the Global Sports Hub
             const reminderTool = createReminderTool(userId);
-            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool];
+            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
             result = await groqChatWithTools.invoke(messages);
@@ -108,6 +108,11 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                         else if (toolCall.name === "send_email") {
                             if (onStatusUpdate) onStatusUpdate("Drafting and sending email...");
                             toolResultText = await sendEmailTool.invoke(toolCall.args);
+                        }
+                        else if (toolCall.name === "get_sports_data") {
+                            // 🚀 NEW ROUTE: Trigger the multi-sport engine
+                            if (onStatusUpdate) onStatusUpdate("Analyzing global sports network...");
+                            toolResultText = await getSportsDataTool.invoke(toolCall.args);
                         }
 
                         messages.push(new ToolMessage({

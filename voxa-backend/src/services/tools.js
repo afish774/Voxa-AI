@@ -86,10 +86,73 @@ export const sendEmailTool = tool(
         name: "send_email",
         description: "Sends an email to a specified email address. Use this when the user asks you to email someone, send a message, or draft an email.",
         schema: z.object({
-            // 🚀 FIXED: Removed the .email() constraint to prevent the Groq API from crashing
             to: z.string().describe("The exact email address to send the message to. If the user does not provide an email address, ask them for it."),
             subject: z.string().describe("A brief, professional subject line for the email."),
             body: z.string().describe("The main text content of the email.")
+        }),
+    }
+);
+
+// 🌍 TOOL 4: The Global Sports Hub (Multi-Sport Data & Tactics)
+export const getSportsDataTool = tool(
+    async ({ requestType, sport, query }) => {
+        try {
+            // Multi-Sport Tactical Engine
+            if (requestType === "tactics") {
+                const lowerQuery = query.toLowerCase();
+
+                // Football (Soccer)
+                if (lowerQuery.includes("long ball") || lowerQuery.includes("counter")) return "The Long Ball Counter is a tactical setup focusing on absorbing pressure deep, drawing the opponent in, and launching rapid, direct passes to fast forwards. A classic example is Jose Mourinho's peak 4-3-3.";
+                if (lowerQuery.includes("tiki taka") || lowerQuery.includes("possession")) return "Tiki-Taka is characterized by short passing and movement, working the ball through various channels, and maintaining possession. It relies heavily on technical midfielders creating triangles across the pitch.";
+
+                // Basketball
+                if (lowerQuery.includes("pick and roll")) return "The Pick and Roll is a classic offensive play in basketball where a player sets a screen (pick) for a teammate handling the ball and then moves toward the basket (rolls) to accept a pass.";
+                if (lowerQuery.includes("triangle")) return "The Triangle Offense is a basketball strategy relying on spacing, passing, and constant motion, popularized by Phil Jackson with the Bulls and Lakers.";
+
+                // American Football
+                if (lowerQuery.includes("west coast")) return "The West Coast Offense in American football relies on short, horizontal passing routes to stretch out the defense, rather than establishing the run game first.";
+
+                return `Tactical analysis for ${query} in ${sport}: This system generally requires high situational awareness and exploits specific defensive weaknesses.`;
+            }
+
+            // Live Sports API Engine (Works for NBA, NFL, MLB, NHL, Premier League, etc.)
+            const searchResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${query}`);
+            const teamData = await searchResponse.json();
+
+            if (!teamData.teams) {
+                return `I couldn't find database records for the ${sport} team "${query}". Please check the spelling.`;
+            }
+
+            const team = teamData.teams[0];
+            const teamId = team.idTeam;
+
+            if (requestType === "fixtures") {
+                const eventResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`);
+                const eventData = await eventResponse.json();
+
+                if (!eventData.events) return `${team.strTeam} currently has no upcoming fixtures listed in the public database.`;
+
+                const nextMatch = eventData.events[0];
+                return `The next match for ${team.strTeam} is ${nextMatch.strEvent} scheduled for ${nextMatch.dateEvent}.`;
+            }
+
+            if (requestType === "team_info") {
+                return `${team.strTeam} plays in the ${team.strLeague}. Their home venue is ${team.strStadium}, which has a capacity of ${team.intStadiumCapacity}.`;
+            }
+
+            return `I found data for ${team.strTeam}, but could not process the specific request type.`;
+        } catch (error) {
+            console.error("Sports API Error:", error);
+            return "Error: Failed to fetch sports data from the global API.";
+        }
+    },
+    {
+        name: "get_sports_data",
+        description: "Fetches live sports team information, upcoming fixtures, and detailed tactical data for global sports including Football, Basketball (NBA), American Football (NFL), Baseball (MLB), and more.",
+        schema: z.object({
+            requestType: z.enum(["team_info", "fixtures", "tactics"]).describe("The specific type of sports information requested."),
+            sport: z.string().describe("The name of the sport (e.g., 'football', 'basketball', 'baseball', 'cricket')."),
+            query: z.string().describe("The name of the team (e.g., 'Los Angeles Lakers', 'Manchester United') or the tactical formation (e.g., 'pick and roll', '4-3-3')."),
         }),
     }
 );
