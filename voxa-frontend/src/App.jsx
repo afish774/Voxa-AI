@@ -71,6 +71,7 @@ function lerpColor(hexA, hexB, t) {
 const IconUser = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>;
 const IconMail = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>;
 const IconClock = () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>;
+const IconTrash = () => <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>;
 
 const VoxaLogo = () => (
   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -586,6 +587,72 @@ function HistoryScreen({ theme, user, onClose }) {
   );
 }
 
+// 🚀 NEW: THE MEMORY DASHBOARD SCREEN
+function MemoryScreen({ theme, user }) {
+  const [memories, setMemories] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchMemories = async () => {
+    try {
+      const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/memory', {
+        headers: { 'Authorization': `Bearer ${user?.token}` }
+      });
+      const data = await response.json();
+      if (Array.isArray(data)) setMemories(data);
+    } catch (error) {
+      console.error("Failed to load memories", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const deleteMemory = async (id) => {
+    // Optimistic UI update
+    setMemories(memories.filter(m => m._id !== id));
+    try {
+      await fetch(`https://voxa-ai-zh5o.onrender.com/api/memory/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${user?.token}` }
+      });
+    } catch (error) {
+      console.error("Failed to delete memory", error);
+      fetchMemories(); // Re-fetch if it fails
+    }
+  };
+
+  useEffect(() => {
+    fetchMemories();
+  }, [user]);
+
+  return (
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
+      {loading ? (
+        <p style={{ color: theme.textMuted, textAlign: "center", marginTop: 20 }}>Accessing neural net...</p>
+      ) : memories.length === 0 ? (
+        <p style={{ color: theme.textMuted, textAlign: "center", marginTop: 20 }}>No core memories established yet.</p>
+      ) : (
+        memories.map((mem) => (
+          <motion.div key={mem._id} whileHover={{ scale: 1.02, backgroundColor: theme.dropdownHover }} style={{ padding: 18, borderRadius: 16, border: `1px solid ${theme.buttonBorder}`, background: 'transparent', transition: "border-color 0.2s", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ flex: 1, paddingRight: 16 }}>
+              <p style={{ margin: "0 0 8px 0", fontSize: 15, color: theme.text, lineHeight: 1.4, fontWeight: 400 }}>{mem.fact}</p>
+              <span style={{ fontSize: 12, color: theme.textFaint }}>{new Date(mem.timestamp).toLocaleDateString()}</span>
+            </div>
+            <button
+              onClick={() => deleteMemory(mem._id)}
+              style={{ background: "transparent", border: "none", color: theme.danger, cursor: "pointer", padding: 8, outline: "none", opacity: 0.8 }}
+              title="Erase Memory"
+              onMouseEnter={(e) => e.currentTarget.style.opacity = 1}
+              onMouseLeave={(e) => e.currentTarget.style.opacity = 0.8}
+            >
+              <IconTrash />
+            </button>
+          </motion.div>
+        ))
+      )}
+    </div>
+  );
+}
+
 function PersonalizationScreen({ theme, selectedVoice, setSelectedVoice }) {
   const handleVoiceChange = (v) => {
     setSelectedVoice(v);
@@ -673,6 +740,7 @@ function SettingsDropdown({ theme, isDark, onToggleTheme, onClose, onOpenModal, 
     { label: isDark ? "Light Mode" : "Dark Mode", action: onToggleTheme },
     { label: "Profile Setup", action: () => onOpenModal("profile") },
     { label: "Chat History", action: () => onOpenModal("history") },
+    { label: "Core Memories (Brain)", action: () => onOpenModal("brain") }, // 🚀 NEW MENU ITEM
     { label: "Voice Personalization", action: () => onOpenModal("personalization") },
     { label: "Submit Feedback", action: () => onOpenModal("feedback") },
     { label: "Contact Support", action: () => onOpenModal("support") },
@@ -969,7 +1037,6 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
   }, [endCall, startSilenceTimer]);
 
-  // 🚀 FIXED: Implemented a buffer to safely handle massive audio chunks
   const runQuery = async (q) => {
     loopRef.current.isBotSpeaking = true;
     if (loopRef.current.silenceTimer) clearTimeout(loopRef.current.silenceTimer);
@@ -1029,7 +1096,7 @@ export default function VoiceAssistant({ user, onLogout }) {
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
       let done = false;
-      let buffer = ""; // 🚀 The new waiting room for incomplete data chunks
+      let buffer = "";
 
       while (!done) {
         const { value, done: readerDone } = await reader.read();
@@ -1037,10 +1104,7 @@ export default function VoiceAssistant({ user, onLogout }) {
 
         if (value) {
           buffer += decoder.decode(value, { stream: true });
-          // Split the buffer by the SSE event terminator (\n\n)
           const events = buffer.split('\n\n');
-
-          // The last element is always the incomplete remainder, so put it back in the buffer!
           buffer = events.pop();
 
           for (const event of events) {
@@ -1076,7 +1140,6 @@ export default function VoiceAssistant({ user, onLogout }) {
                     triggerVoiceContinuation();
                   }
                 } catch (e) {
-                  // We should never hit this block anymore because the buffer protects the JSON!
                   console.error("Failed to parse safe SSE line:", e);
                 }
               }
@@ -1126,10 +1189,12 @@ export default function VoiceAssistant({ user, onLogout }) {
     setTyping(false);
   };
 
+  // 🚀 UPDATED: Render the new Brain Screen
   const renderModalContent = () => {
     switch (activeModal) {
       case 'profile': return { title: "Profile Setup", component: <ProfileScreen theme={theme} user={user} userName={userName} setUserName={setUserName} /> };
       case 'history': return { title: "Recent Activity", component: <HistoryScreen theme={theme} user={user} onClose={() => setActiveModal(null)} /> };
+      case 'brain': return { title: "Voxa's Brain", component: <MemoryScreen theme={theme} user={user} /> }; // 🚀 NEW MODAL ROUTE
       case 'personalization': return { title: "Personalization", component: <PersonalizationScreen theme={theme} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice} /> };
       case 'feedback': return { title: "Submit Feedback", component: <FeedbackScreen theme={theme} /> };
       case 'support': return { title: "Contact Support", component: <SupportScreen theme={theme} /> };

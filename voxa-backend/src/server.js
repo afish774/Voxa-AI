@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
+import memoryRoutes from './routes/memoryRoutes.js'; // 🚀 IMPORTED NEW ROUTE
 
 dotenv.config();
 
@@ -15,13 +16,11 @@ const app = express();
 // 🛡️ THE BULLETPROOF CORS FIX
 app.use(cors({
     origin: function (origin, callback) {
-        // This explicitly echoes back whatever Vercel URL is making the request,
-        // safely bypassing all CORS origin restrictions.
         callback(null, origin || true);
     },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Explicitly allow the Preflight OPTIONS
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
-    allowedHeaders: ["Content-Type", "Authorization"] // Explicitly whitelist our JWT headers
+    allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 // Body parser with increased limit to handle large Base64 image payloads
@@ -31,6 +30,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 // 🛣️ API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/memory', memoryRoutes); // 🚀 WIRED UP THE MEMORY DASHBOARD
 
 // Basic health check route for Render
 app.get('/', (req, res) => {
