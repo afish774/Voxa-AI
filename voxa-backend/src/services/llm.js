@@ -6,16 +6,16 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// 🧠 1. Initialize High-Speed Groq Models (Llama 3)
+// 🧠 1. Initialize High-Speed Groq Models (Upgraded to Llama 3.3!)
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama3-70b-8192", // 🚀 FIXED: Changed from 'modelName' to 'model'
+    model: "llama-3.3-70b-versatile", // 🚀 FIXED: Pointing to Groq's newest active model
     temperature: 0.7,
 });
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama-3.2-11b-vision-preview", // 🚀 FIXED: Changed from 'modelName' to 'model'
+    model: "llama-3.2-11b-vision-preview",
     temperature: 0.7,
 });
 
@@ -76,13 +76,13 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanBase64}` } }
                 ]
             }));
-            console.log("📸 Vision Pipeline Active: Image routed to Llama 3 Vision.");
+            console.log("📸 Vision Pipeline Active: Image routed to Llama Vision.");
             result = await groqVision.invoke(messages);
         } else {
             // 🌐 Standard Agentic Routing
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // First Pass: Does Llama 3 want to use a tool?
+            // First Pass: Does Llama want to use a tool?
             result = await groqChatWithTools.invoke(messages);
 
             // If the model decides it needs live data, it will return tool_calls
@@ -106,7 +106,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
                     }
                 }
 
-                // Second Pass: Llama 3 reads the live internet data and answers you
+                // Second Pass: Llama reads the live internet data and answers you
                 result = await groqChatWithTools.invoke(messages);
             }
         }
