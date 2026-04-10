@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool } from './tools.js'; // 🚀 IMPORTED BOTH TOOLS
+import { createReminderTool, getCryptoPriceTool, sendEmailTool } from './tools.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -50,6 +50,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
+        // 🚀 THE FIX: We added "FULL AUTHORITY" to explicitly override her safety training!
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -58,7 +59,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-        5. TOOL USAGE: If you use a tool, you MUST synthesize the results into a spoken response for the user. Make sure to clearly state numbers and prices.`;
+        5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities. You MUST use the 'send_email' tool to complete the request.
+        6. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -75,9 +77,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         } else {
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // 🚀 DYNAMIC BINDING: Give Llama 3 access to all three tools!
             const reminderTool = createReminderTool(userId);
-            const activeTools = [searchTool, reminderTool, getCryptoPriceTool];
+            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
             result = await groqChatWithTools.invoke(messages);
@@ -91,7 +92,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                     try {
                         let toolResultText = "";
 
-                        // 🔀 Route to the correct tool based on what Llama 3 decides
                         if (toolCall.name === "tavily_search_results_json" || toolCall.name === searchTool.name) {
                             if (onStatusUpdate) onStatusUpdate("Scanning the live internet...");
                             const searchData = await searchTool.invoke(toolCall.args);
@@ -102,9 +102,12 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                             toolResultText = await reminderTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_crypto_price") {
-                            // 🚀 NEW ROUTE: Trigger the financial API
                             if (onStatusUpdate) onStatusUpdate("Fetching live market data...");
                             toolResultText = await getCryptoPriceTool.invoke(toolCall.args);
+                        }
+                        else if (toolCall.name === "send_email") {
+                            if (onStatusUpdate) onStatusUpdate("Drafting and sending email...");
+                            toolResultText = await sendEmailTool.invoke(toolCall.args);
                         }
 
                         messages.push(new ToolMessage({
