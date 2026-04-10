@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool } from './tools.js'; // 🚀 IMPORTED GLOBAL SPORTS TOOL
+import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool } from './tools.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -50,6 +50,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
+        // 🚀 FIXED: Explicitly banned XML tool hallucination so Voxa fires tools silently.
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -58,8 +59,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
         Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-        5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities. You MUST use the 'send_email' tool to complete the request.
-        6. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.`;
+        5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities.
+        6. TOOL EXECUTION: You MUST use the native tool-calling JSON array to execute actions. Do NOT output raw <function> XML tags in your spoken text under any circumstances. If you need to use a tool, trigger it silently.
+        7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -76,7 +78,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         } else {
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // 🚀 DYNAMIC BINDING: Llama 3 now has the Global Sports Hub
             const reminderTool = createReminderTool(userId);
             const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
@@ -110,7 +111,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                             toolResultText = await sendEmailTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_sports_data") {
-                            // 🚀 NEW ROUTE: Trigger the multi-sport engine
                             if (onStatusUpdate) onStatusUpdate("Analyzing global sports network...");
                             toolResultText = await getSportsDataTool.invoke(toolCall.args);
                         }
@@ -135,6 +135,12 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         }
 
         let responseText = result.content;
+
+        // 🚀 FALLBACK CATCHER: If Llama 3 still tries to leak XML, we scrub it from the spoken output!
+        if (responseText) {
+            responseText = responseText.replace(/<function[^>]*>.*?<\/function>/gi, '').trim();
+        }
+
         if (!responseText || responseText.trim() === "") {
             responseText = "I completed the task, but I am having trouble translating it into speech right now.";
         }

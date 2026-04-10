@@ -97,26 +97,23 @@ export const sendEmailTool = tool(
 export const getSportsDataTool = tool(
     async ({ requestType, sport, query }) => {
         try {
-            // Multi-Sport Tactical Engine
             if (requestType === "tactics") {
                 const lowerQuery = query.toLowerCase();
 
-                // Football (Soccer)
                 if (lowerQuery.includes("long ball") || lowerQuery.includes("counter")) return "The Long Ball Counter is a tactical setup focusing on absorbing pressure deep, drawing the opponent in, and launching rapid, direct passes to fast forwards. A classic example is Jose Mourinho's peak 4-3-3.";
                 if (lowerQuery.includes("tiki taka") || lowerQuery.includes("possession")) return "Tiki-Taka is characterized by short passing and movement, working the ball through various channels, and maintaining possession. It relies heavily on technical midfielders creating triangles across the pitch.";
 
-                // Basketball
                 if (lowerQuery.includes("pick and roll")) return "The Pick and Roll is a classic offensive play in basketball where a player sets a screen (pick) for a teammate handling the ball and then moves toward the basket (rolls) to accept a pass.";
                 if (lowerQuery.includes("triangle")) return "The Triangle Offense is a basketball strategy relying on spacing, passing, and constant motion, popularized by Phil Jackson with the Bulls and Lakers.";
 
-                // American Football
                 if (lowerQuery.includes("west coast")) return "The West Coast Offense in American football relies on short, horizontal passing routes to stretch out the defense, rather than establishing the run game first.";
 
                 return `Tactical analysis for ${query} in ${sport}: This system generally requires high situational awareness and exploits specific defensive weaknesses.`;
             }
 
-            // Live Sports API Engine (Works for NBA, NFL, MLB, NHL, Premier League, etc.)
-            const searchResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${query}`);
+            // 🚀 FIXED: Safely encode the URL to prevent crashes on spaced names like "Los Angeles Lakers"
+            const safeQuery = encodeURIComponent(query);
+            const searchResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${safeQuery}`);
             const teamData = await searchResponse.json();
 
             if (!teamData.teams) {
@@ -127,10 +124,10 @@ export const getSportsDataTool = tool(
             const teamId = team.idTeam;
 
             if (requestType === "fixtures") {
-                const eventResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`);
+                const eventResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=${teamId}`);
                 const eventData = await eventResponse.json();
 
-                if (!eventData.events) return `${team.strTeam} currently has no upcoming fixtures listed in the public database.`;
+                if (!eventData.events) return `${team.strTeam} currently has no upcoming fixtures listed in the public database. Note: The free sports API sometimes restricts future fixture data.`;
 
                 const nextMatch = eventData.events[0];
                 return `The next match for ${team.strTeam} is ${nextMatch.strEvent} scheduled for ${nextMatch.dateEvent}.`;
