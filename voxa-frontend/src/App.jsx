@@ -137,7 +137,7 @@ function WeatherCard({ data, theme }) {
   if (isSunny && !isCloudy && !isRainy && !isSnowy && !isWindy && !isNight) emoji = "☀️";
 
   return (
-    <div style={{ perspective: 1200, marginTop: 24, willChange: "transform" }}>
+    <div style={{ position: "relative", perspective: 1200, marginTop: 24, willChange: "transform" }}>
       <motion.div
         ref={cardRef}
         onMouseMove={handleMouseMove}
@@ -510,7 +510,7 @@ function ProfileScreen({ theme, user, userName, setUserName }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 12 }}>
         <div style={{ position: "relative" }}>
           <div style={{ width: 72, height: 72, borderRadius: "50%", background: "linear-gradient(135deg,#7c3aed,#db2777)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, color: "#fff", fontWeight: 600, boxShadow: "0 8px 24px rgba(124,58,237,0.3)" }}>{userName?.charAt(0).toUpperCase() || "V"}</div>
@@ -566,7 +566,7 @@ function HistoryScreen({ theme, user, onClose }) {
   }, [user]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 12 }}>
       {loading ? (
         <p style={{ color: theme.textMuted, textAlign: "center", marginTop: 20 }}>Loading logs from MongoDB...</p>
       ) : history.length === 0 ? (
@@ -593,7 +593,7 @@ function PersonalizationScreen({ theme, selectedVoice, setSelectedVoice }) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 24 }}>
       <div>
         <p style={{ fontSize: 12, color: theme.textMuted, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.05em", fontWeight: 600 }}>AI Voice Model</p>
         <div style={{ display: "flex", gap: 16 }}>
@@ -615,8 +615,9 @@ function PersonalizationScreen({ theme, selectedVoice, setSelectedVoice }) {
 
 function FeedbackScreen({ theme }) {
   const [rating, setRating] = useState(0);
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 20 }}>
       <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.5 }}>How is your experience with Voxa so far?</p>
       <div style={{ display: "flex", gap: 12, justifyContent: "center", margin: "10px 0" }}>
         {[1, 2, 3, 4, 5].map(star => (
@@ -633,7 +634,7 @@ function FeedbackScreen({ theme }) {
 
 function SupportScreen({ theme }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+    <div style={{ position: "relative", display: "flex", flexDirection: "column", gap: 20 }}>
       <p style={{ fontSize: 15, color: theme.textMuted, lineHeight: 1.5 }}>Raise a support ticket. Our engineering team will get back to you shortly.</p>
       <div style={{ position: "relative" }}>
         <select style={{ width: "100%", padding: "16px 18px", borderRadius: 14, border: `1px solid ${theme.inputBorder}`, background: theme.inputBg, color: theme.text, fontSize: "16px", outline: "none", fontFamily: "inherit", WebkitAppearance: "none", cursor: "pointer" }}>
@@ -968,6 +969,7 @@ export default function VoiceAssistant({ user, onLogout }) {
     }
   }, [endCall, startSilenceTimer]);
 
+  // 🚀 FIXED: Upgraded runQuery to handle real-time Server-Sent Events (SSE)
   const runQuery = async (q) => {
     loopRef.current.isBotSpeaking = true;
     if (loopRef.current.silenceTimer) clearTimeout(loopRef.current.silenceTimer);
@@ -989,7 +991,8 @@ export default function VoiceAssistant({ user, onLogout }) {
     setRibbonSplit(true);
     setShowQuery(true);
     setTyping(false);
-    setCurrentPrompt(q); setCurrentResponse("Thinking...");
+    setCurrentPrompt(q);
+    setCurrentResponse("Thinking...");
     setCurrentCard(null);
 
     let capturedImageData = null;
@@ -1021,27 +1024,60 @@ export default function VoiceAssistant({ user, onLogout }) {
         }),
       });
 
-      const data = await response.json();
+      if (!response.body) throw new Error("No readable stream available");
 
-      if (data.endCall === true) {
-        loopRef.current.pendingHangup = true;
-      }
+      // 📡 Open the real-time pipeline to the server
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let done = false;
 
-      setPhase(PHASES.RESPONDING);
-      const finalText = data.text || data.reply || "Error: Connection failed.";
-      setCurrentResponse(finalText);
-      if (data.card) setCurrentCard(data.card);
-      setTyping(true);
+      while (!done) {
+        const { value, done: readerDone } = await reader.read();
+        done = readerDone;
 
-      if (!isAppMuted) {
-        if (data.audio && loopRef.current.audioPlayer) {
-          loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${data.audio}`;
-          loopRef.current.audioPlayer.play().catch(e => {
-            console.error("Audio playback blocked:", e);
-            triggerVoiceContinuation();
-          });
-        } else {
-          triggerVoiceContinuation();
+        if (value) {
+          const chunk = decoder.decode(value, { stream: true });
+          const lines = chunk.split('\n');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                // Parse the specific event from the server
+                const data = JSON.parse(line.substring(6));
+
+                if (data.type === 'status') {
+                  // Update UI immediately while Llama 3 is thinking or searching
+                  setCurrentResponse(data.text);
+                }
+                else if (data.type === 'text') {
+                  // Text is ready! Show it instantly.
+                  setPhase(PHASES.RESPONDING);
+                  setCurrentResponse(data.text);
+                  if (data.card) setCurrentCard(data.card);
+                  setTyping(true);
+                }
+                else if (data.type === 'audio') {
+                  // Audio arrived! Play it.
+                  if (!isAppMuted && data.audio && loopRef.current.audioPlayer) {
+                    loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${data.audio}`;
+                    loopRef.current.audioPlayer.play().catch(e => {
+                      console.error("Audio playback blocked:", e);
+                      triggerVoiceContinuation();
+                    });
+                  } else {
+                    triggerVoiceContinuation();
+                  }
+                }
+                else if (data.type === 'error') {
+                  setPhase(PHASES.RESPONDING);
+                  setCurrentResponse(data.text);
+                  triggerVoiceContinuation();
+                }
+              } catch (e) {
+                console.error("Failed to parse SSE line:", line);
+              }
+            }
+          }
         }
       }
     } catch (err) {
