@@ -1,5 +1,5 @@
 import express from 'express';
-import { generateAIResponse } from '../services/llm.js'; // 🚀 Pointing to new Custom Pipeline
+import { generateAIResponse } from '../services/llm.js';
 import { executeCommand } from '../services/system.js';
 import { Message } from '../services/memory.js';
 import { generateSpeech } from '../services/tts.js';
@@ -16,48 +16,70 @@ router.get('/history', protect, async (req, res) => {
     }
 });
 
+// 🚀 UPGRADED: Server-Sent Events (SSE) Streaming Route
 router.post('/', protect, async (req, res) => {
+    // 1. Establish the Real-Time Pipeline Headers
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+
+    // Helper function to push chunks of data down the pipe
+    const sendStreamEvent = (type, payload) => {
+        res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
+    };
+
     try {
         const { prompt, image, voice } = req.body;
-        if (!prompt) return res.status(400).json({ error: "Prompt is required" });
+        if (!prompt) {
+            sendStreamEvent('error', { text: "Prompt is required" });
+            return res.end();
+        }
 
         console.log(`🗣️ User [${req.user.name}] said: "${prompt}"`);
-        if (image) console.log(`📥 Server received image payload.`);
-
         await Message.create({ user: req.user._id, role: 'user', text: prompt });
 
         const commandResponse = executeCommand(prompt);
         if (commandResponse) {
-            console.log(`⚡ System Command Executed.`);
+            sendStreamEvent('text', { text: commandResponse });
             const audio = await generateSpeech(commandResponse, voice || 'female');
+            sendStreamEvent('audio', { audio });
             await Message.create({ user: req.user._id, role: 'ai', text: commandResponse });
-            return res.json({ text: commandResponse, audio, success: true });
+            return res.end();
         }
 
-        // Send to RAG Pipeline
-        const aiResponse = await generateAIResponse(prompt, image, req.user._id);
+        // 2. Start the AI Pipeline and pass in a real-time status callback
+        sendStreamEvent('status', { text: 'Thinking...' });
 
-        // 🛡️ Graceful Error Handling
+        const aiResponse = await generateAIResponse(prompt, image, req.user._id, (statusMessage) => {
+            // This fires dynamically if the AI decides to use the Tavily Search Tool!
+            sendStreamEvent('status', { text: statusMessage });
+        });
+
         if (aiResponse.error) {
-            return res.status(200).json({ text: aiResponse.text, success: false });
+            sendStreamEvent('error', { text: aiResponse.text });
+            return res.end();
         }
 
+        // 3. ⚡ INSTANT TEXT DELIVERY ⚡
+        // The UI will update with text and widgets immediately without waiting for audio!
         console.log(`🤖 Voxa thought: "${aiResponse.text}"`);
-
+        sendStreamEvent('text', { text: aiResponse.text, card: aiResponse.card });
         await Message.create({ user: req.user._id, role: 'ai', text: aiResponse.text });
 
+        // 4. GENERATE AUDIO IN BACKGROUND
+        sendStreamEvent('status', { text: 'Synthesizing voice...' });
         const base64Audio = await generateSpeech(aiResponse.text, voice || 'female');
 
-        res.json({
-            text: aiResponse.text,
-            card: aiResponse.card,
-            audio: base64Audio,
-            success: true
-        });
+        // 5. SEND AUDIO AND CLOSE CONNECTION
+        sendStreamEvent('audio', { audio: base64Audio });
+        res.end();
 
     } catch (error) {
         console.error("❌ Route Error:", error);
-        res.status(500).json({ error: "Failed to process request" });
+        sendStreamEvent('error', { text: "Failed to process request" });
+        res.end();
     }
 });
 

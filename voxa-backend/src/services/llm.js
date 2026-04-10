@@ -6,7 +6,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// 🧠 1. Initialize High-Speed Groq Models (Llama 3.3!)
+// 🧠 1. Initialize High-Speed Groq Models
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
     model: "llama-3.3-70b-versatile",
@@ -25,7 +25,6 @@ const searchTool = new TavilySearch({
     apiKey: process.env.TAVILY_API_KEY,
 });
 
-// Bind the tool to the Chat Model
 const groqChatWithTools = groqChat.bindTools([searchTool]);
 
 // 🧠 3. Background Fact Extractor
@@ -35,17 +34,14 @@ const extractBackgroundFacts = async (userId, userText) => {
         const result = await groqChat.invoke([new HumanMessage(extractorPrompt)]);
         const fact = result.content.trim();
         if (fact !== "NONE") await saveFact(userId, fact);
-    } catch (err) {
-        // Fails silently in the background
-    }
+    } catch (err) { }
 };
 
-// 🧠 4. Core Agentic RAG Pipeline
-export const generateAIResponse = async (userPrompt, base64Image = null, userId) => {
+// 🧠 4. Core Agentic RAG Pipeline (Now supports real-time status updates!)
+export const generateAIResponse = async (userPrompt, base64Image = null, userId, onStatusUpdate) => {
     try {
         if (!userId) throw new Error("userId is missing!");
 
-        // 🔍 Retrieve Memory Context (RAG)
         const history = await getChatHistory(userId);
         const facts = await getRelevantFacts(userId, userPrompt);
 
@@ -67,7 +63,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
 
         let messages = [new SystemMessage(systemInstruction)];
 
-        // 👁️ Vision Routing
         let result;
         if (base64Image && base64Image.length > 100) {
             const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
@@ -77,19 +72,16 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanBase64}` } }
                 ]
             }));
-            console.log("📸 Vision Pipeline Active: Image routed to Llama Vision.");
             result = await groqVision.invoke(messages);
         } else {
-            // 🌐 Standard Agentic Routing
             messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
 
-            // 🚀 FIXED: Implemented a true Agentic Loop
             result = await groqChatWithTools.invoke(messages);
             let loopCount = 0;
 
-            // Allow the AI to search multiple times if needed, but cap it to prevent infinite loops
             while (result.tool_calls && result.tool_calls.length > 0 && loopCount < 3) {
-                console.log(`🌐 Voxa searching the live web (Loop ${loopCount + 1})...`);
+                // 🚀 REAL-TIME UPDATE: Tell the frontend we are searching the web!
+                if (onStatusUpdate) onStatusUpdate("Scanning the live internet...");
 
                 messages.push(result);
 
@@ -102,35 +94,25 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
                             name: toolCall.name
                         }));
                     } catch (err) {
-                        messages.push(new ToolMessage({
-                            content: "Search failed.",
-                            tool_call_id: toolCall.id,
-                            name: toolCall.name
-                        }));
+                        messages.push(new ToolMessage({ content: "Search failed.", tool_call_id: toolCall.id, name: toolCall.name }));
                     }
                 }
 
-                // On the final pass, we use standard groqChat (no tools attached) to FORCE it to answer verbally
                 if (loopCount === 2) {
                     result = await groqChat.invoke(messages);
                 } else {
                     result = await groqChatWithTools.invoke(messages);
                 }
-
                 loopCount++;
             }
         }
 
         let responseText = result.content;
-
-        // 🛡️ Final Fallback: If it stubbornly refuses to generate text, intercept it gracefully
         if (!responseText || responseText.trim() === "") {
             responseText = "I found the live data, but I am having trouble translating it into speech right now.";
         }
 
         let cardData = null;
-
-        // 🃏 Extract Widget Cards for the UI
         const cardMatch = responseText.match(/\|\|CARD:([^|]+)\|\|/);
         if (cardMatch) {
             const segments = cardMatch[1].split(':');
@@ -138,12 +120,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId)
             responseText = responseText.replace(cardMatch[0], '').trim();
         }
 
-        // Trigger fact extraction in the background
         extractBackgroundFacts(userId, userPrompt);
-
         return { text: responseText, card: cardData };
     } catch (error) {
-        console.error("❌ Groq Pipeline Error:", error.message);
         return { error: true, text: "I am experiencing network interference. Please try speaking again." };
     }
 };
