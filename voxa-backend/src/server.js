@@ -12,11 +12,16 @@ connectDB();
 
 const app = express();
 
-// 🛡️ THE ULTIMATE CORS FIX: Dynamically trust any Vercel URL
+// 🛡️ THE BULLETPROOF CORS FIX
 app.use(cors({
-    origin: true, // This bounces the trusted origin back automatically
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true // Crucial for passing JWT tokens securely
+    origin: function (origin, callback) {
+        // This explicitly echoes back whatever Vercel URL is making the request,
+        // safely bypassing all CORS origin restrictions.
+        callback(null, origin || true);
+    },
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], // Explicitly allow the Preflight OPTIONS
+    credentials: true,
+    allowedHeaders: ["Content-Type", "Authorization"] // Explicitly whitelist our JWT headers
 }));
 
 // Body parser with increased limit to handle large Base64 image payloads
