@@ -37,7 +37,7 @@ const extractBackgroundFacts = async (userId, userText) => {
 };
 
 // 🧠 4. Core Agentic RAG Pipeline
-export const generateAIResponse = async (userPrompt, base64Image = null, userId, onStatusUpdate) => {
+export const generateAIResponse = async (userPrompt, base64Image = null, userId, onStatusUpdate, mood = "neutral") => {
     try {
         if (!userId) throw new Error("userId is missing!");
 
@@ -50,7 +50,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 FIXED: Explicitly banned XML tool hallucination so Voxa fires tools silently.
+        // 🚀 PERFECTLY PRESERVED SYSTEM INSTRUCTION + NEW MOOD AWARENESS
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -61,7 +61,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
         5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities.
         6. TOOL EXECUTION: You MUST use the native tool-calling JSON array to execute actions. Do NOT output raw <function> XML tags in your spoken text under any circumstances. If you need to use a tool, trigger it silently.
-        7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.`;
+        7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.
+        8. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}. If they are frustrated, sad, or angry, adjust your tone to be highly empathetic, soft, and supportive. If they are happy, be energetic.`;
 
         let messages = [new SystemMessage(systemInstruction)];
 
@@ -136,7 +137,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         let responseText = result.content;
 
-        // 🚀 FALLBACK CATCHER: If Llama 3 still tries to leak XML, we scrub it from the spoken output!
+        // 🚀 FALLBACK CATCHER: If Llama 3 still tries to leak XML, scrub it from output
         if (responseText) {
             responseText = responseText.replace(/<function[^>]*>.*?<\/function>/gi, '').trim();
         }

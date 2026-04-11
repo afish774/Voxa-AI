@@ -31,13 +31,15 @@ router.post('/', protect, async (req, res) => {
     };
 
     try {
-        const { prompt, image, voice } = req.body;
+        // 🚀 NEW: Extract 'mood' from the incoming React request
+        const { prompt, image, voice, mood } = req.body;
+
         if (!prompt) {
             sendStreamEvent('error', { text: "Prompt is required" });
             return res.end();
         }
 
-        console.log(`🗣️ User [${req.user.name}] said: "${prompt}"`);
+        console.log(`🗣️ User [${req.user.name}] said: "${prompt}" (Mood: ${mood || 'neutral'})`);
         await Message.create({ user: req.user._id, role: 'user', text: prompt });
 
         const commandResponse = executeCommand(prompt);
@@ -52,10 +54,11 @@ router.post('/', protect, async (req, res) => {
         // 2. Start the AI Pipeline and pass in a real-time status callback
         sendStreamEvent('status', { text: 'Thinking...' });
 
+        // 🚀 NEW: Pass the 'mood' variable into the LLM engine
         const aiResponse = await generateAIResponse(prompt, image, req.user._id, (statusMessage) => {
             // This fires dynamically if the AI decides to use the Tavily Search Tool!
             sendStreamEvent('status', { text: statusMessage });
-        });
+        }, mood);
 
         if (aiResponse.error) {
             sendStreamEvent('error', { text: aiResponse.text });
@@ -69,7 +72,6 @@ router.post('/', protect, async (req, res) => {
         await Message.create({ user: req.user._id, role: 'ai', text: aiResponse.text });
 
         // 4. GENERATE AUDIO IN BACKGROUND
-        // 🚀 FIXED: Removed the 'Synthesizing voice...' status so it stops overwriting the actual text!
         const base64Audio = await generateSpeech(aiResponse.text, voice || 'female');
 
         // 5. SEND AUDIO AND CLOSE CONNECTION
