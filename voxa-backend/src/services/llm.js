@@ -51,8 +51,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 UPDATED: System Prompt with Weather & Sports Widget Protocols
-        // 🚀 UPDATED: The "Critical Mandate" forces Llama to always output the card!
+        // 🚀 UPDATED: Removed the "Pink Elephant" to stop Groq from hallucinating XML tags
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -66,7 +65,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
           * Example Schedule: "They play tomorrow at 8 PM." ||CARD:SPORTS:Lakers:Warriors:-:-:Tomorrow 8 PM:NBA||
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
         5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities.
-        6. TOOL EXECUTION: You MUST use the native tool-calling JSON array to execute actions. Do NOT output raw <function> XML tags in your spoken text under any circumstances. If you need to use a tool, trigger it silently.
+        6. TOOL EXECUTION: Call tools silently using your native capabilities. Never write out raw JSON arrays or formatting syntax in your conversational reply.
         7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.
         8. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}. If they are frustrated, sad, or angry, adjust your tone to be highly empathetic, soft, and supportive. If they are happy, be energetic.`;
 
@@ -153,11 +152,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         let cardData = null;
 
-        // 🚀 BULLETPROOF REGEX: Ignores spaces, casing, and minor formatting typos
         const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*([^|]+)\s*\|\|/i);
 
         if (cardMatch) {
-            // Clean up any weird spacing Llama might have added inside the tags
             const segments = cardMatch[1].split(':').map(s => s.trim());
             const cardType = segments[0].toUpperCase();
 
@@ -167,11 +164,9 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                 cardData = { type: 'sports', teamA: segments[1], teamB: segments[2], scoreA: segments[3], scoreB: segments[4], status: segments[5], league: segments[6] };
             }
 
-            // Scrub the tag from the text so Voxa doesn't accidentally read it out loud!
             responseText = responseText.replace(cardMatch[0], '').trim();
         }
 
-        // 🕵️ THE SPYGLASS: This will print exactly what Llama generated to your backend terminal!
         console.log("🤖 LLAMA RAW TEXT:", result.content);
         console.log("🃏 EXTRACTED CARD:", cardData);
 
