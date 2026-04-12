@@ -1,9 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// ─────────────────────────────────────────────
-// CONFIG & EXTERNAL COMPONENTS
-// ─────────────────────────────────────────────
 import { PHASES, THEMES } from "./config/constants";
 import { streamChatResponse } from "./services/apiStream";
 import GlobalStyles from "./components/layout/GlobalStyles";
@@ -13,10 +10,6 @@ import Navbar from "./components/layout/Navbar";
 import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
-
-// ─────────────────────────────────────────────
-// ROOT APP COMPONENT
-// ─────────────────────────────────────────────
 
 export default function VoiceAssistant({ user, onLogout }) {
   const [isDark, setIsDark] = useState(() => { try { return localStorage.getItem('voxa_theme') !== 'light'; } catch (e) { return true; } });
@@ -77,9 +70,6 @@ export default function VoiceAssistant({ user, onLogout }) {
     e.target.value = '';
   };
 
-  // ─────────────────────────────────────────────
-  // ENGINE LOGIC
-  // ─────────────────────────────────────────────
   const endCall = useCallback(() => {
     loopRef.current.isVoiceCall = false; loopRef.current.isBotSpeaking = false; loopRef.current.pendingHangup = false;
     if (loopRef.current.silenceTimer) clearTimeout(loopRef.current.silenceTimer);
@@ -143,18 +133,24 @@ export default function VoiceAssistant({ user, onLogout }) {
     setPhase(PHASES.PROCESSING); setShowGreeting(false); setRibbonSplit(true); setShowQuery(true); setTyping(false); setCurrentPrompt(q); setCurrentResponse("Thinking..."); setCurrentCard(null);
 
     let finalImage = uploadedImage;
+
+    // 🚀 THE FIX: Severely compress and scale down the image payload before sending!
     if (cameraModeRef.current) {
       try {
         const videoElement = document.getElementById("voxa-camera-feed");
-        if (videoElement) {
-          const canvas = document.createElement("canvas"); canvas.width = videoElement.videoWidth || 1080; canvas.height = videoElement.videoHeight || 1920;
-          const ctx = canvas.getContext("2d"); ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-          finalImage = canvas.toDataURL("image/jpeg", 0.5);
+        if (videoElement && videoElement.videoWidth) {
+          const canvas = document.createElement("canvas");
+          const MAX_WIDTH = 512; // Tiny footprint!
+          const scale = MAX_WIDTH / videoElement.videoWidth;
+          canvas.width = MAX_WIDTH;
+          canvas.height = videoElement.videoHeight * scale;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+          finalImage = canvas.toDataURL("image/jpeg", 0.4); // Compress heavily to bypass server limits
         }
-      } catch (err) { }
+      } catch (err) { console.error("Image capture failed:", err); }
     }
 
-    // 🔥 Stream Logic is now securely delegated to apiStream.js
     await streamChatResponse(
       { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: user?.token },
       {
@@ -186,9 +182,6 @@ export default function VoiceAssistant({ user, onLogout }) {
   const handleAudioRef = useCallback((node) => { if (node) loopRef.current.audioPlayer = node; }, []);
   const handleAudioEnd = useCallback(() => { setTimeout(() => { triggerVoiceContinuation(); }, 500); }, [triggerVoiceContinuation]);
 
-  // ─────────────────────────────────────────────
-  // RENDER 
-  // ─────────────────────────────────────────────
   return (
     <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale" }}>
 
