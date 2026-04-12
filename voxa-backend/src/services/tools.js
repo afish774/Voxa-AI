@@ -93,32 +93,77 @@ export const sendEmailTool = tool(
     }
 );
 
-// 🌍 TOOL 4: The Global Sports Hub (UPGRADED WITH LIVE SCORES)
+// 🌍 TOOL 4: The Global Sports Hub (MASTER ROUTER)
 export const getSportsDataTool = tool(
     async ({ requestType, sport, query }) => {
         try {
+            const lowerQuery = query.toLowerCase();
+
+            // ==========================================
+            // 🏏 ROUTE 1: CRICKET & IPL (CricAPI Live)
+            // ==========================================
+            if (sport.toLowerCase() === "cricket" || lowerQuery.includes("ipl")) {
+                if (!process.env.CRICKET_API_KEY) {
+                    return "Error: CRICKET_API_KEY is missing from the environment variables. Cannot fetch live cricket scores.";
+                }
+
+                const res = await fetch(`https://api.cricapi.com/v1/currentMatches?apikey=${process.env.CRICKET_API_KEY}&offset=0`);
+                const matchData = await res.json();
+
+                if (!matchData.data || matchData.data.length === 0) {
+                    return `I couldn't find any live or recent cricket matches matching "${query}".`;
+                }
+
+                const targetMatch = matchData.data.find(m =>
+                    m.name.toLowerCase().includes(lowerQuery) ||
+                    m.shortName.toLowerCase().includes(lowerQuery)
+                );
+
+                if (!targetMatch) {
+                    return `I scanned the live servers but couldn't find an active match for "${query}".`;
+                }
+
+                const teamA = targetMatch.teams[0];
+                const teamB = targetMatch.teams[1];
+                let scoreA = "-";
+                let scoreB = "-";
+
+                if (targetMatch.score && targetMatch.score.length > 0) {
+                    const scoreObjA = targetMatch.score.find(s => s.inning.includes(teamA));
+                    const scoreObjB = targetMatch.score.find(s => s.inning.includes(teamB));
+                    if (scoreObjA) scoreA = `${scoreObjA.r}/${scoreObjA.w}`;
+                    if (scoreObjB) scoreB = `${scoreObjB.r}/${scoreObjB.w}`;
+                }
+
+                const status = targetMatch.status || "Live";
+                const league = targetMatch.matchType.toUpperCase() === "T20" ? "IPL / T20" : targetMatch.matchType.toUpperCase();
+
+                return `Data found. ${teamA}: ${scoreA}. ${teamB}: ${scoreB}. Status: ${status}. League: ${league}. Format this exactly into the SPORTS widget card.`;
+            }
+
+            // ==========================================
+            // 🧠 ROUTE 2: TACTICS & FORMATIONS
+            // ==========================================
             if (requestType === "tactics") {
-                const lowerQuery = query.toLowerCase();
                 if (lowerQuery.includes("long ball") || lowerQuery.includes("counter")) return "The Long Ball Counter is a tactical setup focusing on absorbing pressure deep, drawing the opponent in, and launching rapid, direct passes to fast forwards. A classic example is Jose Mourinho's peak 4-3-3.";
-                if (lowerQuery.includes("tiki taka") || lowerQuery.includes("possession")) return "Tiki-Taka is characterized by short passing and movement, working the ball through various channels, and maintaining possession. It relies heavily on technical midfielders creating triangles across the pitch.";
+                if (lowerQuery.includes("tiki taka") || lowerQuery.includes("possession")) return "Tiki-Taka is characterized by short passing and movement, working the ball through various channels, and maintaining possession.";
                 if (lowerQuery.includes("pick and roll")) return "The Pick and Roll is a classic offensive play in basketball where a player sets a screen (pick) for a teammate handling the ball and then moves toward the basket (rolls) to accept a pass.";
-                if (lowerQuery.includes("triangle")) return "The Triangle Offense is a basketball strategy relying on spacing, passing, and constant motion, popularized by Phil Jackson with the Bulls and Lakers.";
-                if (lowerQuery.includes("west coast")) return "The West Coast Offense in American football relies on short, horizontal passing routes to stretch out the defense, rather than establishing the run game first.";
                 return `Tactical analysis for ${query} in ${sport}: This system generally requires high situational awareness and exploits specific defensive weaknesses.`;
             }
 
+            // ==========================================
+            // ⚽ ROUTE 3: GLOBAL SPORTS (TheSportsDB for NBA, NFL, Soccer, etc.)
+            // ==========================================
             const safeQuery = encodeURIComponent(query);
             const searchResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/123/searchteams.php?t=${safeQuery}`);
             const teamData = await searchResponse.json();
 
-            if (!teamData.teams) {
-                return `I couldn't find database records for the ${sport} team "${query}". Please check the spelling.`;
-            }
+            if (!teamData.teams) return `I couldn't find database records for the ${sport} team "${query}". Please check the spelling.`;
 
             const team = teamData.teams[0];
             const teamId = team.idTeam;
 
-            // 🚀 NEW: Added the endpoints to fetch actual scores!
+            // Fetch Recent Scores
             if (requestType === "scores") {
                 const eventResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventslast.php?id=${teamId}`);
                 const eventData = await eventResponse.json();
@@ -126,46 +171,59 @@ export const getSportsDataTool = tool(
                 if (!eventData.results) return `${team.strTeam} currently has no recent match results listed in the public database.`;
 
                 const lastMatch = eventData.results[0];
-                return `The last match was ${lastMatch.strEvent}. The final score was ${lastMatch.strHomeTeam} ${lastMatch.intHomeScore}, ${lastMatch.strAwayTeam} ${lastMatch.intAwayScore}.`;
+                const homeTeam = lastMatch.strHomeTeam;
+                const awayTeam = lastMatch.strAwayTeam;
+                const homeScore = lastMatch.intHomeScore || "0";
+                const awayScore = lastMatch.intAwayScore || "0";
+                const league = lastMatch.strLeague || sport;
+                const status = "FT"; // TheSportsDB 'last events' are always full-time
+
+                return `Data found. ${homeTeam}: ${homeScore}. ${awayTeam}: ${awayScore}. Status: ${status}. League: ${league}. Format this exactly into the SPORTS widget card.`;
             }
 
+            // Fetch Upcoming Fixtures
             if (requestType === "fixtures") {
                 const eventResponse = await fetch(`https://www.thesportsdb.com/api/v1/json/123/eventsnext.php?id=${teamId}`);
                 const eventData = await eventResponse.json();
 
-                if (!eventData.events) return `${team.strTeam} currently has no upcoming fixtures listed in the public database. Note: The free sports API sometimes restricts future fixture data.`;
+                if (!eventData.events) return `${team.strTeam} currently has no upcoming fixtures listed in the public database.`;
 
                 const nextMatch = eventData.events[0];
-                return `The next match for ${team.strTeam} is ${nextMatch.strEvent} scheduled for ${nextMatch.dateEvent}.`;
+                const homeTeam = nextMatch.strHomeTeam;
+                const awayTeam = nextMatch.strAwayTeam;
+                const date = nextMatch.dateEvent || "Upcoming";
+                const league = nextMatch.strLeague || sport;
+
+                return `Data found. ${homeTeam}: -. ${awayTeam}: -. Status: Scheduled for ${date}. League: ${league}. Format this exactly into the SPORTS widget card.`;
             }
 
+            // Fetch Team Info
             if (requestType === "team_info") {
                 return `${team.strTeam} plays in the ${team.strLeague}. Their home venue is ${team.strStadium}, which has a capacity of ${team.intStadiumCapacity}.`;
             }
 
             return `I found data for ${team.strTeam}, but could not process the specific request type.`;
+
         } catch (error) {
             console.error("Sports API Error:", error);
-            return "Error: Failed to fetch sports data from the global API.";
+            return "Error: Failed to fetch sports data from the global network. The API might be temporarily down.";
         }
     },
     {
         name: "get_sports_data",
-        description: "Fetches live sports team information, recent scores, upcoming fixtures, and tactical data for global sports.",
+        description: "Fetches live scores, previous match results, upcoming fixtures, and team info for ALL global sports (Football, NBA, NFL, Cricket, etc.).",
         schema: z.object({
-            // 🚀 NEW: 'scores' added to the schema so Llama knows it can use it!
-            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]).describe("The specific type of sports information requested."),
-            sport: z.string().describe("The name of the sport (e.g., 'football', 'basketball', 'baseball')."),
-            query: z.string().describe("The name of the team (e.g., 'Los Angeles Lakers') or tactical formation."),
+            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]).describe("The specific type of sports information requested. Use 'scores' for recent/live matches, and 'fixtures' for upcoming schedules."),
+            sport: z.string().describe("The name of the sport (e.g., 'football', 'basketball', 'cricket', 'baseball')."),
+            query: z.string().describe("The name of the team (e.g., 'Lakers', 'Real Madrid', 'Royal Challengers Bangalore')."),
         }),
     }
 );
 
-// 🌤️ NEW TOOL 5: The Global Weather Radar (Live Geocoding & Weather)
+// 🌤️ TOOL 5: The Global Weather Radar
 export const getWeatherTool = tool(
     async ({ location }) => {
         try {
-            // Step 1: Convert city name to GPS Coordinates
             const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`);
             const geoData = await geoRes.json();
 
@@ -175,19 +233,17 @@ export const getWeatherTool = tool(
 
             const { latitude, longitude, name } = geoData.results[0];
 
-            // Step 2: Fetch precise weather using Coordinates
             const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`);
             const weatherData = await weatherRes.json();
 
             const temp = Math.round(weatherData.current_weather.temperature);
             const code = weatherData.current_weather.weathercode;
 
-            // Step 3: Map complex meteorological codes to your 4 strict UI conditions
             let condition = "Sunny";
-            if (code >= 51 && code <= 69) condition = "Rain"; // Drizzle to Heavy Rain
-            else if (code >= 71 && code <= 79) condition = "Winter"; // Snow
-            else if (code >= 80 && code <= 99) condition = "Rain"; // Showers & Thunderstorms
-            else if (code >= 1 && code <= 3) condition = "Autumn"; // Partly Cloudy / Overcast
+            if (code >= 51 && code <= 69) condition = "Rain";
+            else if (code >= 71 && code <= 79) condition = "Winter";
+            else if (code >= 80 && code <= 99) condition = "Rain";
+            else if (code >= 1 && code <= 3) condition = "Autumn";
 
             return `The current live weather in ${name} is ${temp} degrees Celsius with a condition of ${condition}. Format your response exactly to trigger the Weather Widget.`;
 
@@ -200,7 +256,7 @@ export const getWeatherTool = tool(
         name: "get_weather",
         description: "Fetches highly accurate, real-time weather data and temperature for any city, region, or location globally.",
         schema: z.object({
-            location: z.string().describe("The name of the city or location (e.g., 'Chavakkad', 'London', 'New York')."),
+            location: z.string().describe("The name of the city or location (e.g., 'London', 'New York', 'Chavakkad')."),
         }),
     }
 );
