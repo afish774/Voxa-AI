@@ -51,7 +51,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 UPDATED: Added the SPORTS WIDGET PROTOCOL
+        // 🚀 UPDATED: System Prompt with Weather & Sports Widget Protocols
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -150,17 +150,27 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         let cardData = null;
 
-        // 🚀 UPDATED: Regex parser now handles BOTH Weather and Sports cards!
-        const cardMatch = responseText.match(/\|\|CARD:([^|]+)\|\|/);
+        // 🚀 BULLETPROOF REGEX: Ignores spaces, casing, and minor formatting typos
+        const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*([^|]+)\s*\|\|/i);
+
         if (cardMatch) {
-            const segments = cardMatch[1].split(':');
-            if (segments[0] === 'WEATHER') {
+            // Clean up any weird spacing Llama might have added inside the tags
+            const segments = cardMatch[1].split(':').map(s => s.trim());
+            const cardType = segments[0].toUpperCase();
+
+            if (cardType === 'WEATHER') {
                 cardData = { type: 'weather', location: segments[1], temp: segments[2], condition: segments[3] };
-            } else if (segments[0] === 'SPORTS') {
+            } else if (cardType === 'SPORTS') {
                 cardData = { type: 'sports', teamA: segments[1], teamB: segments[2], scoreA: segments[3], scoreB: segments[4], status: segments[5], league: segments[6] };
             }
+
+            // Scrub the tag from the text so Voxa doesn't accidentally read it out loud!
             responseText = responseText.replace(cardMatch[0], '').trim();
         }
+
+        // 🕵️ THE SPYGLASS: This will print exactly what Llama generated to your backend terminal!
+        console.log("🤖 LLAMA RAW TEXT:", result.content);
+        console.log("🃏 EXTRACTED CARD:", cardData);
 
         extractBackgroundFacts(userId, userPrompt);
         return { text: responseText, card: cardData };
