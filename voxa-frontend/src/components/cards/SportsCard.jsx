@@ -5,20 +5,31 @@ import { motion, AnimatePresence } from 'framer-motion';
 const getLogo = (name, hex) =>
     `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${hex}&color=fff&size=150&bold=true`;
 
+// --- THE ROUTER: DETECTS SPORT & ASSIGNS EXACT THEMES ---
 const getSportConfig = (league = "") => {
     const l = league.toLowerCase();
+
+    // 1. Cricket
     if (l.includes('ipl') || l.includes('t20') || l.includes('cricket') || l.includes('odi') || l.includes('test')) {
-        return { type: 'cricket', bg: "linear-gradient(145deg, #0f172a 0%, #1e293b 100%)", glow: "rgba(56, 189, 248, 0.2)", accent: "0ea5e9" }; // Deep Slate & Sky
+        return { type: 'cricket', bg: "linear-gradient(145deg, #0f172a 0%, #1e293b 100%)", glow: "rgba(56, 189, 248, 0.2)", accent: "0ea5e9" };
     }
+    // 2. Basketball & American Football
     if (l.includes('nba') || l.includes('basketball') || l.includes('nfl')) {
-        return { type: 'basketball', bg: "linear-gradient(145deg, #18181b 0%, #27272a 100%)", glow: "rgba(249, 115, 22, 0.15)", accent: "f97316" }; // Carbon & Orange
+        return { type: 'basketball', bg: "linear-gradient(145deg, #18181b 0%, #27272a 100%)", glow: "rgba(249, 115, 22, 0.15)", accent: "f97316" };
     }
-    return { type: 'football', bg: "linear-gradient(145deg, #064e3b 0%, #022c22 100%)", glow: "rgba(16, 185, 129, 0.2)", accent: "10b981" }; // Emerald & Forest
+    // 3. Tennis & Racket Sports
+    if (l.includes('wimbledon') || l.includes('atp') || l.includes('tennis') || l.includes('open')) {
+        return { type: 'tennis', bg: "linear-gradient(145deg, #2e1065 0%, #4c1d95 100%)", glow: "rgba(167, 139, 250, 0.2)", accent: "8b5cf6" };
+    }
+    // 4. Default to Football / Soccer
+    return { type: 'football', bg: "linear-gradient(145deg, #064e3b 0%, #022c22 100%)", glow: "rgba(16, 185, 129, 0.2)", accent: "10b981" };
 };
 
-// --- SUB-COMPONENTS: THE LAYOUTS ---
+// ==========================================
+// THE 4 PROFESSIONAL LAYOUT ENGINES
+// ==========================================
 
-// 🏏 CRICKET: Asymmetrical progression (Batting focus)
+// 🏏 OPTION 1: CRICKET (Asymmetrical Progression)
 const CricketLayout = ({ teamA, teamB, scoreA, scoreB, accent }) => {
     const parse = (s) => {
         if (!s || s === '-') return { runs: '-', overs: '' };
@@ -54,7 +65,7 @@ const CricketLayout = ({ teamA, teamB, scoreA, scoreB, accent }) => {
     );
 };
 
-// ⚽ FOOTBALL: Symmetrical tension (VS focus)
+// ⚽ OPTION 2: FOOTBALL (Symmetrical Tension)
 const FootballLayout = ({ teamA, teamB, scoreA, scoreB, accent, isScheduled }) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 0" }}>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, gap: 12 }}>
@@ -77,7 +88,7 @@ const FootballLayout = ({ teamA, teamB, scoreA, scoreB, accent, isScheduled }) =
     </div>
 );
 
-// 🏀 BASKETBALL / AMERICAN: Vertical Stacked Broadcast Ticket
+// 🏀 OPTION 3: BASKETBALL / NFL (Stacked Broadcast Ticket)
 const BasketballLayout = ({ teamA, teamB, scoreA, scoreB, accent, isScheduled }) => {
     // Determine winner for highlight logic
     const aNum = parseInt(scoreA); const bNum = parseInt(scoreB);
@@ -107,8 +118,29 @@ const BasketballLayout = ({ teamA, teamB, scoreA, scoreB, accent, isScheduled })
     );
 };
 
+// 🎾 OPTION 4: TENNIS / GENERIC (Head-to-Head Split)
+const TennisLayout = ({ teamA, teamB, scoreA, scoreB, accent, isScheduled }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 20, padding: "10px 0" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={getLogo(teamA, accent)} alt={teamA} style={{ width: 40, height: 40, borderRadius: "50%" }} />
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{teamA?.substring(0, 14)}</span>
+            </div>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>{isScheduled ? "-" : scoreA}</span>
+        </div>
+        <div style={{ width: "100%", height: 1, background: "rgba(255,255,255,0.1)" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={getLogo(teamB, "475569")} alt={teamB} style={{ width: 40, height: 40, borderRadius: "50%" }} />
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#cbd5e1" }}>{teamB?.substring(0, 14)}</span>
+            </div>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "#cbd5e1" }}>{isScheduled ? "-" : scoreB}</span>
+        </div>
+    </div>
+);
+
 // ==========================================
-// MASTER EXPORT COMPONENT
+// THE MASTER CARD SHELL
 // ==========================================
 export default function SportsCard({ data }) {
     if (!data || data.type !== 'sports') return null;
@@ -148,7 +180,7 @@ export default function SportsCard({ data }) {
 
             <div style={{ position: "relative", zIndex: 10 }}>
 
-                {/* HEADER ROW */}
+                {/* GLOBAL HEADER ROW */}
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
                     <span style={{ fontSize: 13, fontWeight: 800, color: "rgba(255,255,255,0.4)", letterSpacing: "1.5px", textTransform: "uppercase" }}>
                         {league || "SPORTS"}
@@ -166,16 +198,17 @@ export default function SportsCard({ data }) {
                     </div>
                 </div>
 
-                {/* DYNAMIC POLYMORPHIC LAYOUT RENDERING */}
+                {/* DYNAMIC LAYOUT INJECTION */}
                 <AnimatePresence mode="wait">
                     <motion.div key={config.type} initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.1, type: "spring" }}>
                         {config.type === 'cricket' && <CricketLayout teamA={teamA} teamB={teamB} scoreA={scoreA} scoreB={scoreB} accent={config.accent} />}
                         {config.type === 'football' && <FootballLayout teamA={teamA} teamB={teamB} scoreA={scoreA} scoreB={scoreB} accent={config.accent} isScheduled={isScheduled} />}
                         {config.type === 'basketball' && <BasketballLayout teamA={teamA} teamB={teamB} scoreA={scoreA} scoreB={scoreB} accent={config.accent} isScheduled={isScheduled} />}
+                        {config.type === 'tennis' && <TennisLayout teamA={teamA} teamB={teamB} scoreA={scoreA} scoreB={scoreB} accent={config.accent} isScheduled={isScheduled} />}
                     </motion.div>
                 </AnimatePresence>
 
-                {/* STATUS FOOTER */}
+                {/* GLOBAL STATUS FOOTER */}
                 <motion.div
                     initial={{ y: 10, opacity: 0 }} animate={{ y: 0, opacity: 1 }} transition={{ delay: 0.2, type: "spring" }}
                     style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "center" }}
