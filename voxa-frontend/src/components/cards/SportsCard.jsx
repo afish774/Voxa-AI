@@ -4,190 +4,159 @@ import { Float, MeshTransmissionMaterial, RoundedBox, Html } from "@react-three/
 import { motion, AnimatePresence } from "framer-motion";
 
 /* =========================================================
-   1. BROADCAST DESIGN TOKENS
+   1. UTILS & DATA NORMALIZATION
 ========================================================= */
-const SPORT_THEMES = {
-    cricket: { name: "CRICKET", accent: "#0ea5e9", bg: "#0f172a" },
-    football: { name: "FOOTBALL", accent: "#10b981", bg: "#022c22" },
-    basketball: { name: "BASKETBALL", accent: "#f97316", bg: "#18181b" },
-    tennis: { name: "TENNIS", accent: "#8b5cf6", bg: "#2e1065" },
-    badminton: { name: "BADMINTON", accent: "#ec4899", bg: "#4c1d95" },
-    default: { name: "SPORTS", accent: "#64748b", bg: "#1e293b" }
-};
-
 const getTheme = (league = "") => {
     const l = league.toLowerCase();
-    if (l.includes("cricket") || l.includes("ipl") || l.includes("odi")) return SPORT_THEMES.cricket;
-    if (l.includes("nba") || l.includes("basketball") || l.includes("nfl")) return SPORT_THEMES.basketball;
-    if (l.includes("tennis") || l.includes("wimbledon") || l.includes("atp")) return SPORT_THEMES.tennis;
-    if (l.includes("badminton") || l.includes("bwf")) return SPORT_THEMES.badminton;
-    if (l.includes("premier") || l.includes("la liga") || l.includes("football")) return SPORT_THEMES.football;
-    return SPORT_THEMES.default;
+    if (l.includes("cricket") || l.includes("ipl") || l.includes("odi")) return { name: "CRICKET", accent: "#0ea5e9" };
+    if (l.includes("nba") || l.includes("basketball") || l.includes("nfl")) return { name: "BASKETBALL", accent: "#f97316" };
+    if (l.includes("tennis") || l.includes("atp")) return { name: "TENNIS", accent: "#8b5cf6" };
+    if (l.includes("badminton") || l.includes("bwf")) return { name: "BADMINTON", accent: "#ec4899" };
+    return { name: "FOOTBALL", accent: "#10b981" }; // Default
 };
 
-const getAvatar = (name, hex) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${hex.replace('#', '')}&color=fff&size=150&bold=true`;
+const getAvatar = (name, hex) => `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${hex.replace('#', '')}&color=fff&size=256&font-size=0.4&bold=true`;
+
+const useNormalizedMatchData = (raw) => {
+    return useMemo(() => {
+        if (!raw) return null;
+        const theme = getTheme(raw.league);
+        const isLive = raw.status?.toLowerCase().includes('live') || raw.status?.toLowerCase().includes('need') || (!raw.status?.toLowerCase().includes('won') && raw.scoreA !== '-');
+
+        return {
+            league: raw.league || theme.name,
+            status: raw.status || (raw.scoreA === '-' ? "Scheduled" : "Final"),
+            isLive,
+            theme,
+            teamA: { name: raw.teamA || "Team A", logo: getAvatar(raw.teamA, theme.accent), score: raw.scoreA },
+            teamB: { name: raw.teamB || "Team B", logo: getAvatar(raw.teamB, "334155"), score: raw.scoreB }
+        };
+    }, [raw]);
+};
 
 /* =========================================================
-   2. STRICT WIREFRAME LAYOUTS
+   2. EXACT LAYOUT IMPLEMENTATIONS (From User Blueprint)
 ========================================================= */
 
-// 🏏 CRICKET
-const WireframeCricket = ({ teamA, teamB, scoreA, scoreB, status }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
+// 🏏 CRICKET (Exact Stacked Layout)
+const Cricket = ({ match }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, paddingTop: "8px" }}>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{match.teamA.name}</div>
+        <div style={{ fontSize: 32, fontWeight: 800, color: "#fff", letterSpacing: "-1px" }}>{match.teamA.score}</div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{teamA}</span>
-            <span style={{ fontSize: 36, fontWeight: 800, fontVariantNumeric: "tabular-nums", letterSpacing: "-1px" }}>{scoreA === '-' ? 'Yet to bat' : scoreA}</span>
+        <div style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.7)", marginTop: "12px" }}>{match.teamB.name}</div>
+        <div style={{ fontSize: 24, fontWeight: 700, color: "rgba(255,255,255,0.9)" }}>{match.teamB.score}</div>
+
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 14, fontWeight: 600, color: match.theme.accent }}>
+            {match.status}
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{teamB}</span>
-            <span style={{ fontSize: 24, fontWeight: 700, fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.6)" }}>{scoreB === '-' ? 'Yet to bat' : scoreB}</span>
-        </div>
-
-        <div style={{ display: "flex", justifyContent: "center", gap: 16, borderTop: "1px solid rgba(255,255,255,0.1)", borderBottom: "1px solid rgba(255,255,255,0.1)", padding: "10px 0", marginTop: 4 }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>CRR: <span style={{ color: "#fff" }}>5.73</span></span>
-            <span style={{ fontSize: 14, color: "rgba(255,255,255,0.3)" }}>•</span>
-            <span style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>RRR: <span style={{ color: "#fff" }}>7.94</span></span>
-        </div>
-
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#0ea5e9" }}>{status}</div>
     </div>
 );
 
-// ⚽ FOOTBALL
-const WireframeFootball = ({ teamA, teamB, scoreA, scoreB, status, isScheduled }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
-
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 10px" }}>
+// ⚽ FOOTBALL (Exact Center-Axis Layout)
+const Football = ({ match }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, paddingTop: "8px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: 1 }}>
-                <img src={getAvatar(teamA, "#10b981")} alt="A" style={{ width: 48, height: 48, borderRadius: "50%" }} />
-                <span style={{ fontSize: 14, fontWeight: 600, textAlign: "center" }}>{teamA?.substring(0, 12)}</span>
+                <img src={match.teamA.logo} alt="A" style={{ width: 50, height: 50, borderRadius: "50%" }} />
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{match.teamA.name.substring(0, 12)}</span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 16, justifyContent: "center" }}>
-                <span style={{ fontSize: 40, fontWeight: 800 }}>{isScheduled ? "-" : scoreA}</span>
-                <span style={{ fontSize: 20, fontWeight: 800, color: "rgba(255,255,255,0.3)" }}>–</span>
-                <span style={{ fontSize: 40, fontWeight: 800 }}>{isScheduled ? "-" : scoreB}</span>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flex: 1.5 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+                    <span style={{ fontSize: 38, fontWeight: 800 }}>{match.teamA.score === '-' ? '0' : match.teamA.score}</span>
+                    <span style={{ fontSize: 18, color: "rgba(255,255,255,0.4)" }}>-</span>
+                    <span style={{ fontSize: 38, fontWeight: 800 }}>{match.teamB.score === '-' ? '0' : match.teamB.score}</span>
+                </div>
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flex: 1 }}>
-                <img src={getAvatar(teamB, "#475569")} alt="B" style={{ width: 48, height: 48, borderRadius: "50%" }} />
-                <span style={{ fontSize: 14, fontWeight: 600, textAlign: "center" }}>{teamB?.substring(0, 12)}</span>
+                <img src={match.teamB.logo} alt="B" style={{ width: 50, height: 50, borderRadius: "50%" }} />
+                <span style={{ fontSize: 14, fontWeight: 700 }}>{match.teamB.name.substring(0, 12)}</span>
             </div>
         </div>
 
-        <div style={{ textAlign: "center", fontSize: 14, fontWeight: 800, color: "#10b981" }}>67'</div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, background: "rgba(0,0,0,0.2)", padding: "12px", borderRadius: 8 }}>
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>⚽ Lewandowski 23', 58'</span>
-            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>⚽ Bellingham 41'</span>
+        <div style={{ textAlign: "center", marginTop: "12px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 14, color: match.theme.accent, fontWeight: 700 }}>
+            {match.status}
         </div>
-
-        <div style={{ fontSize: 15, fontWeight: 700, color: "#fff" }}>{status}</div>
     </div>
 );
 
-// 🎾 TENNIS & 🏸 BADMINTON
-const WireframeRacket = ({ teamA, teamB, scoreA, scoreB, status, isTennis }) => {
-    // Mock parser to spread scores into a table like the wireframe
-    const aScores = scoreA?.split(' ') || ['0', '0', '0'];
-    const bScores = scoreB?.split(' ') || ['0', '0', '0'];
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <span style={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{teamA}</span>
-                    <div style={{ display: "flex", gap: 24, paddingRight: 10 }}>
-                        {aScores.map((s, i) => <span key={i} style={{ fontSize: 18, fontWeight: 700, width: 20, textAlign: "center" }}>{s}</span>)}
-                    </div>
-                </div>
-                <div style={{ display: "flex", alignItems: "center" }}>
-                    <span style={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{teamB}</span>
-                    <div style={{ display: "flex", gap: 24, paddingRight: 10 }}>
-                        {bScores.map((s, i) => <span key={i} style={{ fontSize: 18, fontWeight: 700, width: 20, textAlign: "center", color: "rgba(255,255,255,0.6)" }}>{s}</span>)}
-                    </div>
-                </div>
+// 🏀 BASKETBALL (Exact Stacked Leaderboard Layout)
+const Basketball = ({ match }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: "8px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={match.teamA.logo} alt="A" style={{ width: 32, height: 32, borderRadius: "50%" }} />
+                <span style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{match.teamA.name}</span>
             </div>
-
-            <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 16 }}>
-                <span style={{ fontSize: 15, fontWeight: 700 }}>Current: <span style={{ color: isTennis ? "#8b5cf6" : "#ec4899" }}>{isTennis ? "40–30" : "12–10"}</span></span>
-            </div>
-
-            <div style={{ fontSize: 14, color: "rgba(255,255,255,0.6)" }}>{status}</div>
-        </div>
-    );
-};
-
-// 🏀 BASKETBALL
-const WireframeBasketball = ({ teamA, teamB, scoreA, scoreB, status }) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16, marginTop: 12 }}>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <img src={getAvatar(teamA, "#f97316")} alt="A" style={{ width: 28, height: 28, borderRadius: "50%" }} />
-                    <span style={{ fontSize: 18, fontWeight: 600 }}>{teamA}</span>
-                </div>
-                <span style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{scoreA}</span>
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <img src={getAvatar(teamB, "#475569")} alt="B" style={{ width: 28, height: 28, borderRadius: "50%" }} />
-                    <span style={{ fontSize: 18, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>{teamB}</span>
-                </div>
-                <span style={{ fontSize: 28, fontWeight: 800, fontVariantNumeric: "tabular-nums", color: "rgba(255,255,255,0.7)" }}>{scoreB}</span>
-            </div>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>{match.teamA.score}</span>
         </div>
 
-        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: 16 }}>
-            <span style={{ fontSize: 15, fontWeight: 700, color: "#f97316" }}>Q3 – 5:32</span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <img src={match.teamB.logo} alt="B" style={{ width: 32, height: 32, borderRadius: "50%" }} />
+                <span style={{ fontSize: 18, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{match.teamB.name}</span>
+            </div>
+            <span style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.8)" }}>{match.teamB.score}</span>
         </div>
 
-        <div style={{ fontSize: 15, fontWeight: 600, color: "#fff" }}>{status}</div>
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 14, color: match.theme.accent, fontWeight: 700, textAlign: "center" }}>
+            {match.status}
+        </div>
+    </div>
+);
+
+// 🎾 TENNIS & 🏸 BADMINTON (Exact Matrix Layout)
+const RacketSports = ({ match, label }) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: "8px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>{match.teamA.name}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: "#fff", letterSpacing: "4px" }}>{match.teamA.score}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 18, fontWeight: 600, color: "rgba(255,255,255,0.8)" }}>{match.teamB.name}</span>
+            <span style={{ fontSize: 24, fontWeight: 800, color: "rgba(255,255,255,0.8)", letterSpacing: "4px" }}>{match.teamB.score}</span>
+        </div>
+
+        <div style={{ marginTop: "16px", paddingTop: "12px", borderTop: "1px solid rgba(255,255,255,0.1)", fontSize: 14, color: match.theme.accent, fontWeight: 700 }}>
+            {label}: {match.status}
+        </div>
     </div>
 );
 
 /* =========================================================
-   3. DOM HTML PORTAL (The Structural Wrapper)
+   3. DOM HTML SHELL (Global Header & Router)
 ========================================================= */
-function DOMScoreContent({ data }) {
-    const theme = getTheme(data.league);
-    const isLive = data.status?.toLowerCase().includes('live') || data.status?.toLowerCase().includes('need') || (!data.status?.toLowerCase().includes('won') && data.scoreA !== '-');
-    const isScheduled = data.scoreA === '-' || !data.scoreA;
-
+function DOMScoreContent({ match }) {
     return (
         <div style={{
-            width: "360px", padding: "24px 28px", color: "white",
-            fontFamily: "'SF Pro Display', 'Inter', -apple-system, sans-serif",
+            width: "360px", padding: "24px", color: "white",
+            fontFamily: "'Inter', -apple-system, sans-serif",
             background: "transparent"
         }}>
-            {/* GLOBAL HEADER EXACTLY AS REQUESTED */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                <span style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.9)" }}>
-                    {data.league || "SPORTS"}
+            {/* EXACT GLOBAL HEADER */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
+                    {match.league}
                 </span>
 
-                {isLive && (
+                {match.isLive && (
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 10, height: 10, borderRadius: "50%", background: "#ef4444" }} />
-                        <span style={{ fontSize: 14, fontWeight: 700, color: "#ef4444", letterSpacing: "0.5px" }}>LIVE</span>
+                        <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", boxShadow: "0 0 8px #ef4444" }} />
+                        <span style={{ fontSize: 12, fontWeight: 800, color: "#ef4444", letterSpacing: "0.5px" }}>LIVE</span>
                     </div>
                 )}
             </div>
 
             {/* STRATEGY INJECTION */}
             <AnimatePresence mode="wait">
-                <motion.div key={theme.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-                    {theme.name === "CRICKET" && <WireframeCricket {...data} />}
-                    {theme.name === "FOOTBALL" && <WireframeFootball {...data} isScheduled={isScheduled} />}
-                    {theme.name === "BASKETBALL" && <WireframeBasketball {...data} />}
-                    {theme.name === "TENNIS" && <WireframeRacket {...data} isTennis={true} />}
-                    {theme.name === "BADMINTON" && <WireframeRacket {...data} isTennis={false} />}
-                    {theme.name === "SPORTS" && <WireframeFootball {...data} isScheduled={isScheduled} />}
+                <motion.div key={match.theme.name} initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }}>
+                    {match.theme.name === "CRICKET" && <Cricket match={match} />}
+                    {match.theme.name === "FOOTBALL" && <Football match={match} />}
+                    {match.theme.name === "BASKETBALL" && <Basketball match={match} />}
+                    {match.theme.name === "TENNIS" && <RacketSports match={match} label="Current" />}
+                    {match.theme.name === "BADMINTON" && <RacketSports match={match} label="Current" />}
                 </motion.div>
             </AnimatePresence>
         </div>
@@ -199,12 +168,12 @@ function DOMScoreContent({ data }) {
 ========================================================= */
 function GlassPanel({ children }) {
     return (
-        <Float speed={2} rotationIntensity={0.05} floatIntensity={0.5}>
+        <Float speed={2} rotationIntensity={0.1} floatIntensity={1}>
             <mesh>
-                <RoundedBox args={[4.2, 5.0, 0.1]} radius={0.12} smoothness={4}>
+                <RoundedBox args={[4.2, 2.6, 0.1]} radius={0.15} smoothness={4}>
                     <MeshTransmissionMaterial
-                        thickness={0.8} roughness={0.1} transmission={1} ior={1.3}
-                        chromaticAberration={0.06} distortion={0.2} distortionScale={0.3} temporalDistortion={0.05}
+                        thickness={0.6} roughness={0.15} transmission={1} ior={1.25}
+                        chromaticAberration={0.05} distortion={0.15} distortionScale={0.3} temporalDistortion={0.05}
                         color="#ffffff"
                     />
                 </RoundedBox>
@@ -219,7 +188,7 @@ function GlassPanel({ children }) {
 function Lights({ accent }) {
     return (
         <>
-            <ambientLight intensity={0.8} />
+            <ambientLight intensity={0.6} />
             <directionalLight position={[5, 5, 5]} intensity={1.5} />
             <pointLight position={[2, 2, 2]} intensity={3} color={accent} />
             <pointLight position={[-2, -2, 1]} intensity={2} color="#ffffff" />
@@ -231,18 +200,18 @@ function Lights({ accent }) {
    5. MAIN EXPORT WRAPPER
 ========================================================= */
 export default function SpatialSportsCard({ data }) {
-    if (!data || data.type !== 'sports') return null;
-    const theme = getTheme(data.league);
+    const match = useNormalizedMatchData(data);
+    if (!match) return null;
 
     return (
-        <div style={{ width: "100%", height: "460px", marginTop: "24px", borderRadius: "32px", overflow: "hidden", position: "relative" }}>
-            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom right, #0f172a, #020617)", zIndex: 0 }} />
-            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "100%", height: "100%", background: `radial-gradient(circle, ${theme.accent}20 0%, transparent 60%)`, zIndex: 0, pointerEvents: "none" }} />
+        <div style={{ width: "100%", height: "350px", marginTop: "24px", borderRadius: "32px", overflow: "hidden", position: "relative" }}>
+            <div style={{ position: "absolute", inset: 0, background: "linear-gradient(to bottom right, #020617, #0f172a)", zIndex: 0 }} />
+            <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", width: "100%", height: "100%", background: `radial-gradient(circle, ${match.theme.accent}15 0%, transparent 60%)`, zIndex: 0, pointerEvents: "none" }} />
 
-            <Canvas camera={{ position: [0, 0, 5], fov: 45 }} style={{ zIndex: 1 }}>
-                <Lights accent={theme.accent} />
+            <Canvas camera={{ position: [0, 0, 4.2], fov: 45 }} style={{ zIndex: 1 }}>
+                <Lights accent={match.theme.accent} />
                 <GlassPanel>
-                    <DOMScoreContent data={data} />
+                    <DOMScoreContent match={match} />
                 </GlassPanel>
             </Canvas>
         </div>
