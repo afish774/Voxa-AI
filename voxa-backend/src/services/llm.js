@@ -18,6 +18,7 @@ const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
     model: "llama-3.2-11b-vision-preview",
     temperature: 0.7,
+    maxRetries: 1 // Fail fast if it crashes
 });
 
 // 🌐 2. Initialize Live Web Search Tool
@@ -50,7 +51,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 PERFECTLY PRESERVED SYSTEM INSTRUCTION + NEW MOOD AWARENESS
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -64,20 +64,25 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.
         8. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}. If they are frustrated, sad, or angry, adjust your tone to be highly empathetic, soft, and supportive. If they are happy, be energetic.`;
 
-        let messages = [new SystemMessage(systemInstruction)];
-
         let result;
+
         if (base64Image && base64Image.length > 100) {
+            // 🚀 THE FIX: Groq Vision models crash when given SystemMessages alongside images. 
+            // We bypass the bug by merging the System rules into the HumanMessage text!
             const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
-            messages.push(new HumanMessage({
-                content: [
-                    { type: "text", text: `${memoryContext}CURRENT USER MESSAGE: ${userPrompt}` },
-                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanBase64}` } }
-                ]
-            }));
-            result = await groqVision.invoke(messages);
+
+            const visionMessages = [
+                new HumanMessage({
+                    content: [
+                        { type: "text", text: `[SYSTEM CONTEXT]\n${systemInstruction}\n\n${memoryContext}\n\nCURRENT USER MESSAGE: ${userPrompt}` },
+                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanBase64}` } }
+                    ]
+                })
+            ];
+
+            result = await groqVision.invoke(visionMessages);
         } else {
-            messages.push(new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`));
+            let messages = [new SystemMessage(systemInstruction), new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`)];
 
             const reminderTool = createReminderTool(userId);
             const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool];
@@ -87,7 +92,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
             let loopCount = 0;
 
             while (result.tool_calls && result.tool_calls.length > 0 && loopCount < 3) {
-
                 messages.push(result);
 
                 for (const toolCall of result.tool_calls) {
@@ -137,7 +141,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         let responseText = result.content;
 
-        // 🚀 FALLBACK CATCHER: If Llama 3 still tries to leak XML, scrub it from output
         if (responseText) {
             responseText = responseText.replace(/<function[^>]*>.*?<\/function>/gi, '').trim();
         }
@@ -156,7 +159,11 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
 
         extractBackgroundFacts(userId, userPrompt);
         return { text: responseText, card: cardData };
+
     } catch (error) {
-        return { error: true, text: "I am experiencing network interference. Please try speaking again." };
+        // 🚀 THE FIX: Expose the EXACT reason Groq crashed to the frontend!
+        const rawError = error.message || error.toString();
+        console.error("🔥 LLM ENGINE CRASH:", rawError);
+        return { error: true, text: `GROQ ERROR: ${rawError}` };
     }
 };
