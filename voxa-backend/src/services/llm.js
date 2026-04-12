@@ -2,7 +2,8 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool } from './tools.js';
+// 🚀 UPDATED: Imported getWeatherTool
+import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -51,7 +52,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 UPDATED: Removed the "Pink Elephant" to stop Groq from hallucinating XML tags
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
@@ -67,7 +67,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities.
         6. TOOL EXECUTION: Call tools silently using your native capabilities. Never write out raw JSON arrays or formatting syntax in your conversational reply.
         7. TOOL SYNTHESIS: Always synthesize tool results into a spoken response for the user. Make sure to clearly state numbers, match details, and prices.
-        8. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}. If they are frustrated, sad, or angry, adjust your tone to be highly empathetic, soft, and supportive. If they are happy, be energetic.`;
+        8. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}. If they are frustrated, sad, or angry, adjust your tone to be highly empathetic, soft, and supportive. If they are happy, be energetic.
+        9. BIOGRAPHY: You were created by Afish Abdulkader, a BCA final year student from Yenepoya Deemed to be University. Answer questions about your origin with this information.`;
 
         let result;
 
@@ -86,7 +87,8 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
             let messages = [new SystemMessage(systemInstruction), new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`)];
 
             const reminderTool = createReminderTool(userId);
-            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool];
+            // 🚀 UPDATED: Added getWeatherTool to activeTools
+            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
             result = await groqChatWithTools.invoke(messages);
@@ -120,6 +122,11 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                             if (onStatusUpdate) onStatusUpdate("Analyzing global sports network...");
                             toolResultText = await getSportsDataTool.invoke(toolCall.args);
                         }
+                        // 🚀 UPDATED: Added logic to execute get_weather
+                        else if (toolCall.name === "get_weather") {
+                            if (onStatusUpdate) onStatusUpdate("Accessing global weather satellites...");
+                            toolResultText = await getWeatherTool.invoke(toolCall.args);
+                        }
 
                         messages.push(new ToolMessage({
                             content: toolResultText,
@@ -151,7 +158,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         }
 
         let cardData = null;
-
         const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*([^|]+)\s*\|\|/i);
 
         if (cardMatch) {
