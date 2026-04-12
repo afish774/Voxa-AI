@@ -8,51 +8,42 @@ export default function SportsCard({ data }) {
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 20, filter: "blur(10px)" }}
-            animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
-            exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
             style={{
-                background: "rgba(255, 255, 255, 0.03)",
-                backdropFilter: "blur(50px) saturate(200%)",
-                WebkitBackdropFilter: "blur(50px) saturate(200%)",
-                border: "0.5px solid rgba(255, 255, 255, 0.2)",
-                borderRadius: 32,
+                background: "#0a0a0a",
+                border: "1px solid #222",
+                borderRadius: 20,
                 padding: "24px",
-                width: "min(100%, 360px)",
-                color: "#fff",
+                width: "min(100%, 380px)",
+                color: "#ededed",
                 marginTop: 24,
-                boxShadow: "0 24px 48px rgba(0,0,0,0.2)"
+                boxShadow: "0 10px 30px rgba(0,0,0,0.8)"
             }}
         >
-            <div style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.5)", letterSpacing: "0.2em", textTransform: "uppercase", marginBottom: 20, textAlign: "center" }}>
-                {league || "SPORTS"}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: "#666", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                    {league || "Live Update"}
+                </span>
+                <span style={{ fontSize: 12, fontWeight: 700, color: isScheduled ? "#f5a623" : "#10b981", letterSpacing: "0.05em", background: isScheduled ? "rgba(245, 166, 35, 0.1)" : "rgba(16, 185, 129, 0.1)", padding: "4px 10px", borderRadius: 999 }}>
+                    {status}
+                </span>
             </div>
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <span style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em" }}>{teamA}</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 20, fontWeight: 600 }}>{teamA}</span>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: isScheduled ? "#444" : "#fff" }}>{isScheduled ? "-" : scoreA}</span>
                 </div>
 
-                <div style={{ padding: "0 20px", display: "flex", justifyContent: "center" }}>
-                    {isScheduled ? (
-                        <div style={{ fontSize: 18, fontWeight: 400, color: "rgba(255,255,255,0.3)" }}>VS</div>
-                    ) : (
-                        <div style={{ fontSize: 38, fontWeight: 300, letterSpacing: "-0.04em", display: "flex", gap: "12px" }}>
-                            <span>{scoreA}</span>
-                            <span style={{ color: "rgba(255,255,255,0.2)" }}>-</span>
-                            <span>{scoreB}</span>
-                        </div>
-                    )}
-                </div>
+                <div style={{ height: "1px", width: "100%", background: "#222" }} />
 
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1 }}>
-                    <span style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.02em" }}>{teamB}</span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span style={{ fontSize: 20, fontWeight: 600 }}>{teamB}</span>
+                    <span style={{ fontSize: 24, fontWeight: 700, color: isScheduled ? "#444" : "#fff" }}>{isScheduled ? "-" : scoreB}</span>
                 </div>
-            </div>
-
-            <div style={{ marginTop: 20, paddingTop: 16, borderTop: "0.5px solid rgba(255,255,255,0.1)", textAlign: "center", fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 500 }}>
-                {status}
             </div>
         </motion.div>
     );
