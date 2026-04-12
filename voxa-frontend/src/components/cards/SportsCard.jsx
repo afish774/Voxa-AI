@@ -1,35 +1,7 @@
-import React, { useRef } from 'react';
-import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
+import React from 'react';
+import { motion } from 'framer-motion';
 
 export default function SportsCard({ data }) {
-    const cardRef = useRef(null);
-
-    // --- 3D INTERACTIVE TILT PHYSICS ---
-    const x = useMotionValue(0);
-    const y = useMotionValue(0);
-
-    const mouseXSpring = useSpring(x, { stiffness: 300, damping: 30 });
-    const mouseYSpring = useSpring(y, { stiffness: 300, damping: 30 });
-
-    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
-    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
-
-    // Dynamic glare effect to simulate light moving across the bright glass
-    const glareX = useTransform(mouseXSpring, [-0.5, 0.5], ["100%", "-100%"]);
-    const glareY = useTransform(mouseYSpring, [-0.5, 0.5], ["100%", "-100%"]);
-
-    const handleMouseMove = (e) => {
-        if (!cardRef.current) return;
-        const rect = cardRef.current.getBoundingClientRect();
-        x.set((e.clientX - rect.left) / rect.width - 0.5);
-        y.set((e.clientY - rect.top) / rect.height - 0.5);
-    };
-
-    const handleMouseLeave = () => {
-        x.set(0);
-        y.set(0);
-    };
-
     // --- DATA EXTRACTION ---
     if (!data || data.type !== 'sports') return null;
     const { teamA, teamB, scoreA, scoreB, status, league } = data;
@@ -55,143 +27,141 @@ export default function SportsCard({ data }) {
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95, filter: "blur(10px)" }}
-            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95, filter: "blur(10px)" }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
             style={{
-                perspective: "1200px",
                 marginTop: 24,
                 width: "100%",
-                maxWidth: "380px",
-                fontFamily: "'Inter', -apple-system, sans-serif"
+                maxWidth: "400px",
+                fontFamily: "'Inter', -apple-system, sans-serif",
+                position: "relative",
+                borderRadius: "28px",
+                padding: "24px 28px",
+                // Premium ultra-smooth blue glass gradient
+                background: "linear-gradient(145deg, #7ad3fa 0%, #a4e1fb 50%, #cbf0fc 100%)",
+                boxShadow: "0 24px 48px rgba(122, 211, 250, 0.25), inset 0 2px 6px rgba(255,255,255,0.8), inset 0 -2px 10px rgba(255,255,255,0.2)",
+                border: "1px solid rgba(255,255,255,0.7)",
+                color: "#0f172a",
+                overflow: "hidden"
             }}
         >
+            {/* INNER 3D ANIMATION: Sweeping Diagonal Glare */}
             <motion.div
-                ref={cardRef}
-                onMouseMove={handleMouseMove}
-                onMouseLeave={handleMouseLeave}
+                animate={{ left: ["-150%", "200%"] }}
+                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut", repeatDelay: 2.5 }}
                 style={{
-                    rotateX,
-                    rotateY,
-                    transformStyle: "preserve-3d",
-                    position: "relative",
-                    width: "100%",
-                    borderRadius: "24px",
-                    padding: "24px",
-                    // The bright glassmorphic sky-blue gradient matching the reference exactly
-                    background: "linear-gradient(135deg, #74cff9 0%, #8ddbfd 50%, #bdeafb 100%)",
-                    boxShadow: "0 24px 48px rgba(116, 207, 249, 0.35), inset 0 2px 4px rgba(255,255,255,0.7), inset 0 -2px 10px rgba(255,255,255,0.2)",
-                    border: "1px solid rgba(255,255,255,0.6)",
-                    color: "#0f172a"
+                    position: "absolute", top: 0, bottom: 0, width: "40%",
+                    background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent)",
+                    transform: "skewX(-25deg)", zIndex: 0
                 }}
-            >
-                {/* 3D GLARE EFFECT */}
+            />
+
+            {/* INNER 3D ANIMATION: Subtle Floating Background Glow */}
+            <motion.div
+                animate={{ y: [-10, 10, -10], scale: [1, 1.05, 1] }}
+                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                style={{
+                    position: "absolute", top: -20, right: -20, width: 160, height: 160,
+                    background: "radial-gradient(circle, rgba(255,255,255,0.7) 0%, transparent 70%)",
+                    zIndex: 0
+                }}
+            />
+
+            <div style={{ position: "relative", zIndex: 1 }}>
+
+                {/* RED LIVE BADGE (Staggered Entrance) */}
                 <motion.div
-                    style={{
-                        position: "absolute", inset: "-50%",
-                        background: "radial-gradient(circle at center, rgba(255,255,255,0.5) 0%, transparent 60%)",
-                        x: glareX, y: glareY, pointerEvents: "none", zIndex: 0,
-                        mixBlendMode: "overlay", borderRadius: "24px"
-                    }}
-                />
-
-                {/* PROTRUDING TOP-RIGHT ARROW BUTTON */}
-                <div style={{
-                    position: "absolute",
-                    top: -12,
-                    right: -12,
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: "linear-gradient(135deg, #9fe2fb 0%, #7bd1f7 100%)",
-                    boxShadow: "-2px 4px 12px rgba(0,0,0,0.08), inset 0 2px 4px rgba(255,255,255,0.9)",
-                    border: "1px solid rgba(255,255,255,0.7)",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    transform: "translateZ(30px)",
-                    zIndex: 10,
-                    cursor: "pointer"
-                }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <line x1="7" y1="17" x2="17" y2="7"></line>
-                        <polyline points="7 7 17 7 17 17"></polyline>
-                    </svg>
-                </div>
-
-                <div style={{ position: "relative", zIndex: 1, transformStyle: "preserve-3d" }}>
-
-                    {/* RED LIVE BADGE */}
-                    <div style={{ transform: "translateZ(20px)", marginBottom: 16 }}>
-                        <div style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            background: isLive ? "linear-gradient(135deg, #ff5b5b, #e63939)" : "linear-gradient(135deg, #64748b, #475569)",
-                            padding: "4px 12px",
-                            borderRadius: "16px",
-                            boxShadow: isLive ? "0 4px 12px rgba(230, 57, 57, 0.4), inset 0 1px 2px rgba(255,255,255,0.4)" : "inset 0 1px 2px rgba(255,255,255,0.2)"
-                        }}>
-                            {isLive && (
-                                <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", boxShadow: "0 0 8px #fff" }} />
-                            )}
-                            <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.2px" }}>
-                                {isLive ? "Live" : "Final"}
-                            </span>
-                        </div>
-                    </div>
-
-                    {/* MAIN CONTENT ROW */}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", transform: "translateZ(40px)", marginBottom: 20 }}>
-
-                        {/* Primary Team (Left Side) */}
-                        <div style={{ display: "flex", flexDirection: "column" }}>
-                            <span style={{ fontSize: 20, fontWeight: 500, color: "#1e293b", marginBottom: 6, letterSpacing: "-0.5px" }}>
-                                {teamA?.length > 15 ? `${teamA.substring(0, 15)}...` : teamA}
-                            </span>
-                            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                                <span style={{ fontSize: 38, fontWeight: 800, color: "#0f172a", letterSpacing: "-1.5px", lineHeight: 1 }}>
-                                    {primaryScore.runs}
-                                </span>
-                                {primaryScore.overs && (
-                                    <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
-                                        {primaryScore.overs}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Secondary Stats (Right Side - Replaces CRR/REQ from image) */}
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "right", paddingBottom: 2 }}>
-                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
-                                    {teamB?.substring(0, 3).toUpperCase() || "OPP"}
-                                </span>
-                                <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
-                                    {secondaryScore.runs}
-                                </span>
-                            </div>
-                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
-                                <span style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
-                                    LGE
-                                </span>
-                                <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
-                                    {league?.substring(0, 6) || "INTL"}
-                                </span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* FOOTER TEXT */}
-                    <div style={{ transform: "translateZ(20px)" }}>
-                        <span style={{ fontSize: 14, fontWeight: 500, color: "#334155", letterSpacing: "-0.2px" }}>
-                            {status}
+                    initial={{ y: -10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.1, type: "spring" }}
+                    style={{ marginBottom: 20 }}
+                >
+                    <div style={{
+                        display: "inline-flex", alignItems: "center", gap: 6,
+                        background: isLive ? "linear-gradient(135deg, #ff4b4b, #e62929)" : "linear-gradient(135deg, #64748b, #475569)",
+                        padding: "6px 14px", borderRadius: "16px",
+                        boxShadow: isLive ? "0 4px 12px rgba(230, 41, 41, 0.3), inset 0 1px 2px rgba(255,255,255,0.4)" : "inset 0 1px 2px rgba(255,255,255,0.2)"
+                    }}>
+                        {isLive && (
+                            <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", boxShadow: "0 0 8px #fff" }} />
+                        )}
+                        <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                            {isLive ? "Live" : "Final"}
                         </span>
                     </div>
+                </motion.div>
 
+                {/* MAIN CONTENT ROW */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginBottom: 20 }}>
+
+                    {/* Primary Team (Left Side) */}
+                    <motion.div
+                        initial={{ x: -20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.2, type: "spring" }}
+                        style={{ display: "flex", flexDirection: "column" }}
+                    >
+                        <span style={{ fontSize: 20, fontWeight: 600, color: "#1e293b", marginBottom: 4, letterSpacing: "-0.5px" }}>
+                            {teamA?.length > 15 ? `${teamA.substring(0, 15)}...` : teamA}
+                        </span>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                            {/* Subtle Breathing Animation on the main score */}
+                            <motion.span
+                                animate={{ y: [0, -2, 0] }}
+                                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                                style={{ fontSize: 44, fontWeight: 800, color: "#0f172a", letterSpacing: "-1.5px", lineHeight: 1 }}
+                            >
+                                {primaryScore.runs}
+                            </motion.span>
+                            {primaryScore.overs && (
+                                <span style={{ fontSize: 16, fontWeight: 600, color: "#334155" }}>
+                                    {primaryScore.overs}
+                                </span>
+                            )}
+                        </div>
+                    </motion.div>
+
+                    {/* Secondary Stats (Right Side) */}
+                    <motion.div
+                        initial={{ x: 20, opacity: 0 }}
+                        animate={{ x: 0, opacity: 1 }}
+                        transition={{ delay: 0.3, type: "spring" }}
+                        style={{ display: "flex", flexDirection: "column", gap: 6, textAlign: "right", paddingBottom: 4 }}
+                    >
+                        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#475569", letterSpacing: "0.5px" }}>
+                                {teamB?.substring(0, 3).toUpperCase() || "OPP"}
+                            </span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
+                                {secondaryScore.runs}
+                            </span>
+                        </div>
+                        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+                            <span style={{ fontSize: 13, fontWeight: 800, color: "#475569", letterSpacing: "0.5px" }}>
+                                LGE
+                            </span>
+                            <span style={{ fontSize: 16, fontWeight: 700, color: "#0f172a" }}>
+                                {league?.substring(0, 6) || "INTL"}
+                            </span>
+                        </div>
+                    </motion.div>
                 </div>
-            </motion.div>
+
+                {/* FOOTER TEXT */}
+                <motion.div
+                    initial={{ y: 10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    transition={{ delay: 0.4, type: "spring" }}
+                    style={{ paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.4)" }}
+                >
+                    <span style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", letterSpacing: "-0.2px" }}>
+                        {status}
+                    </span>
+                </motion.div>
+
+            </div>
         </motion.div>
     );
 }
