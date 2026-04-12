@@ -11,10 +11,10 @@ export default function SportsCard({ data }) {
     const mouseXSpring = useSpring(x, { stiffness: 300, damping: 30 });
     const mouseYSpring = useSpring(y, { stiffness: 300, damping: 30 });
 
-    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["10deg", "-10deg"]);
-    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-10deg", "10deg"]);
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["8deg", "-8deg"]);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-8deg", "8deg"]);
 
-    // Dynamic glare effect
+    // Dynamic glare effect to simulate light moving across the bright glass
     const glareX = useTransform(mouseXSpring, [-0.5, 0.5], ["100%", "-100%"]);
     const glareY = useTransform(mouseYSpring, [-0.5, 0.5], ["100%", "-100%"]);
 
@@ -34,12 +34,24 @@ export default function SportsCard({ data }) {
     if (!data || data.type !== 'sports') return null;
     const { teamA, teamB, scoreA, scoreB, status, league } = data;
 
-    const isScheduled = !scoreA || scoreA === '-' || scoreA.toLowerCase() === 'n/a';
-    const isLive = status?.toLowerCase().includes('live') || status?.toLowerCase().includes('need') || status?.toLowerCase().includes('opt') || (!status?.toLowerCase().includes('won') && !isScheduled);
+    // Determine if the match is live based on the status string
+    const isLive = status?.toLowerCase().includes('live') ||
+        status?.toLowerCase().includes('need') ||
+        status?.toLowerCase().includes('opt') ||
+        (!status?.toLowerCase().includes('won') && scoreA !== '-');
 
-    // Squared, broadcast-style logos
-    const getLogo = (teamName) =>
-        `https://ui-avatars.com/api/?name=${encodeURIComponent(teamName)}&background=2a2b36&color=ffffff&size=120&bold=true`;
+    // Extract overs if they exist in the score string (e.g., "145/6 (20 OV)")
+    const parseScore = (scoreStr) => {
+        if (!scoreStr || scoreStr === '-') return { runs: '-', overs: '' };
+        const parts = scoreStr.split('(');
+        return {
+            runs: parts[0].trim(),
+            overs: parts[1] ? `(${parts[1]}` : ''
+        };
+    };
+
+    const primaryScore = parseScore(scoreA);
+    const secondaryScore = parseScore(scoreB);
 
     return (
         <motion.div
@@ -51,7 +63,8 @@ export default function SportsCard({ data }) {
                 perspective: "1200px",
                 marginTop: 24,
                 width: "100%",
-                maxWidth: "380px"
+                maxWidth: "380px",
+                fontFamily: "'Inter', -apple-system, sans-serif"
             }}
         >
             <motion.div
@@ -64,83 +77,115 @@ export default function SportsCard({ data }) {
                     transformStyle: "preserve-3d",
                     position: "relative",
                     width: "100%",
-                    borderRadius: 16,
-                    overflow: "hidden",
-                    // Sleek, professional broadcast grey background
-                    background: "#1a1b23",
-                    boxShadow: "0 20px 40px rgba(0,0,0,0.6), inset 0 1px 1px rgba(255,255,255,0.1)",
-                    border: "1px solid rgba(255,255,255,0.08)",
+                    borderRadius: "24px",
+                    padding: "24px",
+                    // The bright glassmorphic sky-blue gradient matching the reference exactly
+                    background: "linear-gradient(135deg, #74cff9 0%, #8ddbfd 50%, #bdeafb 100%)",
+                    boxShadow: "0 24px 48px rgba(116, 207, 249, 0.35), inset 0 2px 4px rgba(255,255,255,0.7), inset 0 -2px 10px rgba(255,255,255,0.2)",
+                    border: "1px solid rgba(255,255,255,0.6)",
+                    color: "#0f172a"
                 }}
             >
                 {/* 3D GLARE EFFECT */}
                 <motion.div
                     style={{
                         position: "absolute", inset: "-50%",
-                        background: "radial-gradient(circle at center, rgba(255,255,255,0.1) 0%, transparent 60%)",
-                        x: glareX, y: glareY, pointerEvents: "none", zIndex: 0
+                        background: "radial-gradient(circle at center, rgba(255,255,255,0.5) 0%, transparent 60%)",
+                        x: glareX, y: glareY, pointerEvents: "none", zIndex: 0,
+                        mixBlendMode: "overlay", borderRadius: "24px"
                     }}
                 />
 
+                {/* PROTRUDING TOP-RIGHT ARROW BUTTON */}
+                <div style={{
+                    position: "absolute",
+                    top: -12,
+                    right: -12,
+                    width: 44,
+                    height: 44,
+                    borderRadius: "50%",
+                    background: "linear-gradient(135deg, #9fe2fb 0%, #7bd1f7 100%)",
+                    boxShadow: "-2px 4px 12px rgba(0,0,0,0.08), inset 0 2px 4px rgba(255,255,255,0.9)",
+                    border: "1px solid rgba(255,255,255,0.7)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transform: "translateZ(30px)",
+                    zIndex: 10,
+                    cursor: "pointer"
+                }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#0f172a" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="7" y1="17" x2="17" y2="7"></line>
+                        <polyline points="7 7 17 7 17 17"></polyline>
+                    </svg>
+                </div>
+
                 <div style={{ position: "relative", zIndex: 1, transformStyle: "preserve-3d" }}>
 
-                    {/* HEADER (League & Live Indicator) */}
-                    <div style={{
-                        display: "flex", justifyContent: "space-between", alignItems: "center",
-                        padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.05)",
-                        background: "rgba(0,0,0,0.2)", transform: "translateZ(20px)"
-                    }}>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                            {league || "SPORTS"}
-                        </span>
-                        {isLive && (
-                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 6, height: 6, borderRadius: "50%", background: "#ef4444", boxShadow: "0 0 8px #ef4444" }} />
-                                <span style={{ fontSize: 11, fontWeight: 700, color: "#ef4444", letterSpacing: "0.5px" }}>LIVE</span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* TEAMS AND SCORES (Horizontal Stacked Layout) */}
-                    <div style={{ padding: "20px 16px", display: "flex", flexDirection: "column", gap: 16, transform: "translateZ(40px)" }}>
-
-                        {/* TEAM A ROW */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                <img src={getLogo(teamA)} alt={teamA} style={{ width: 32, height: 32, borderRadius: "6px", objectFit: "cover" }} />
-                                <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", textTransform: "uppercase" }}>
-                                    {teamA?.length > 18 ? `${teamA.substring(0, 18)}...` : teamA}
-                                </span>
-                            </div>
-                            <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>
-                                {isScheduled ? "-" : scoreA}
-                            </span>
-                        </div>
-
-                        {/* TEAM B ROW */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                                <img src={getLogo(teamB)} alt={teamB} style={{ width: 32, height: 32, borderRadius: "6px", objectFit: "cover" }} />
-                                <span style={{ fontSize: 16, fontWeight: 700, color: "#fff", textTransform: "uppercase" }}>
-                                    {teamB?.length > 18 ? `${teamB.substring(0, 18)}...` : teamB}
-                                </span>
-                            </div>
-                            <span style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>
-                                {isScheduled ? "-" : scoreB}
-                            </span>
-                        </div>
-
-                    </div>
-
-                    {/* STATUS FOOTER */}
-                    <div style={{
-                        padding: "12px 16px", background: "rgba(0,0,0,0.3)",
-                        borderTop: "1px solid rgba(255,255,255,0.05)", transform: "translateZ(30px)"
-                    }}>
-                        <span style={{
-                            fontSize: 13, fontWeight: 500,
-                            color: isLive ? "#fbbf24" : "rgba(255,255,255,0.7)",
-                            display: "block", lineHeight: 1.4
+                    {/* RED LIVE BADGE */}
+                    <div style={{ transform: "translateZ(20px)", marginBottom: 16 }}>
+                        <div style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            background: isLive ? "linear-gradient(135deg, #ff5b5b, #e63939)" : "linear-gradient(135deg, #64748b, #475569)",
+                            padding: "4px 12px",
+                            borderRadius: "16px",
+                            boxShadow: isLive ? "0 4px 12px rgba(230, 57, 57, 0.4), inset 0 1px 2px rgba(255,255,255,0.4)" : "inset 0 1px 2px rgba(255,255,255,0.2)"
                         }}>
+                            {isLive && (
+                                <motion.div animate={{ opacity: [1, 0.3, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 8, height: 8, borderRadius: "50%", background: "#fff", boxShadow: "0 0 8px #fff" }} />
+                            )}
+                            <span style={{ fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.2px" }}>
+                                {isLive ? "Live" : "Final"}
+                            </span>
+                        </div>
+                    </div>
+
+                    {/* MAIN CONTENT ROW */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", transform: "translateZ(40px)", marginBottom: 20 }}>
+
+                        {/* Primary Team (Left Side) */}
+                        <div style={{ display: "flex", flexDirection: "column" }}>
+                            <span style={{ fontSize: 20, fontWeight: 500, color: "#1e293b", marginBottom: 6, letterSpacing: "-0.5px" }}>
+                                {teamA?.length > 15 ? `${teamA.substring(0, 15)}...` : teamA}
+                            </span>
+                            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                                <span style={{ fontSize: 38, fontWeight: 800, color: "#0f172a", letterSpacing: "-1.5px", lineHeight: 1 }}>
+                                    {primaryScore.runs}
+                                </span>
+                                {primaryScore.overs && (
+                                    <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
+                                        {primaryScore.overs}
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Secondary Stats (Right Side - Replaces CRR/REQ from image) */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, textAlign: "right", paddingBottom: 2 }}>
+                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
+                                    {teamB?.substring(0, 3).toUpperCase() || "OPP"}
+                                </span>
+                                <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
+                                    {secondaryScore.runs}
+                                </span>
+                            </div>
+                            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+                                <span style={{ fontSize: 14, fontWeight: 800, color: "#1e293b" }}>
+                                    LGE
+                                </span>
+                                <span style={{ fontSize: 16, fontWeight: 500, color: "#334155" }}>
+                                    {league?.substring(0, 6) || "INTL"}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* FOOTER TEXT */}
+                    <div style={{ transform: "translateZ(20px)" }}>
+                        <span style={{ fontSize: 14, fontWeight: 500, color: "#334155", letterSpacing: "-0.2px" }}>
                             {status}
                         </span>
                     </div>
