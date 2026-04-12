@@ -11,7 +11,7 @@ dotenv.config();
 // 🧠 1. Initialize High-Speed Groq Models
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama-3.3-70b-versatile",
+    model: "mixtral-8x7b-32768",
     temperature: 0.7,
 });
 
