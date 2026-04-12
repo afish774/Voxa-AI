@@ -16,10 +16,9 @@ const groqChat = new ChatGroq({
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    // 🚀 THE FIX: Pointed to Groq's active, supported Llama 4 Scout vision model
     model: "meta-llama/llama-4-scout-17b-16e-instruct",
     temperature: 0.7,
-    maxRetries: 1 // Fail fast if it crashes
+    maxRetries: 1
 });
 
 // 🌐 2. Initialize Live Web Search Tool
@@ -52,13 +51,16 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
+        // 🚀 UPDATED: Added the SPORTS WIDGET PROTOCOL
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
         RULES:
         1. Speak in natural, complete sentences (under 40 words).
         2. Do NOT use markdown formatting.
-        3. WIDGET PROTOCOL: If the user asks for the WEATHER, append a hidden tag: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition||
-        Example: "It is sunny in Chavakkad." ||CARD:WEATHER:Chavakkad:28:Sunny||
-        Condition must be exactly one of: Sunny, Autumn, Rain, or Winter.
+        3. WIDGET PROTOCOL: You can trigger UI widgets by appending a hidden tag at the very end of your response.
+        - WEATHER: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition|| 
+        - SPORTS: ||CARD:SPORTS:TeamA:TeamB:ScoreA:ScoreB:Status:League||
+          Example Score: "Real Madrid won 2-1." ||CARD:SPORTS:Real Madrid:Barcelona:2:1:FT:La Liga||
+          Example Schedule: "They play tomorrow at 8 PM." ||CARD:SPORTS:Lakers:Warriors:-:-:Tomorrow 8 PM:NBA||
         4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
         5. FULL AUTHORITY: You have full permission and the necessary tools to interact with the real world. If the user asks you to send an email, do NOT say it is outside your capabilities.
         6. TOOL EXECUTION: You MUST use the native tool-calling JSON array to execute actions. Do NOT output raw <function> XML tags in your spoken text under any circumstances. If you need to use a tool, trigger it silently.
@@ -68,9 +70,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         let result;
 
         if (base64Image && base64Image.length > 100) {
-            // We bypass the Groq SystemMessage bug by merging the System rules into the HumanMessage text!
             const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
-
             const visionMessages = [
                 new HumanMessage({
                     content: [
@@ -79,7 +79,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
                     ]
                 })
             ];
-
             result = await groqVision.invoke(visionMessages);
         } else {
             let messages = [new SystemMessage(systemInstruction), new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`)];
@@ -150,10 +149,16 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         }
 
         let cardData = null;
+
+        // 🚀 UPDATED: Regex parser now handles BOTH Weather and Sports cards!
         const cardMatch = responseText.match(/\|\|CARD:([^|]+)\|\|/);
         if (cardMatch) {
             const segments = cardMatch[1].split(':');
-            if (segments[0] === 'WEATHER') cardData = { type: 'weather', location: segments[1], temp: segments[2], condition: segments[3] };
+            if (segments[0] === 'WEATHER') {
+                cardData = { type: 'weather', location: segments[1], temp: segments[2], condition: segments[3] };
+            } else if (segments[0] === 'SPORTS') {
+                cardData = { type: 'sports', teamA: segments[1], teamB: segments[2], scoreA: segments[3], scoreB: segments[4], status: segments[5], league: segments[6] };
+            }
             responseText = responseText.replace(cardMatch[0], '').trim();
         }
 

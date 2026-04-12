@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { PHASES } from "../../config/constants";
 import { QuerySlider, TypingText } from "./QueryElements";
 import WeatherCard from "../visuals/WeatherCard";
+import SportsCard from "../cards/SportsCard"; // 🚀 IMPORTED THE NEW CARD
 
 export default function ChatDisplay({
     theme, showGreeting, isCameraMode, greetingText, userName, handleRandomQuerySelect,
@@ -30,7 +31,13 @@ export default function ChatDisplay({
                             {currentResponse && (
                                 <motion.div key={phase === PHASES.PROCESSING ? "thinking" : "responding"} initial={{ opacity: 0, y: 15, filter: "blur(8px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -10, filter: "blur(4px)", transition: { duration: 0.15 } }} transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}>
                                     <p style={{ margin: 0, fontSize: "clamp(16px, 2.2vw, 22px)", color: theme.textMuted, fontWeight: 400, lineHeight: 1.4, letterSpacing: "-0.01em", maxWidth: "min(720px, 75vw)" }}>{typing && phase === PHASES.RESPONDING ? <TypingText text={currentResponse} speed={36} onDone={handleTypingDone} /> : currentResponse}</p>
-                                    <AnimatePresence>{currentCard && currentCard.type === 'weather' && phase === PHASES.RESPONDING && <WeatherCard key="weather-card" data={currentCard} theme={theme} />}</AnimatePresence>
+
+                                    {/* 🚀 ADDED THE SPORTS CARD HERE */}
+                                    <AnimatePresence>
+                                        {currentCard && currentCard.type === 'weather' && phase === PHASES.RESPONDING && <WeatherCard key="weather-card" data={currentCard} theme={theme} />}
+                                        {currentCard && currentCard.type === 'sports' && phase === PHASES.RESPONDING && <SportsCard key="sports-card" data={currentCard} theme={theme} />}
+                                    </AnimatePresence>
+
                                 </motion.div>
                             )}
                         </AnimatePresence>
