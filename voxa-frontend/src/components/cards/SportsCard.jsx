@@ -1,139 +1,166 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef } from 'react';
+import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 
 export default function SportsCard({ data }) {
+    const cardRef = useRef(null);
+
+    // --- 3D INTERACTIVE TILT PHYSICS ---
+    const x = useMotionValue(0);
+    const y = useMotionValue(0);
+
+    // Smooth out the mouse movement for a premium "heavy" feel
+    const mouseXSpring = useSpring(x, { stiffness: 150, damping: 20 });
+    const mouseYSpring = useSpring(y, { stiffness: 150, damping: 20 });
+
+    // Map the mouse position to rotation degrees (max 15 degrees tilt)
+    const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], ["15deg", "-15deg"]);
+    const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], ["-15deg", "15deg"]);
+
+    // Dynamic glare effect that moves with the tilt
+    const glareX = useTransform(mouseXSpring, [-0.5, 0.5], ["100%", "-100%"]);
+    const glareY = useTransform(mouseYSpring, [-0.5, 0.5], ["100%", "-100%"]);
+
+    const handleMouseMove = (e) => {
+        if (!cardRef.current) return;
+        const rect = cardRef.current.getBoundingClientRect();
+        const width = rect.width;
+        const height = rect.height;
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const xPct = mouseX / width - 0.5;
+        const yPct = mouseY / height - 0.5;
+        x.set(xPct);
+        y.set(yPct);
+    };
+
+    const handleMouseLeave = () => {
+        // Snap back to center when mouse leaves
+        x.set(0);
+        y.set(0);
+    };
+
+    // --- DATA EXTRACTION & SAFETY ---
     if (!data || data.type !== 'sports') return null;
     const { teamA, teamB, scoreA, scoreB, status, league } = data;
-
-    // Logic: If the AI sends "-" for scores, the game hasn't started yet!
     const isScheduled = !scoreA || scoreA === '-' || scoreA.toLowerCase() === 'n/a';
+
+    // Dynamic Logo Generator (Premium Dark Mode Initials)
+    const getLogo = (teamName) =>
+        `https://ui-avatars.com/api/?name=${encodeURIComponent(teamName)}&background=1a1a24&color=ffffff&size=150&bold=true&font-size=0.4`;
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: 50, scale: 0.8, rotateX: 30 }}
-            animate={{ opacity: 1, y: 0, scale: 1, rotateX: 0 }}
-            exit={{ opacity: 0, scale: 0.8, rotateX: -20, filter: "blur(15px)" }}
-            transition={{ type: "spring", stiffness: 150, damping: 20 }}
-            // Continuous 3D floating effect
-            whileInView={{ y: [0, -8, 0] }}
-            viewport={{ once: false }}
+            initial={{ opacity: 0, scale: 0.8, y: 40 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8, filter: "blur(10px)" }}
+            transition={{ type: "spring", stiffness: 200, damping: 25 }}
             style={{
-                position: "relative",
-                background: "linear-gradient(135deg, rgba(30,30,40,0.85) 0%, rgba(10,10,15,0.95) 100%)",
-                backdropFilter: "blur(40px)",
-                WebkitBackdropFilter: "blur(40px)",
-                borderTop: "1px solid rgba(255, 255, 255, 0.4)",
-                borderLeft: "1px solid rgba(255, 255, 255, 0.2)",
-                borderRight: "1px solid rgba(255, 255, 255, 0.05)",
-                borderBottom: "1px solid rgba(255, 255, 255, 0.05)",
-                borderRadius: 32,
-                padding: "32px",
-                width: "min(100%, 420px)",
-                color: "#fff",
+                width: "100%",
+                display: "flex",
+                justifyContent: "center",
+                perspective: "1200px", // Crucial for the 3D effect
                 marginTop: 24,
-                boxShadow: "0 30px 60px rgba(0,0,0,0.7), inset 0 2px 5px rgba(255,255,255,0.2), inset 0 -4px 20px rgba(0,0,0,0.5)",
-                transformStyle: "preserve-3d",
-                perspective: "1000px",
-                overflow: "hidden" // Keeps the lighting sheen contained
             }}
         >
-            {/* Animated Light Sheen (Simulates light reflecting off 3D glass) */}
             <motion.div
-                animate={{ x: ["-100%", "200%"] }}
-                transition={{ duration: 4, repeat: Infinity, repeatDelay: 3, ease: "easeInOut" }}
+                ref={cardRef}
+                onMouseMove={handleMouseMove}
+                onMouseLeave={handleMouseLeave}
                 style={{
-                    position: "absolute",
-                    top: 0, left: 0, right: 0, bottom: 0,
-                    background: "linear-gradient(115deg, transparent 20%, rgba(255,255,255,0.1) 45%, rgba(255,255,255,0.4) 50%, rgba(255,255,255,0.1) 55%, transparent 80%)",
-                    zIndex: 0,
-                    pointerEvents: "none"
+                    rotateX,
+                    rotateY,
+                    transformStyle: "preserve-3d",
+                    position: "relative",
+                    width: "min(100%, 420px)",
+                    borderRadius: 32,
+                    padding: "32px",
+                    background: "linear-gradient(145deg, rgba(30, 30, 40, 0.6), rgba(10, 10, 15, 0.9))",
+                    backdropFilter: "blur(40px)",
+                    WebkitBackdropFilter: "blur(40px)",
+                    border: "1px solid rgba(255, 255, 255, 0.15)",
+                    boxShadow: "0 30px 60px rgba(0,0,0,0.6), inset 0 2px 10px rgba(255,255,255,0.1)",
+                    overflow: "hidden", // Keeps the glare inside the card
                 }}
-            />
+            >
+                {/* INTERACTIVE GLARE EFFECT */}
+                <motion.div
+                    style={{
+                        position: "absolute",
+                        top: "-50%", left: "-50%", right: "-50%", bottom: "-50%",
+                        background: "radial-gradient(circle at center, rgba(255,255,255,0.15) 0%, transparent 50%)",
+                        x: glareX,
+                        y: glareY,
+                        pointerEvents: "none",
+                        zIndex: 0,
+                    }}
+                />
 
-            {/* 3D FLOATING LEAGUE HEADER */}
-            <div style={{ position: "relative", zIndex: 1, transform: "translateZ(30px)", display: "flex", justifyContent: "center", marginBottom: 30 }}>
-                <div style={{ background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", padding: "6px 16px", borderRadius: 999, fontSize: 12, fontWeight: 800, color: "#e2e8f0", letterSpacing: "0.2em", textTransform: "uppercase", boxShadow: "0 4px 12px rgba(0,0,0,0.3)" }}>
-                    {league || "Live Match"}
-                </div>
-            </div>
+                {/* 3D FLOATING CONTENT CONTAINER */}
+                <div style={{ transformStyle: "preserve-3d", position: "relative", zIndex: 1 }}>
 
-            {/* TEAMS & SCORES CONTAINER */}
-            <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", alignItems: "center", transformStyle: "preserve-3d" }}>
-
-                {/* TEAM A - 3D LOGO SPECIFIED */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, transform: "translateZ(40px)" }}>
-                    <div style={{
-                        width: 80, height: 80, borderRadius: "50%",
-                        background: "linear-gradient(145deg, #2a2a35, #15151a)",
-                        border: "2px solid rgba(255,255,255,0.15)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        boxShadow: "0 15px 35px rgba(0,0,0,0.6), inset 0 4px 10px rgba(255,255,255,0.3), inset 0 -4px 10px rgba(0,0,0,0.5)",
-                        position: "relative", overflow: "hidden"
-                    }}>
-                        {/* If you add Logo URLs later, replace this span with an <img src={teamA_Logo} /> */}
-                        <span style={{ fontSize: 24, fontWeight: 900, color: "#fff", textShadow: "0 2px 4px rgba(0,0,0,0.8)", letterSpacing: "1px" }}>
-                            {teamA?.substring(0, 3).toUpperCase()}
-                        </span>
-                    </div>
-                    <span style={{ marginTop: 16, fontSize: 16, fontWeight: 700, textAlign: "center", letterSpacing: "0.02em", textShadow: "0 4px 10px rgba(0,0,0,0.8)" }}>{teamA}</span>
-                </div>
-
-                {/* DYNAMIC CENTER: Score vs "VS" (Pops out the furthest) */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 10px", transform: "translateZ(70px)" }}>
-                    {isScheduled ? (
-                        <div style={{
-                            fontSize: 36, fontWeight: 900, fontStyle: "italic",
-                            background: "linear-gradient(to bottom, #ffffff, #64748b)",
-                            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent",
-                            filter: "drop-shadow(0 10px 15px rgba(0,0,0,0.8))"
-                        }}>
-                            VS
+                    {/* LEAGUE HEADER (Floats slightly up) */}
+                    <div style={{ transform: "translateZ(30px)", display: "flex", justifyContent: "center", marginBottom: 32 }}>
+                        <div style={{ background: "rgba(0,0,0,0.5)", border: "1px solid rgba(255,255,255,0.1)", padding: "6px 18px", borderRadius: 999, fontSize: 12, fontWeight: 700, color: "#cbd5e1", letterSpacing: "0.15em", textTransform: "uppercase", boxShadow: "0 8px 16px rgba(0,0,0,0.4)" }}>
+                            {league || "Sports Update"}
                         </div>
-                    ) : (
-                        <div style={{
-                            display: "flex", alignItems: "center", gap: "12px",
-                            background: "rgba(0,0,0,0.3)", padding: "12px 20px", borderRadius: 20,
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            boxShadow: "0 10px 25px rgba(0,0,0,0.5), inset 0 2px 5px rgba(255,255,255,0.1)"
-                        }}>
-                            <span style={{ fontSize: 42, fontWeight: 900, textShadow: "0 4px 12px rgba(0,0,0,0.6)" }}>{scoreA}</span>
-                            <span style={{ fontSize: 24, color: "rgba(255,255,255,0.3)" }}>-</span>
-                            <span style={{ fontSize: 42, fontWeight: 900, textShadow: "0 4px 12px rgba(0,0,0,0.6)" }}>{scoreB}</span>
-                        </div>
-                    )}
-                </div>
-
-                {/* TEAM B - 3D LOGO SPECIFIED */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, transform: "translateZ(40px)" }}>
-                    <div style={{
-                        width: 80, height: 80, borderRadius: "50%",
-                        background: "linear-gradient(145deg, #2a2a35, #15151a)",
-                        border: "2px solid rgba(255,255,255,0.15)",
-                        display: "flex", alignItems: "center", justifyContent: "center",
-                        boxShadow: "0 15px 35px rgba(0,0,0,0.6), inset 0 4px 10px rgba(255,255,255,0.3), inset 0 -4px 10px rgba(0,0,0,0.5)",
-                        position: "relative", overflow: "hidden"
-                    }}>
-                        {/* If you add Logo URLs later, replace this span with an <img src={teamB_Logo} /> */}
-                        <span style={{ fontSize: 24, fontWeight: 900, color: "#fff", textShadow: "0 2px 4px rgba(0,0,0,0.8)", letterSpacing: "1px" }}>
-                            {teamB?.substring(0, 3).toUpperCase()}
-                        </span>
                     </div>
-                    <span style={{ marginTop: 16, fontSize: 16, fontWeight: 700, textAlign: "center", letterSpacing: "0.02em", textShadow: "0 4px 10px rgba(0,0,0,0.8)" }}>{teamB}</span>
-                </div>
-            </div>
 
-            {/* 3D STATUS BAR */}
-            <div style={{ position: "relative", zIndex: 1, transform: "translateZ(20px)", marginTop: 32, display: "flex", justifyContent: "center" }}>
-                <div style={{
-                    fontSize: 14, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase",
-                    color: isScheduled ? "#fde047" : "#10b981",
-                    textShadow: isScheduled ? "0 0 10px rgba(253, 224, 71, 0.4)" : "0 0 10px rgba(16, 185, 129, 0.4)",
-                    background: isScheduled ? "rgba(253, 224, 71, 0.1)" : "rgba(16, 185, 129, 0.1)",
-                    padding: "8px 24px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.05)"
-                }}>
-                    {status}
+                    {/* TEAMS & SCORES */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", transformStyle: "preserve-3d" }}>
+
+                        {/* TEAM A - LOGO SPECIFIED (Floats high) */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, transform: "translateZ(50px)" }}>
+                            <div style={{ width: 84, height: 84, borderRadius: "50%", padding: "4px", background: "linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.05))", boxShadow: "0 15px 30px rgba(0,0,0,0.5)" }}>
+                                <img
+                                    src={getLogo(teamA)}
+                                    alt={teamA}
+                                    style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(0,0,0,0.5)" }}
+                                />
+                            </div>
+                            <span style={{ marginTop: 16, fontSize: 15, fontWeight: 700, color: "#fff", textAlign: "center", textShadow: "0 4px 10px rgba(0,0,0,0.8)" }}>{teamA}</span>
+                        </div>
+
+                        {/* SCORE / VS (Floats the highest for depth) */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", padding: "0 10px", transform: "translateZ(80px)" }}>
+                            {isScheduled ? (
+                                <div style={{ fontSize: 32, fontWeight: 900, color: "#94a3b8", textShadow: "0 10px 20px rgba(0,0,0,0.6)" }}>VS</div>
+                            ) : (
+                                <div style={{ display: "flex", alignItems: "center", gap: "12px", background: "rgba(0,0,0,0.4)", padding: "12px 24px", borderRadius: 24, border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 15px 25px rgba(0,0,0,0.6)" }}>
+                                    <span style={{ fontSize: 48, fontWeight: 800, color: "#fff", textShadow: "0 4px 10px rgba(0,0,0,0.5)" }}>{scoreA}</span>
+                                    <span style={{ fontSize: 24, color: "rgba(255,255,255,0.2)" }}>-</span>
+                                    <span style={{ fontSize: 48, fontWeight: 800, color: "#fff", textShadow: "0 4px 10px rgba(0,0,0,0.5)" }}>{scoreB}</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* TEAM B - LOGO SPECIFIED (Floats high) */}
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, transform: "translateZ(50px)" }}>
+                            <div style={{ width: 84, height: 84, borderRadius: "50%", padding: "4px", background: "linear-gradient(135deg, rgba(255,255,255,0.3), rgba(255,255,255,0.05))", boxShadow: "0 15px 30px rgba(0,0,0,0.5)" }}>
+                                <img
+                                    src={getLogo(teamB)}
+                                    alt={teamB}
+                                    style={{ width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover", border: "1px solid rgba(0,0,0,0.5)" }}
+                                />
+                            </div>
+                            <span style={{ marginTop: 16, fontSize: 15, fontWeight: 700, color: "#fff", textAlign: "center", textShadow: "0 4px 10px rgba(0,0,0,0.8)" }}>{teamB}</span>
+                        </div>
+                    </div>
+
+                    {/* STATUS BAR (Floats up) */}
+                    <div style={{ transform: "translateZ(40px)", marginTop: 36, display: "flex", justifyContent: "center" }}>
+                        <div style={{
+                            fontSize: 13, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase",
+                            color: isScheduled ? "#fde047" : "#34d399",
+                            background: isScheduled ? "rgba(253, 224, 71, 0.15)" : "rgba(52, 211, 153, 0.15)",
+                            padding: "8px 20px", borderRadius: 12, border: "1px solid", borderColor: isScheduled ? "rgba(253, 224, 71, 0.3)" : "rgba(52, 211, 153, 0.3)",
+                            boxShadow: isScheduled ? "0 4px 15px rgba(253, 224, 71, 0.2)" : "0 4px 15px rgba(52, 211, 153, 0.2)"
+                        }}>
+                            {status}
+                        </div>
+                    </div>
+
                 </div>
-            </div>
+            </motion.div>
         </motion.div>
     );
 }
