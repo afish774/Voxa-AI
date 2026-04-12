@@ -114,29 +114,38 @@ export const getSportsDataTool = tool(
                     return `I couldn't find any live or recent cricket matches matching "${query}".`;
                 }
 
-                const targetMatch = matchData.data.find(m =>
-                    m.name.toLowerCase().includes(lowerQuery) ||
-                    m.shortName.toLowerCase().includes(lowerQuery)
-                );
+                // 🚀 FIXED: Bulletproof safely checks for name and shortName so it never crashes on undefined
+                let targetMatch = matchData.data.find(m => {
+                    const nameMatch = m.name ? m.name.toLowerCase().includes(lowerQuery) : false;
+                    const shortNameMatch = m.shortName ? m.shortName.toLowerCase().includes(lowerQuery) : false;
+                    return nameMatch || shortNameMatch;
+                });
+
+                // 🚀 FIXED: Fallback mode - if you just ask for "current IPL match", grab the first T20 available
+                if (!targetMatch && lowerQuery.includes("ipl")) {
+                    targetMatch = matchData.data.find(m => m.matchType && m.matchType.toLowerCase() === "t20");
+                    if (!targetMatch) targetMatch = matchData.data[0]; // Absolute fallback so we always return a game
+                }
 
                 if (!targetMatch) {
                     return `I scanned the live servers but couldn't find an active match for "${query}".`;
                 }
 
-                const teamA = targetMatch.teams[0];
-                const teamB = targetMatch.teams[1];
+                // 🚀 FIXED: Safely parse teams to prevent UI crashes
+                const teamA = (targetMatch.teams && targetMatch.teams[0]) ? targetMatch.teams[0] : "Team 1";
+                const teamB = (targetMatch.teams && targetMatch.teams[1]) ? targetMatch.teams[1] : "Team 2";
                 let scoreA = "-";
                 let scoreB = "-";
 
                 if (targetMatch.score && targetMatch.score.length > 0) {
-                    const scoreObjA = targetMatch.score.find(s => s.inning.includes(teamA));
-                    const scoreObjB = targetMatch.score.find(s => s.inning.includes(teamB));
+                    const scoreObjA = targetMatch.score.find(s => s.inning && s.inning.includes(teamA));
+                    const scoreObjB = targetMatch.score.find(s => s.inning && s.inning.includes(teamB));
                     if (scoreObjA) scoreA = `${scoreObjA.r}/${scoreObjA.w}`;
                     if (scoreObjB) scoreB = `${scoreObjB.r}/${scoreObjB.w}`;
                 }
 
                 const status = targetMatch.status || "Live";
-                const league = targetMatch.matchType.toUpperCase() === "T20" ? "IPL / T20" : targetMatch.matchType.toUpperCase();
+                const league = targetMatch.matchType ? (targetMatch.matchType.toUpperCase() === "T20" ? "IPL / T20" : targetMatch.matchType.toUpperCase()) : "Cricket";
 
                 return `Data found. ${teamA}: ${scoreA}. ${teamB}: ${scoreB}. Status: ${status}. League: ${league}. Format this exactly into the SPORTS widget card.`;
             }
@@ -176,7 +185,7 @@ export const getSportsDataTool = tool(
                 const homeScore = lastMatch.intHomeScore || "0";
                 const awayScore = lastMatch.intAwayScore || "0";
                 const league = lastMatch.strLeague || sport;
-                const status = "FT"; // TheSportsDB 'last events' are always full-time
+                const status = "FT";
 
                 return `Data found. ${homeTeam}: ${homeScore}. ${awayTeam}: ${awayScore}. Status: ${status}. League: ${league}. Format this exactly into the SPORTS widget card.`;
             }
@@ -214,8 +223,8 @@ export const getSportsDataTool = tool(
         description: "Fetches live scores, previous match results, upcoming fixtures, and team info for ALL global sports (Football, NBA, NFL, Cricket, etc.).",
         schema: z.object({
             requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]).describe("The specific type of sports information requested. Use 'scores' for recent/live matches, and 'fixtures' for upcoming schedules."),
-            sport: z.string().describe("The name of the sport (e.g., 'football', 'basketball', 'cricket', 'baseball')."),
-            query: z.string().describe("The name of the team (e.g., 'Lakers', 'Real Madrid', 'Royal Challengers Bangalore')."),
+            sport: z.string().describe("The name of the sport (e.g., 'cricket', 'football', 'basketball', 'baseball')."),
+            query: z.string().describe("The name of the team, or 'IPL' for general cricket queries (e.g., 'Lakers', 'Royal Challengers Bangalore', 'IPL')."),
         }),
     }
 );
