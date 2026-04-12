@@ -8,42 +8,41 @@ export default function SportsCard({ data }) {
 
     return (
         <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.98 }}
-            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
             style={{
-                background: "#0a0a0a",
-                border: "1px solid #222",
-                borderRadius: 20,
+                background: "radial-gradient(120% 120% at 50% -20%, rgba(139, 92, 246, 0.15) 0%, rgba(0, 0, 0, 0.6) 100%)",
+                backdropFilter: "blur(20px)",
+                border: "1px solid rgba(139, 92, 246, 0.2)",
+                borderRadius: 24,
                 padding: "24px",
-                width: "min(100%, 380px)",
-                color: "#ededed",
+                width: "min(100%, 360px)",
+                color: "#fff",
                 marginTop: 24,
-                boxShadow: "0 10px 30px rgba(0,0,0,0.8)"
+                boxShadow: "0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)"
             }}
         >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-                <span style={{ fontSize: 12, fontWeight: 700, color: "#666", letterSpacing: "0.05em", textTransform: "uppercase" }}>
-                    {league || "Live Update"}
-                </span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: isScheduled ? "#f5a623" : "#10b981", letterSpacing: "0.05em", background: isScheduled ? "rgba(245, 166, 35, 0.1)" : "rgba(16, 185, 129, 0.1)", padding: "4px 10px", borderRadius: 999 }}>
-                    {status}
-                </span>
+            <div style={{ textAlign: "center", marginBottom: 20 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#a78bfa", letterSpacing: "0.1em", textTransform: "uppercase" }}>{league || "SPORTS"}</div>
+                <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", marginTop: 4 }}>{status}</div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 20, fontWeight: 600 }}>{teamA}</span>
-                    <span style={{ fontSize: 24, fontWeight: 700, color: isScheduled ? "#444" : "#fff" }}>{isScheduled ? "-" : scoreA}</span>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ flex: 1, textAlign: "right", fontSize: 16, fontWeight: 500 }}>{teamA}</div>
+
+                <div style={{ padding: "0 24px" }}>
+                    {isScheduled ? (
+                        <div style={{ fontSize: 16, fontWeight: 700, color: "#a78bfa" }}>VS</div>
+                    ) : (
+                        <div style={{ background: "rgba(0,0,0,0.4)", padding: "8px 16px", borderRadius: 12, fontSize: 24, fontWeight: 700, border: "1px solid rgba(255,255,255,0.05)" }}>
+                            {scoreA} - {scoreB}
+                        </div>
+                    )}
                 </div>
 
-                <div style={{ height: "1px", width: "100%", background: "#222" }} />
-
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 20, fontWeight: 600 }}>{teamB}</span>
-                    <span style={{ fontSize: 24, fontWeight: 700, color: isScheduled ? "#444" : "#fff" }}>{isScheduled ? "-" : scoreB}</span>
-                </div>
+                <div style={{ flex: 1, textAlign: "left", fontSize: 16, fontWeight: 500 }}>{teamB}</div>
             </div>
         </motion.div>
     );
