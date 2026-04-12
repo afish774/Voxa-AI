@@ -16,7 +16,8 @@ const groqChat = new ChatGroq({
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama-3.2-11b-vision-preview",
+    // 🚀 THE FIX: Pointed to Groq's active, supported Llama 4 Scout vision model
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
     temperature: 0.7,
     maxRetries: 1 // Fail fast if it crashes
 });
@@ -67,8 +68,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         let result;
 
         if (base64Image && base64Image.length > 100) {
-            // 🚀 THE FIX: Groq Vision models crash when given SystemMessages alongside images. 
-            // We bypass the bug by merging the System rules into the HumanMessage text!
+            // We bypass the Groq SystemMessage bug by merging the System rules into the HumanMessage text!
             const cleanBase64 = base64Image.replace(/^data:image\/\w+;base64,/, "");
 
             const visionMessages = [
@@ -161,7 +161,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         return { text: responseText, card: cardData };
 
     } catch (error) {
-        // 🚀 THE FIX: Expose the EXACT reason Groq crashed to the frontend!
         const rawError = error.message || error.toString();
         console.error("🔥 LLM ENGINE CRASH:", rawError);
         return { error: true, text: `GROQ ERROR: ${rawError}` };
