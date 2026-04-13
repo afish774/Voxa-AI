@@ -1,7 +1,20 @@
 @import "tailwindcss";
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* VOXA PREMIUM THEME ENGINE (Tailwind v4 Optimized)
 */
+
+@layer base {
+  body {
+    @apply bg-[#0a0a0c] text-white antialiased;
+    background: radial-gradient(circle at top center, #1a1a2e 0%, #0a0a0c 100%);
+    min-height: 100vh;
+    margin: 0;
+  }
+}
 
 @theme {
   /* This ensures Tailwind v4 recognizes your custom accent colors */
@@ -80,6 +93,16 @@ p {
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid var(--glass-border);
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+}
+
+/* Force the glass effect via a standard CSS class in case Tailwind utilities are being blocked */
+.glass-container {
+  background: rgba(255, 255, 255, 0.03) !important;
+  backdrop-filter: blur(24px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 2rem;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
 }
 
 /* Smooth Transitions for all UI elements */

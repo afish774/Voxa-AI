@@ -13,7 +13,7 @@ const SportsCard = ({ data }) => {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-            className="relative w-full max-w-md mx-auto overflow-hidden rounded-[2rem] bg-black/40 backdrop-blur-2xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.3)] text-white p-6 transition-colors duration-300 hover:bg-black/50 hover:border-white/20 group"
+            className="glass-container relative w-full max-w-md mx-auto overflow-hidden p-6 text-white my-4"
         >
             {/* AMBIENT GLOW EFFECT */}
             <div className={`absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-32 blur-[100px] rounded-full opacity-40 pointer-events-none transition-colors duration-1000 ${isLive ? 'bg-red-500/40' : 'bg-blue-500/20'}`}></div>

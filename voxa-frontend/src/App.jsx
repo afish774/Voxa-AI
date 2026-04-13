@@ -11,6 +11,8 @@ import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
 
+import './index.css';
+
 export default function VoiceAssistant({ user, onLogout }) {
   const [isDark, setIsDark] = useState(() => { try { return localStorage.getItem('voxa_theme') !== 'light'; } catch (e) { return true; } });
   const [userName, setUserName] = useState(() => { try { return user?.name || localStorage.getItem('voxa_username') || "Guest"; } catch (e) { return user?.name || "Guest"; } });
