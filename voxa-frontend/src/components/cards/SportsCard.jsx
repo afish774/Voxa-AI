@@ -2,35 +2,62 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, useMotionValue, useTransform, useSpring } from "framer-motion";
 
 /* =========================================================
-   0. CONSTANTS & LEAGUE MAPPING
+   0. DATA NORMALIZER (🚀 INDESTRUCTIBLE JSON PARSER)
+========================================================= */
+
+const getV = (data, keys) => {
+    if (!data) return null;
+    const normData = {};
+    for (const [k, v] of Object.entries(data)) {
+        normData[k.toLowerCase().replace(/[\s\-_]/g, '')] = v;
+    }
+    for (const k of keys) {
+        const val = normData[k.toLowerCase()];
+        if (val !== undefined && val !== null && val !== 'null' && val !== '') {
+            return val;
+        }
+    }
+    return null;
+};
+
+/* =========================================================
+   1. CONSTANTS & LEAGUE MAPPING
 ========================================================= */
 
 const LEAGUE_MAP = {
-    ipl: 'cricket', bbl: 'cricket', psl: 'cricket', cpl: 'cricket', t20wc: 'cricket',
-    epl: 'football', laliga: 'football', bundesliga: 'football', seriea: 'football', ucl: 'football',
-    wimbledon: 'tennis', usopen: 'tennis', rolandgarros: 'tennis', ausopen: 'tennis', atptour: 'tennis',
-    bwf: 'badminton', bwftour: 'badminton', allengland: 'badminton',
-    nba: 'basketball', euroleague: 'basketball', fiba: 'basketball',
+    ipl: 'cricket', bbl: 'cricket', psl: 'cricket', cpl: 'cricket', t20wc: 'cricket', t20: 'cricket', odi: 'cricket', test: 'cricket', cricket: 'cricket',
+    epl: 'football', laliga: 'football', bundesliga: 'football', seriea: 'football', ucl: 'football', football: 'football', soccer: 'football',
+    wimbledon: 'tennis', usopen: 'tennis', rolandgarros: 'tennis', ausopen: 'tennis', atptour: 'tennis', tennis: 'tennis',
+    bwf: 'badminton', bwftour: 'badminton', allengland: 'badminton', badminton: 'badminton',
+    nba: 'basketball', euroleague: 'basketball', fiba: 'basketball', basketball: 'basketball',
 };
 
 const LEAGUE_LABELS = {
-    ipl: 'IPL', bbl: 'BBL', psl: 'PSL', cpl: 'CPL', t20wc: 'T20 World Cup',
+    ipl: 'IPL', bbl: 'BBL', psl: 'PSL', cpl: 'CPL', t20wc: 'T20 World Cup', t20: 'T20 Match', odi: 'ODI', test: 'Test Match', cricket: 'Cricket',
     epl: 'Premier League', laliga: 'La Liga', bundesliga: 'Bundesliga', seriea: 'Serie A', ucl: 'Champions League',
     wimbledon: 'Wimbledon', usopen: 'US Open', rolandgarros: 'Roland Garros', ausopen: 'Australian Open', atptour: 'ATP Tour',
     bwf: 'BWF World Tour', bwftour: 'BWF Tour', allengland: 'All England Open',
     nba: 'NBA', euroleague: 'EuroLeague', fiba: 'FIBA',
 };
 
-function detectSport(league) {
+// 🦆 Duck Typing: If it looks like Cricket, it IS Cricket!
+function detectSport(data) {
+    if (getV(data, ['battingteam', 'battingscore', 'bowlingteam', 'crr', 'rrr'])) return 'cricket';
+    if (getV(data, ['goals', 'matchseconds'])) return 'football';
+    if (getV(data, ['setsa', 'serving'])) return 'tennis';
+    if (getV(data, ['gamesa'])) return 'badminton';
+    if (getV(data, ['quarterseconds', 'quarter'])) return 'basketball';
+
+    const league = getV(data, ['league']);
     if (!league) return 'fallback';
-    const key = league.toLowerCase().replace(/[\s\-_]/g, '');
+    const key = String(league).toLowerCase().replace(/[\s\-_]/g, '');
     return LEAGUE_MAP[key] || 'fallback';
 }
 
 function leagueLabel(league) {
     if (!league) return 'LIVE';
-    const key = league.toLowerCase().replace(/[\s\-_]/g, '');
-    return LEAGUE_LABELS[key] || league.toUpperCase();
+    const key = String(league).toLowerCase().replace(/[\s\-_]/g, '');
+    return LEAGUE_LABELS[key] || String(league).toUpperCase();
 }
 
 const SPORT_THEMES = {
@@ -43,7 +70,7 @@ const SPORT_THEMES = {
 };
 
 /* =========================================================
-   1. TEAM THEMES + AVATAR BADGE
+   2. TEAM THEMES + AVATAR BADGE
 ========================================================= */
 
 const TEAM_THEMES = {
@@ -53,9 +80,17 @@ const TEAM_THEMES = {
     'Warriors': { bg: '1D428A', color: 'FFC72C' },
     'India': { bg: 'FF9933', color: 'fff' },
     'Pakistan': { bg: '01411C', color: 'fff' },
+    'Mumbai Indians': { bg: '004BA0', color: 'fff' },
+    'Royal Challengers Bengaluru': { bg: 'EC1C24', color: 'fff' },
+    'Chennai Super Kings': { bg: 'FFFF3C', color: '000' },
+    'Sunrisers Hyderabad': { bg: 'F26522', color: 'fff' },
+    'Rajasthan Royals': { bg: 'EA1A85', color: 'fff' },
+    'Kolkata Knight Riders': { bg: '3A225D', color: 'fff' },
+    'Delhi Capitals': { bg: '00008B', color: 'fff' },
+    'Punjab Kings': { bg: 'DD1F2D', color: 'fff' }
 };
 
-function AvatarBadge({ name, size = 44 }) {
+function AvatarBadge({ name, size = 36 }) {
     const theme = TEAM_THEMES[name] || { bg: '1a2a5e', color: '7eb8ff' };
     const url = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${theme.bg}&color=${theme.color}&size=128&bold=true&font-size=0.45&rounded=false`;
     const initials = (name || '??').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
@@ -78,7 +113,7 @@ function AvatarBadge({ name, size = 44 }) {
 }
 
 /* =========================================================
-   2. SHARED STYLE TOKENS
+   3. SHARED STYLE TOKENS
 ========================================================= */
 
 const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', sans-serif";
@@ -95,10 +130,6 @@ const T = {
     cur: { fontSize: 22, fontWeight: 800, color: '#fff', textAlign: 'center', width: '100%', marginTop: 8, fontVariantNumeric: 'tabular-nums' },
 };
 
-/* =========================================================
-   3. LIVE BADGES
-========================================================= */
-
 function RedLivePill() {
     return (
         <div style={{
@@ -113,9 +144,7 @@ function RedLivePill() {
                 transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444' }}
             />
-            <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444', letterSpacing: '0.1em' }}>
-                LIVE
-            </span>
+            <span style={{ fontSize: 10, fontWeight: 800, color: '#ef4444', letterSpacing: '0.1em' }}>LIVE</span>
         </div>
     );
 }
@@ -134,133 +163,147 @@ function StaticLiveBadge({ text = 'LIVE' }) {
 }
 
 /* =========================================================
-   LAYOUT 1 · CricketLayout (Data Binding Mastered)
+   LAYOUT 1 · CricketLayout (PERFECT ALIGNMENT)
 ========================================================= */
 
 function CricketLayout({ data, accent }) {
-    const label = leagueLabel(data.league);
+    const rawLeague = getV(data, ['league', 'type']) || 'Cricket';
+    const label = leagueLabel(rawLeague);
 
-    // Smart Parsers: Safely extract runs/wickets even if the API formats it weirdly
+    const isLive = String(getV(data, ['islive', 'live'])).toLowerCase() === 'true';
+
     const parseCricketScore = (scoreStr, oversStr) => {
-        if (!scoreStr) return { score: "0/0", overs: "0.0" };
-
-        // If API sends "145/1 (25.2)", aggressively split it
-        const match = String(scoreStr).match(/^([\d\/]+)\s*(?:\(([^)]+)\))?/);
+        if (!scoreStr || scoreStr === '-' || scoreStr === 'null') return { score: "-", overs: null };
+        const str = String(scoreStr).trim();
+        const match = str.match(/^([\d\/]+)\s*(?:\(([^)]+)\))?/);
         if (match) {
             return {
-                score: match[1] || "0/0",
-                overs: oversStr || match[2] || "0.0"
+                score: match[1] || "-",
+                overs: (oversStr && oversStr !== 'null') ? String(oversStr).trim() : (match[2] || null)
             };
         }
-        return { score: scoreStr, overs: oversStr || "0.0" };
+        return { score: str, overs: (oversStr && oversStr !== 'null') ? String(oversStr).trim() : null };
     };
 
-    // Data Binding
-    const teamA = data.battingTeam || data.teamA || 'Team 1';
-    const teamB = data.bowlingTeam || data.teamB || 'Team 2';
+    const teamA = getV(data, ['battingteam', 'teama', 'team1', 'home']) || 'Team 1';
+    const teamB = getV(data, ['bowlingteam', 'teamb', 'team2', 'away']) || 'Team 2';
 
-    const scoreA = parseCricketScore(data.battingScore || data.scoreA, data.battingOvers || data.oversA);
-    const scoreB = parseCricketScore(data.bowlingScore || data.scoreB, data.bowlingOvers || data.oversB);
+    const scoreA = parseCricketScore(getV(data, ['battingscore', 'scorea']), getV(data, ['battingovers', 'oversa']));
+    const scoreB = parseCricketScore(getV(data, ['bowlingscore', 'scoreb']), getV(data, ['bowlingovers', 'oversb']));
 
-    const crr = data.crr || data.currentRunRate;
-    const rrr = data.rrr || data.requiredRunRate;
-    const status = data.status || data.matchStatus || data.result;
+    const crr = getV(data, ['crr', 'currentrunrate']);
+    const rrr = getV(data, ['rrr', 'requiredrunrate']);
+    const status = getV(data, ['status', 'matchstatus', 'result']);
+
+    const isFinished = status === 'FT' || String(status).toLowerCase().includes('won') || String(status).toLowerCase().includes('defeated');
 
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 8 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive && <RedLivePill />}
+                {isLive ? <RedLivePill /> : (isFinished ? <StaticLiveBadge text="FT" /> : null)}
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                <AvatarBadge name={teamA} size={40} />
+                <AvatarBadge name={teamA} size={36} />
                 <span style={T.teamName}>{teamA}</span>
             </div>
-            <div style={{ ...T.row, marginTop: 6 }}>
+
+            {/* MATCHES THE 'NEEDED' SCREENSHOT PERFECTLY */}
+            <div style={{ ...T.row, marginTop: 8, alignItems: 'flex-end', justifyContent: 'space-between' }}>
                 <span style={T.bigScore}>{scoreA.score}</span>
-                <span style={T.overs}>({scoreA.overs} ov)</span>
+                {scoreA.overs && <span style={T.overs}>({scoreA.overs} ov)</span>}
             </div>
 
             <div style={T.divider} />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <AvatarBadge name={teamB} size={40} />
+                <AvatarBadge name={teamB} size={36} />
                 <span style={T.teamName}>{teamB}</span>
             </div>
-            <div style={{ ...T.row, marginTop: 6 }}>
+
+            <div style={{ ...T.row, marginTop: 8, alignItems: 'flex-end', justifyContent: 'space-between' }}>
                 <span style={T.bigScore}>{scoreB.score}</span>
-                <span style={T.overs}>({scoreB.overs} ov)</span>
+                {scoreB.overs && <span style={T.overs}>({scoreB.overs} ov)</span>}
             </div>
 
             <div style={T.divider} />
 
-            <div style={{ ...T.row, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8 }}>
-                <span style={T.rate}>CRR: {crr ?? '–'}</span>
-                <span style={{ ...T.rate, color: 'rgba(255,255,255,0.2)' }}>•</span>
-                <span style={T.rate}>RRR: {rrr ?? '–'}</span>
-            </div>
+            {(crr || rrr) && (
+                <div style={{ ...T.row, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8, justifyContent: 'center', gap: 12 }}>
+                    {crr && <span style={T.rate}>CRR: {crr}</span>}
+                    {crr && rrr && <span style={{ ...T.rate, color: 'rgba(255,255,255,0.2)' }}>•</span>}
+                    {rrr && <span style={T.rate}>RRR: {rrr}</span>}
+                </div>
+            )}
 
-            {status && <div style={{ ...T.status, color: accent }}>{status}</div>}
+            {status && status !== 'FT' && <div style={{ ...T.status, color: accent }}>{status}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 2 · FootballLayout (Data Binding Mastered)
+   LAYOUT 2 · FootballLayout
 ========================================================= */
 
 function FootballLayout({ data, accent }) {
-    const label = leagueLabel(data.league);
+    const rawLeague = getV(data, ['league']) || 'Football';
+    const label = leagueLabel(rawLeague);
     const timerRef = useRef(null);
+    const isLive = String(getV(data, ['islive', 'live'])).toLowerCase() === 'true';
 
-    // Data Binding
-    const t1Name = data.teamA?.name || data.team1?.name || data.teamA || 'Home';
-    const t2Name = data.teamB?.name || data.team2?.name || data.teamB || 'Away';
-    const t1Score = data.teamA?.score ?? data.team1?.score ?? data.scoreA ?? 0;
-    const t2Score = data.teamB?.score ?? data.team2?.score ?? data.scoreB ?? 0;
+    const t1Obj = getV(data, ['teama', 'team1', 'home']) || {};
+    const t2Obj = getV(data, ['teamb', 'team2', 'away']) || {};
 
-    // Arrays for goal scorers
-    const goals = Array.isArray(data.goals) ? data.goals : [];
+    const t1Name = t1Obj.name || getV(data, ['hometeam']) || 'Home';
+    const t2Name = t2Obj.name || getV(data, ['awayteam']) || 'Away';
+
+    const t1Score = t1Obj.score ?? getV(data, ['homescore', 'scorea']) ?? "-";
+    const t2Score = t2Obj.score ?? getV(data, ['awayscore', 'scoreb']) ?? "-";
+
+    const goals = Array.isArray(data.goals) ? data.goals : (Array.isArray(getV(data, ['goals'])) ? getV(data, ['goals']) : []);
     const team1Goals = goals.filter(g => g.team === 1 || g.team === 'A' || g.team === t1Name);
     const team2Goals = goals.filter(g => g.team === 2 || g.team === 'B' || g.team === t2Name);
     const rowCount = Math.max(team1Goals.length, team2Goals.length);
 
-    const status = data.status || data.matchStatus || data.result;
+    const status = getV(data, ['status', 'matchstatus']);
+    const isFinished = status === 'FT' || String(status).toLowerCase().includes('won') || String(status).toLowerCase().includes('time');
+    const matchSeconds = getV(data, ['matchseconds', 'seconds', 'minute']);
 
-    // Smart Timer: Handles standard minutes (67') or live ticking seconds
     useEffect(() => {
-        let secs = data.matchSeconds || ((data.minute || 0) * 60);
-        if (!timerRef.current) return;
+        let secs = matchSeconds || 0;
+        if (!timerRef.current || isFinished) return;
 
         const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
         timerRef.current.textContent = fmt(secs);
 
-        if (!data.isLive) return; // Stop ticking if match is over
+        if (!isLive) return;
 
         const iv = setInterval(() => {
             secs++;
             if (timerRef.current) timerRef.current.textContent = fmt(secs);
         }, 1000);
         return () => clearInterval(iv);
-    }, [data.matchSeconds, data.minute, data.isLive]);
+    }, [matchSeconds, isLive, isFinished]);
 
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 12 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive ? <RedLivePill /> : <StaticLiveBadge text="FT" />}
+                {isLive ? <RedLivePill /> : (isFinished ? <StaticLiveBadge text="FT" /> : null)}
             </div>
 
-            <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: 12, padding: '6px 16px', marginBottom: 20, alignSelf: 'center', width: 'fit-content', margin: '0 auto 20px'
-            }}>
-                {data.isLive && <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />}
-                <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time</span>
-            </div>
+            {(!isFinished && (isLive || matchSeconds > 0)) && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
+                    borderRadius: 12, padding: '6px 16px', marginBottom: 20, alignSelf: 'center', width: 'fit-content', margin: '0 auto 20px'
+                }}>
+                    {isLive && <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />}
+                    <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time</span>
+                </div>
+            )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 16 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1 }}>
@@ -293,65 +336,61 @@ function FootballLayout({ data, accent }) {
                 </div>
             )}
 
-            {status && <div style={{ ...T.status, color: accent }}>{status}</div>}
+            {status && status !== 'FT' && <div style={{ ...T.status, color: accent }}>{status}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 3 · TennisLayout (Data Binding Mastered)
+   LAYOUT 3 · TennisLayout
 ========================================================= */
 
 function TennisLayout({ data, accent }) {
-    const label = leagueLabel(data.league);
+    const label = leagueLabel(getV(data, ['league']));
+    const isLive = String(getV(data, ['islive'])).toLowerCase() === 'true';
+    const isFinished = getV(data, ['status']) === 'FT';
 
-    // Data Binding
-    const p1Name = data.teamA || data.player1 || data.players?.[0]?.name || 'Player 1';
-    const p2Name = data.teamB || data.player2 || data.players?.[1]?.name || 'Player 2';
-
-    // Fallback array extraction for Sets
-    const p1Sets = data.setsA || data.players?.[0]?.sets || [];
-    const p2Sets = data.setsB || data.players?.[1]?.sets || [];
+    const p1Name = getV(data, ['teama', 'player1']) || 'Player 1';
+    const p2Name = getV(data, ['teamb', 'player2']) || 'Player 2';
+    const p1Sets = getV(data, ['setsa']) || [];
+    const p2Sets = getV(data, ['setsb']) || [];
     const maxSets = Math.max(p1Sets.length, p2Sets.length, 1);
 
-    const serving = data.serving ?? -1;
-    const currentScore = data.currentScore || data.gameScore || null;
+    const serving = getV(data, ['serving']) ?? -1;
+    const currentScore = getV(data, ['currentscore']);
 
     const SetPill = ({ value, won }) => (
         <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: won ? 'rgba(255,255,255,0.15)' : 'transparent',
-            color: won ? '#fff' : 'rgba(255,255,255,0.5)',
+            width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: won ? 'rgba(255,255,255,0.15)' : 'transparent', color: won ? '#fff' : 'rgba(255,255,255,0.5)',
             fontSize: 16, fontWeight: 800, fontVariantNumeric: 'tabular-nums',
         }}>
             {value !== undefined ? value : '–'}
         </div>
     );
 
-    const PlayerRow = ({ name, sets, opponentSets, isServing }) => {
-        return (
-            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8, padding: '10px 0' }}>
-                <div style={{ width: 8, height: 8, borderRadius: '50%', background: isServing ? accent : 'transparent' }} />
-                <span style={{ ...T.teamName, flex: 1, fontWeight: isServing ? 700 : 500, color: isServing ? '#fff' : 'rgba(255,255,255,0.7)' }}>
-                    {name}
-                </span>
+    const PlayerRow = ({ name, sets, opponentSets, isServing }) => (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8, padding: '10px 0' }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: isServing ? accent : 'transparent' }} />
+            <span style={{ ...T.teamName, flex: 1, fontWeight: isServing ? 700 : 500, color: isServing ? '#fff' : 'rgba(255,255,255,0.7)' }}>
+                {name}
+            </span>
+            {(sets.length > 0 || opponentSets.length > 0) && (
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     {Array.from({ length: maxSets }).map((_, si) => {
-                        const val = sets[si];
-                        const opp = opponentSets[si];
+                        const val = sets[si], opp = opponentSets[si];
                         return <SetPill key={si} value={val} won={val !== undefined && opp !== undefined && val > opp} />;
                     })}
                 </div>
-            </div>
-        );
-    };
+            )}
+        </div>
+    );
 
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 12 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive && <StaticLiveBadge text="LIVE" />}
+                {isLive ? <StaticLiveBadge text="LIVE" /> : (isFinished ? <StaticLiveBadge text="FT" /> : null)}
             </div>
             <PlayerRow name={p1Name} sets={p1Sets} opponentSets={p2Sets} isServing={serving === 0} />
             <div style={T.divider} />
@@ -363,32 +402,30 @@ function TennisLayout({ data, accent }) {
 }
 
 /* =========================================================
-   LAYOUT 4 · BadmintonLayout (Data Binding Mastered)
+   LAYOUT 4 · BadmintonLayout
 ========================================================= */
 
 function BadmintonLayout({ data, accent }) {
-    const label = leagueLabel(data.league);
+    const label = leagueLabel(getV(data, ['league']));
+    const isLive = String(getV(data, ['islive'])).toLowerCase() === 'true';
+    const isFinished = getV(data, ['status']) === 'FT';
 
-    // Data Binding
-    const p1Name = data.teamA || data.player1 || data.players?.[0]?.name || 'Player A';
-    const p2Name = data.teamB || data.player2 || data.players?.[1]?.name || 'Player B';
-
-    const p1Games = data.gamesA || data.players?.[0]?.games || [];
-    const p2Games = data.gamesB || data.players?.[1]?.games || [];
+    const p1Name = getV(data, ['teama', 'player1']) || 'Player A';
+    const p2Name = getV(data, ['teamb', 'player2']) || 'Player B';
+    const p1Games = getV(data, ['gamesa']) || [];
+    const p2Games = getV(data, ['gamesb']) || [];
     const maxGames = Math.max(p1Games.length, p2Games.length, 1);
 
-    const currentScore = data.currentScore || data.gameScore || null;
+    const currentScore = getV(data, ['currentscore']);
 
-    const PlayerRow = ({ name, games, opponentGames }) => {
-        return (
-            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '10px 0' }}>
-                <AvatarBadge name={name} size={40} />
-                <span style={{ ...T.teamName, flex: 1 }}>{name}</span>
+    const PlayerRow = ({ name, games, opponentGames }) => (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '10px 0' }}>
+            <AvatarBadge name={name} size={40} />
+            <span style={{ ...T.teamName, flex: 1 }}>{name}</span>
+            {(games.length > 0 || opponentGames.length > 0) && (
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                     {Array.from({ length: maxGames }).map((_, gi) => {
-                        const val = games[gi];
-                        const opp = opponentGames[gi];
-                        const won = val !== undefined && opp !== undefined && val > opp;
+                        const val = games[gi], opp = opponentGames[gi], won = val !== undefined && opp !== undefined && val > opp;
                         return (
                             <span key={gi} style={{ fontSize: 20, fontWeight: 800, color: won ? '#fff' : 'rgba(255,255,255,0.4)', minWidth: 26, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
                                 {val !== undefined ? val : '–'}
@@ -396,15 +433,15 @@ function BadmintonLayout({ data, accent }) {
                         );
                     })}
                 </div>
-            </div>
-        );
-    };
+            )}
+        </div>
+    );
 
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 8 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive && <StaticLiveBadge text="LIVE" />}
+                {isLive ? <StaticLiveBadge text="LIVE" /> : (isFinished ? <StaticLiveBadge text="FT" /> : null)}
             </div>
             <PlayerRow name={p1Name} games={p1Games} opponentGames={p2Games} />
             <div style={T.divider} />
@@ -416,31 +453,36 @@ function BadmintonLayout({ data, accent }) {
 }
 
 /* =========================================================
-   LAYOUT 5 · BasketballLayout (Data Binding Mastered)
+   LAYOUT 5 · BasketballLayout
 ========================================================= */
 
 function BasketballLayout({ data, accent }) {
-    const label = leagueLabel(data.league);
+    const label = leagueLabel(getV(data, ['league']));
     const timerRef = useRef(null);
+    const isLive = String(getV(data, ['islive'])).toLowerCase() === 'true';
 
-    // Data Binding
-    const t1Name = data.teamA?.name || data.team1?.name || data.teamA || data.teams?.[0]?.name || 'Home';
-    const t2Name = data.teamB?.name || data.team2?.name || data.teamB || data.teams?.[1]?.name || 'Away';
-    const t1Score = data.teamA?.score ?? data.team1?.score ?? data.scoreA ?? data.teams?.[0]?.score ?? 0;
-    const t2Score = data.teamB?.score ?? data.team2?.score ?? data.scoreB ?? data.teams?.[1]?.score ?? 0;
+    const t1Obj = getV(data, ['teama', 'team1', 'home']) || {};
+    const t2Obj = getV(data, ['teamb', 'team2', 'away']) || {};
 
-    const quarter = data.quarter || data.period || '1';
-    const status = data.status || data.matchStatus || data.result;
+    const t1Name = t1Obj.name || getV(data, ['hometeam']) || 'Home';
+    const t2Name = t2Obj.name || getV(data, ['awayteam']) || 'Away';
 
-    /* Smart Timer: count DOWN from quarterSeconds */
+    const t1Score = t1Obj.score ?? getV(data, ['homescore', 'scorea']) ?? "-";
+    const t2Score = t2Obj.score ?? getV(data, ['awayscore', 'scoreb']) ?? "-";
+
+    const quarter = getV(data, ['quarter', 'period']);
+    const status = getV(data, ['status', 'matchstatus']);
+    const isFinished = status === 'FT' || String(status).toLowerCase().includes('won');
+    const quarterSeconds = getV(data, ['quarterseconds', 'clock']);
+
     useEffect(() => {
-        let secs = data.quarterSeconds || ((data.clock || 0) * 60);
-        if (!timerRef.current) return;
+        let secs = quarterSeconds || 0;
+        if (!timerRef.current || isFinished) return;
 
         const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
         timerRef.current.textContent = fmt(secs);
 
-        if (!data.isLive) return;
+        if (!isLive) return;
 
         const iv = setInterval(() => {
             if (secs <= 0) {
@@ -452,15 +494,13 @@ function BasketballLayout({ data, accent }) {
             if (timerRef.current) timerRef.current.textContent = fmt(secs);
         }, 1000);
         return () => clearInterval(iv);
-    }, [data.quarterSeconds, data.clock, data.isLive]);
+    }, [quarterSeconds, isLive, isFinished]);
 
     const TeamRow = ({ name, score }) => (
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '8px 0' }}>
             <AvatarBadge name={name} size={40} />
             <span style={{ ...T.teamName, flex: 1, fontSize: 15 }}>{name}</span>
-            <span style={{ fontSize: 32, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
-                {score}
-            </span>
+            <span style={{ fontSize: 32, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{score}</span>
         </div>
     );
 
@@ -468,17 +508,19 @@ function BasketballLayout({ data, accent }) {
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 12 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive ? <StaticLiveBadge text={`Q${quarter} LIVE`} /> : <StaticLiveBadge text="FINAL" />}
+                {isLive ? <StaticLiveBadge text={`Q${quarter || ''} LIVE`} /> : (isFinished ? <StaticLiveBadge text="FINAL" /> : null)}
             </div>
 
-            <div style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
-                borderRadius: 12, padding: '6px 16px', marginBottom: 16, alignSelf: 'center', width: 'fit-content', margin: '0 auto 16px'
-            }}>
-                <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Clock</span>
-            </div>
+            {(!isFinished && (isLive || quarterSeconds > 0)) && (
+                <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
+                    borderRadius: 12, padding: '6px 16px', marginBottom: 16, alignSelf: 'center', width: 'fit-content', margin: '0 auto 16px'
+                }}>
+                    <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
+                    <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Clock</span>
+                </div>
+            )}
 
             <TeamRow name={t1Name} score={t1Score} />
             <TeamRow name={t2Name} score={t2Score} />
@@ -486,8 +528,10 @@ function BasketballLayout({ data, accent }) {
             <div style={T.divider} />
 
             <div style={T.row}>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>Quarter {quarter}</span>
-                {status && <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>{status}</span>}
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>
+                    {quarter ? `Quarter ${quarter}` : ''}
+                </span>
+                {status && status !== 'FT' && <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>{status}</span>}
             </div>
         </div>
     );
@@ -498,7 +542,7 @@ function BasketballLayout({ data, accent }) {
 ========================================================= */
 
 function FallbackLayout({ data }) {
-    const entries = Object.entries(data || {}).filter(([k]) => k !== 'league');
+    const entries = Object.entries(data || {}).filter(([k]) => k.toLowerCase() !== 'league');
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 16 }}>
@@ -506,7 +550,7 @@ function FallbackLayout({ data }) {
             </div>
             {entries.map(([key, value]) => (
                 <div key={key} style={{ ...T.row, marginBottom: 8, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize' }}>{key}</span>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.5)', textTransform: 'capitalize' }}>{String(key).replace(/_/g, ' ')}</span>
                     <span style={{ fontSize: 13, fontWeight: 700, color: '#fff', maxWidth: '60%', textAlign: 'right', wordBreak: 'break-word', fontVariantNumeric: 'tabular-nums' }}>
                         {typeof value === 'object' ? JSON.stringify(value) : String(value)}
                     </span>
@@ -521,7 +565,7 @@ function FallbackLayout({ data }) {
 ========================================================= */
 
 export default function SportsCard({ data }) {
-    const sport = useMemo(() => detectSport(data?.league), [data?.league]);
+    const sport = useMemo(() => detectSport(data), [data]);
     const theme = SPORT_THEMES[sport] || SPORT_THEMES.fallback;
 
     // 3D Tilt Logic
@@ -534,7 +578,6 @@ export default function SportsCard({ data }) {
     const rotateX = useTransform(mouseYSpring, [-0.5, 0.5], [6, -6]);
     const rotateY = useTransform(mouseXSpring, [-0.5, 0.5], [-6, 6]);
 
-    // Dynamic Glare
     const glareX = useTransform(mouseXSpring, [-0.5, 0.5], [100, -100]);
     const glareY = useTransform(mouseYSpring, [-0.5, 0.5], [100, -100]);
 
