@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, useMotionValue, useTransform, useSpring } from "framer-motion";
 
 /* =========================================================
@@ -58,7 +58,7 @@ const TEAM_THEMES = {
 function AvatarBadge({ name, size = 44 }) {
     const theme = TEAM_THEMES[name] || { bg: '1a2a5e', color: '7eb8ff' };
     const url = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${theme.bg}&color=${theme.color}&size=128&bold=true&font-size=0.45&rounded=false`;
-    const initials = (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    const initials = (name || '??').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
     const [failed, setFailed] = useState(false);
 
     const boxStyle = {
@@ -134,11 +134,37 @@ function StaticLiveBadge({ text = 'LIVE' }) {
 }
 
 /* =========================================================
-   LAYOUT 1 · CricketLayout
+   LAYOUT 1 · CricketLayout (Data Binding Mastered)
 ========================================================= */
 
 function CricketLayout({ data, accent }) {
     const label = leagueLabel(data.league);
+
+    // Smart Parsers: Safely extract runs/wickets even if the API formats it weirdly
+    const parseCricketScore = (scoreStr, oversStr) => {
+        if (!scoreStr) return { score: "0/0", overs: "0.0" };
+
+        // If API sends "145/1 (25.2)", aggressively split it
+        const match = String(scoreStr).match(/^([\d\/]+)\s*(?:\(([^)]+)\))?/);
+        if (match) {
+            return {
+                score: match[1] || "0/0",
+                overs: oversStr || match[2] || "0.0"
+            };
+        }
+        return { score: scoreStr, overs: oversStr || "0.0" };
+    };
+
+    // Data Binding
+    const teamA = data.battingTeam || data.teamA || 'Team 1';
+    const teamB = data.bowlingTeam || data.teamB || 'Team 2';
+
+    const scoreA = parseCricketScore(data.battingScore || data.scoreA, data.battingOvers || data.oversA);
+    const scoreB = parseCricketScore(data.bowlingScore || data.scoreB, data.bowlingOvers || data.oversB);
+
+    const crr = data.crr || data.currentRunRate;
+    const rrr = data.rrr || data.requiredRunRate;
+    const status = data.status || data.matchStatus || data.result;
 
     return (
         <div style={{ width: '100%' }}>
@@ -148,71 +174,82 @@ function CricketLayout({ data, accent }) {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
-                <AvatarBadge name={data.battingTeam || data.teamA || 'Team A'} size={40} />
-                <span style={T.teamName}>{data.battingTeam || data.teamA || 'Team A'}</span>
+                <AvatarBadge name={teamA} size={40} />
+                <span style={T.teamName}>{teamA}</span>
             </div>
             <div style={{ ...T.row, marginTop: 6 }}>
-                <span style={T.bigScore}>{data.battingScore || data.scoreA || '0/0'}</span>
-                <span style={T.overs}>{data.battingOvers || '0'} ov</span>
+                <span style={T.bigScore}>{scoreA.score}</span>
+                <span style={T.overs}>({scoreA.overs} ov)</span>
             </div>
 
             <div style={T.divider} />
 
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <AvatarBadge name={data.bowlingTeam || data.teamB || 'Team B'} size={40} />
-                <span style={T.teamName}>{data.bowlingTeam || data.teamB || 'Team B'}</span>
+                <AvatarBadge name={teamB} size={40} />
+                <span style={T.teamName}>{teamB}</span>
             </div>
             <div style={{ ...T.row, marginTop: 6 }}>
-                <span style={T.bigScore}>{data.bowlingScore || data.scoreB || '0/0'}</span>
-                <span style={T.overs}>{data.bowlingOvers || '0'} ov</span>
+                <span style={T.bigScore}>{scoreB.score}</span>
+                <span style={T.overs}>({scoreB.overs} ov)</span>
             </div>
 
             <div style={T.divider} />
 
             <div style={{ ...T.row, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8 }}>
-                <span style={T.rate}>CRR: {data.crr ?? '–'}</span>
+                <span style={T.rate}>CRR: {crr ?? '–'}</span>
                 <span style={{ ...T.rate, color: 'rgba(255,255,255,0.2)' }}>•</span>
-                <span style={T.rate}>RRR: {data.rrr ?? '–'}</span>
+                <span style={T.rate}>RRR: {rrr ?? '–'}</span>
             </div>
 
-            {data.status && <div style={{ ...T.status, color: accent }}>{data.status}</div>}
+            {status && <div style={{ ...T.status, color: accent }}>{status}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 2 · FootballLayout
+   LAYOUT 2 · FootballLayout (Data Binding Mastered)
 ========================================================= */
 
 function FootballLayout({ data, accent }) {
     const label = leagueLabel(data.league);
-    const t1 = data.team1 || { name: data.teamA || 'Home', score: data.scoreA || 0 };
-    const t2 = data.team2 || { name: data.teamB || 'Away', score: data.scoreB || 0 };
-    const goals = data.goals || [];
+    const timerRef = useRef(null);
 
+    // Data Binding
+    const t1Name = data.teamA?.name || data.team1?.name || data.teamA || 'Home';
+    const t2Name = data.teamB?.name || data.team2?.name || data.teamB || 'Away';
+    const t1Score = data.teamA?.score ?? data.team1?.score ?? data.scoreA ?? 0;
+    const t2Score = data.teamB?.score ?? data.team2?.score ?? data.scoreB ?? 0;
+
+    // Arrays for goal scorers
+    const goals = Array.isArray(data.goals) ? data.goals : [];
+    const team1Goals = goals.filter(g => g.team === 1 || g.team === 'A' || g.team === t1Name);
+    const team2Goals = goals.filter(g => g.team === 2 || g.team === 'B' || g.team === t2Name);
+    const rowCount = Math.max(team1Goals.length, team2Goals.length);
+
+    const status = data.status || data.matchStatus || data.result;
+
+    // Smart Timer: Handles standard minutes (67') or live ticking seconds
     useEffect(() => {
-        let secs = data.matchSeconds || 0;
-        const el = document.getElementById('fl-timer');
-        if (!el) return;
+        let secs = data.matchSeconds || ((data.minute || 0) * 60);
+        if (!timerRef.current) return;
+
         const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-        el.textContent = fmt(secs);
+        timerRef.current.textContent = fmt(secs);
+
+        if (!data.isLive) return; // Stop ticking if match is over
+
         const iv = setInterval(() => {
             secs++;
-            const target = document.getElementById('fl-timer');
-            if (target) target.textContent = fmt(secs);
+            if (timerRef.current) timerRef.current.textContent = fmt(secs);
         }, 1000);
         return () => clearInterval(iv);
-    }, [data.matchSeconds]);
-
-    const team1Goals = goals.filter(g => g.team === 1);
-    const team2Goals = goals.filter(g => g.team === 2);
-    const rowCount = Math.max(team1Goals.length, team2Goals.length);
+    }, [data.matchSeconds, data.minute, data.isLive]);
 
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 12 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive && <RedLivePill />}
+                {data.isLive ? <RedLivePill /> : <StaticLiveBadge text="FT" />}
             </div>
 
             <div style={{
@@ -220,24 +257,24 @@ function FootballLayout({ data, accent }) {
                 background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
                 borderRadius: 12, padding: '6px 16px', marginBottom: 20, alignSelf: 'center', width: 'fit-content', margin: '0 auto 20px'
             }}>
-                <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />
-                <span id="fl-timer" style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40 }} />
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Match Time</span>
+                {data.isLive && <motion.div animate={{ opacity: [1, 0.4, 1] }} transition={{ duration: 1.5, repeat: Infinity }} style={{ width: 6, height: 6, borderRadius: '50%', background: accent }} />}
+                <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Time</span>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: 16 }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1 }}>
-                    <AvatarBadge name={t1.name} size={54} />
-                    <span style={{ ...T.teamName, textAlign: 'center', maxWidth: 80 }}>{t1.name}</span>
+                    <AvatarBadge name={t1Name} size={54} />
+                    <span style={{ ...T.teamName, textAlign: 'center', maxWidth: 80 }}>{t1Name}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
-                    <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{t1.score ?? 0}</span>
+                    <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{t1Score}</span>
                     <span style={{ fontSize: 20, fontWeight: 300, color: 'rgba(255,255,255,0.3)' }}>–</span>
-                    <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{t2.score ?? 0}</span>
+                    <span style={{ fontSize: 40, fontWeight: 900, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>{t2Score}</span>
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, flex: 1 }}>
-                    <AvatarBadge name={t2.name} size={54} />
-                    <span style={{ ...T.teamName, textAlign: 'center', maxWidth: 80 }}>{t2.name}</span>
+                    <AvatarBadge name={t2Name} size={54} />
+                    <span style={{ ...T.teamName, textAlign: 'center', maxWidth: 80 }}>{t2Name}</span>
                 </div>
             </div>
 
@@ -256,20 +293,29 @@ function FootballLayout({ data, accent }) {
                 </div>
             )}
 
-            {data.status && <div style={{ ...T.status, color: accent }}>{data.status}</div>}
+            {status && <div style={{ ...T.status, color: accent }}>{status}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 3 · TennisLayout
+   LAYOUT 3 · TennisLayout (Data Binding Mastered)
 ========================================================= */
 
 function TennisLayout({ data, accent }) {
     const label = leagueLabel(data.league);
-    const players = data.players || [{ name: data.teamA || 'Player 1', sets: [] }, { name: data.teamB || 'Player 2', sets: [] }];
-    const serving = data.serving ?? 0;
-    const maxSets = Math.max(players[0]?.sets?.length || 0, players[1]?.sets?.length || 0, 1);
+
+    // Data Binding
+    const p1Name = data.teamA || data.player1 || data.players?.[0]?.name || 'Player 1';
+    const p2Name = data.teamB || data.player2 || data.players?.[1]?.name || 'Player 2';
+
+    // Fallback array extraction for Sets
+    const p1Sets = data.setsA || data.players?.[0]?.sets || [];
+    const p2Sets = data.setsB || data.players?.[1]?.sets || [];
+    const maxSets = Math.max(p1Sets.length, p2Sets.length, 1);
+
+    const serving = data.serving ?? -1;
+    const currentScore = data.currentScore || data.gameScore || null;
 
     const SetPill = ({ value, won }) => (
         <div style={{
@@ -283,18 +329,17 @@ function TennisLayout({ data, accent }) {
         </div>
     );
 
-    const PlayerRow = ({ player, opponentSets, idx }) => {
-        const isServing = serving === idx;
+    const PlayerRow = ({ name, sets, opponentSets, isServing }) => {
         return (
             <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 8, padding: '10px 0' }}>
                 <div style={{ width: 8, height: 8, borderRadius: '50%', background: isServing ? accent : 'transparent' }} />
                 <span style={{ ...T.teamName, flex: 1, fontWeight: isServing ? 700 : 500, color: isServing ? '#fff' : 'rgba(255,255,255,0.7)' }}>
-                    {player.name}
+                    {name}
                 </span>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     {Array.from({ length: maxSets }).map((_, si) => {
-                        const val = (player.sets || [])[si];
-                        const opp = (opponentSets || [])[si];
+                        const val = sets[si];
+                        const opp = opponentSets[si];
                         return <SetPill key={si} value={val} won={val !== undefined && opp !== undefined && val > opp} />;
                     })}
                 </div>
@@ -308,35 +353,41 @@ function TennisLayout({ data, accent }) {
                 <span style={T.league}>{label}</span>
                 {data.isLive && <StaticLiveBadge text="LIVE" />}
             </div>
-            <PlayerRow player={players[0]} opponentSets={players[1]?.sets} idx={0} />
+            <PlayerRow name={p1Name} sets={p1Sets} opponentSets={p2Sets} isServing={serving === 0} />
             <div style={T.divider} />
-            <PlayerRow player={players[1]} opponentSets={players[0]?.sets} idx={1} />
+            <PlayerRow name={p2Name} sets={p2Sets} opponentSets={p1Sets} isServing={serving === 1} />
             <div style={T.divider} />
-            {data.currentScore && <div style={{ ...T.cur, color: accent }}>{data.currentScore}</div>}
+            {currentScore && <div style={{ ...T.cur, color: accent }}>Current: {currentScore}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 4 · BadmintonLayout
+   LAYOUT 4 · BadmintonLayout (Data Binding Mastered)
 ========================================================= */
 
 function BadmintonLayout({ data, accent }) {
     const label = leagueLabel(data.league);
-    const players = data.players || [{ name: data.teamA || 'Player A', games: [] }, { name: data.teamB || 'Player B', games: [] }];
-    const maxGames = Math.max(players[0]?.games?.length || 0, players[1]?.games?.length || 0, 1);
 
-    const PlayerRow = ({ player, opponentGames }) => {
-        const games = player.games || [];
-        const oppGames = opponentGames || [];
+    // Data Binding
+    const p1Name = data.teamA || data.player1 || data.players?.[0]?.name || 'Player A';
+    const p2Name = data.teamB || data.player2 || data.players?.[1]?.name || 'Player B';
+
+    const p1Games = data.gamesA || data.players?.[0]?.games || [];
+    const p2Games = data.gamesB || data.players?.[1]?.games || [];
+    const maxGames = Math.max(p1Games.length, p2Games.length, 1);
+
+    const currentScore = data.currentScore || data.gameScore || null;
+
+    const PlayerRow = ({ name, games, opponentGames }) => {
         return (
             <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '10px 0' }}>
-                <AvatarBadge name={player.name} size={40} />
-                <span style={{ ...T.teamName, flex: 1 }}>{player.name}</span>
+                <AvatarBadge name={name} size={40} />
+                <span style={{ ...T.teamName, flex: 1 }}>{name}</span>
                 <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
                     {Array.from({ length: maxGames }).map((_, gi) => {
                         const val = games[gi];
-                        const opp = oppGames[gi];
+                        const opp = opponentGames[gi];
                         const won = val !== undefined && opp !== undefined && val > opp;
                         return (
                             <span key={gi} style={{ fontSize: 20, fontWeight: 800, color: won ? '#fff' : 'rgba(255,255,255,0.4)', minWidth: 26, textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>
@@ -355,47 +406,60 @@ function BadmintonLayout({ data, accent }) {
                 <span style={T.league}>{label}</span>
                 {data.isLive && <StaticLiveBadge text="LIVE" />}
             </div>
-            <PlayerRow player={players[0]} opponentGames={players[1]?.games} />
+            <PlayerRow name={p1Name} games={p1Games} opponentGames={p2Games} />
             <div style={T.divider} />
-            <PlayerRow player={players[1]} opponentGames={players[0]?.games} />
+            <PlayerRow name={p2Name} games={p2Games} opponentGames={p1Games} />
             <div style={T.divider} />
-            {data.currentScore && <div style={{ ...T.cur, color: accent }}>{data.currentScore}</div>}
+            {currentScore && <div style={{ ...T.cur, color: accent }}>Current: {currentScore}</div>}
         </div>
     );
 }
 
 /* =========================================================
-   LAYOUT 5 · BasketballLayout
+   LAYOUT 5 · BasketballLayout (Data Binding Mastered)
 ========================================================= */
 
 function BasketballLayout({ data, accent }) {
     const label = leagueLabel(data.league);
-    const teams = data.teams || [{ name: data.teamA || 'Team A', score: data.scoreA || 0 }, { name: data.teamB || 'Team B', score: data.scoreB || 0 }];
+    const timerRef = useRef(null);
 
+    // Data Binding
+    const t1Name = data.teamA?.name || data.team1?.name || data.teamA || data.teams?.[0]?.name || 'Home';
+    const t2Name = data.teamB?.name || data.team2?.name || data.teamB || data.teams?.[1]?.name || 'Away';
+    const t1Score = data.teamA?.score ?? data.team1?.score ?? data.scoreA ?? data.teams?.[0]?.score ?? 0;
+    const t2Score = data.teamB?.score ?? data.team2?.score ?? data.scoreB ?? data.teams?.[1]?.score ?? 0;
+
+    const quarter = data.quarter || data.period || '1';
+    const status = data.status || data.matchStatus || data.result;
+
+    /* Smart Timer: count DOWN from quarterSeconds */
     useEffect(() => {
-        let secs = data.quarterSeconds || 0;
-        const el = document.getElementById('bk-timer');
-        if (!el) return;
+        let secs = data.quarterSeconds || ((data.clock || 0) * 60);
+        if (!timerRef.current) return;
+
         const fmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-        el.textContent = fmt(secs);
+        timerRef.current.textContent = fmt(secs);
+
+        if (!data.isLive) return;
+
         const iv = setInterval(() => {
             if (secs <= 0) {
-                if (el) el.textContent = '0:00';
+                if (timerRef.current) timerRef.current.textContent = '0:00';
                 clearInterval(iv);
                 return;
             }
             secs--;
-            if (el) el.textContent = fmt(secs);
+            if (timerRef.current) timerRef.current.textContent = fmt(secs);
         }, 1000);
         return () => clearInterval(iv);
-    }, [data.quarterSeconds]);
+    }, [data.quarterSeconds, data.clock, data.isLive]);
 
-    const TeamRow = ({ team }) => (
+    const TeamRow = ({ name, score }) => (
         <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 12, padding: '8px 0' }}>
-            <AvatarBadge name={team.name} size={40} />
-            <span style={{ ...T.teamName, flex: 1, fontSize: 15 }}>{team.name}</span>
+            <AvatarBadge name={name} size={40} />
+            <span style={{ ...T.teamName, flex: 1, fontSize: 15 }}>{name}</span>
             <span style={{ fontSize: 32, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }}>
-                {team.score ?? 0}
+                {score}
             </span>
         </div>
     );
@@ -404,7 +468,7 @@ function BasketballLayout({ data, accent }) {
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 12 }}>
                 <span style={T.league}>{label}</span>
-                {data.isLive && <StaticLiveBadge text={`Q${data.quarter || '?'} LIVE`} />}
+                {data.isLive ? <StaticLiveBadge text={`Q${quarter} LIVE`} /> : <StaticLiveBadge text="FINAL" />}
             </div>
 
             <div style={{
@@ -412,18 +476,18 @@ function BasketballLayout({ data, accent }) {
                 background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)',
                 borderRadius: 12, padding: '6px 16px', marginBottom: 16, alignSelf: 'center', width: 'fit-content', margin: '0 auto 16px'
             }}>
-                <span id="bk-timer" style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums' }} />
-                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Quarter Time</span>
+                <span ref={timerRef} style={{ fontSize: 14, fontWeight: 800, color: '#fff', fontVariantNumeric: 'tabular-nums', minWidth: 40, textAlign: 'center' }}>0:00</span>
+                <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Clock</span>
             </div>
 
-            <TeamRow team={teams[0]} />
-            <TeamRow team={teams[1]} />
+            <TeamRow name={t1Name} score={t1Score} />
+            <TeamRow name={t2Name} score={t2Score} />
 
             <div style={T.divider} />
 
             <div style={T.row}>
-                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>Quarter {data.quarter || '?'}</span>
-                {data.status && <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>{data.status}</span>}
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', fontWeight: 500 }}>Quarter {quarter}</span>
+                {status && <span style={{ fontSize: 12, fontWeight: 700, color: accent }}>{status}</span>}
             </div>
         </div>
     );
@@ -438,7 +502,7 @@ function FallbackLayout({ data }) {
     return (
         <div style={{ width: '100%' }}>
             <div style={{ ...T.row, marginBottom: 16 }}>
-                <span style={T.league}>{data?.league?.toUpperCase() || 'UNKNOWN'}</span>
+                <span style={T.league}>{data?.league?.toUpperCase() || 'UNKNOWN SPORT'}</span>
             </div>
             {entries.map(([key, value]) => (
                 <div key={key} style={{ ...T.row, marginBottom: 8, background: 'rgba(0,0,0,0.2)', padding: '8px 12px', borderRadius: 8 }}>
