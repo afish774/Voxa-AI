@@ -1,66 +1,72 @@
 @import "tailwindcss";
-/* VOXA APPSAVING CSS RESET */
 
-/* Keep all your original root variables for colors and fonts at the top */
+/* 1. We wrap Tailwind's reset in a low-priority layer so it doesn't break your UI */
+@layer base {
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop {
+    border-color: initial;
+    /* Fixes the weird border issues */
+  }
+}
+
+/* 2. Your Original App Styles (Restored exactly as they were) */
 :root {
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
 
-  /* Your original dark theme variables... */
   --text: #9ca3af;
   --text-h: #f3f4f6;
   --bg: #16171d;
   --border: #2e303a;
+  --code-bg: #1f2028;
+  --accent: #c084fc;
+  --accent-bg: rgba(192, 132, 252, 0.15);
+  --accent-border: rgba(192, 132, 252, 0.5);
   --social-bg: rgba(47, 48, 58, 0.5);
   --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
 
+  font: 18px/145% var(--sans);
   background-color: var(--bg);
   color: var(--text);
-  font-family: var(--sans);
 }
 
-/* ============================================================ */
-/* 🧠 THE CRITICAL FIX: The "Safe Injection" Method            */
-/* ============================================================ */
+body {
+  margin: 0;
+  background: #16171d;
+  /* Matches your 'before' screenshot */
+}
 
-/* We load Tailwind, but we ONLY use its 'components' layer. 
-   We DO NOT import 'base' (Preflight), so it won't break 
-   your navigation or login forms! */
-@import "tailwindcss/components";
-@import "tailwindcss/utilities";
-
-/* ============================================================ */
-/* ✨ The Premium Sports Card Definition (Unchanged)           */
-/* ============================================================ */
+/* 3. The Premium Sports Card (Using the forced class) */
 .glass-container {
-  /* Using Tailwind's 'apply' here keeps the card logic clean */
-  @apply relative w-full max-w-md mx-auto overflow-hidden p-6 text-white my-4;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  width: 100%;
+  max-width: 28rem;
+  margin: 1rem auto;
+  overflow: hidden;
+  padding: 1.5rem;
+  color: white;
   background: rgba(255, 255, 255, 0.03) !important;
   backdrop-filter: blur(24px) saturate(180%) !important;
   -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   border-radius: 2rem;
   box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
-  transition: all 0.3s ease;
 }
 
-.glass-container:hover {
-  @apply bg-white/5 border-white/20;
+/* Add back your original H1/H2 styles so Tailwind doesn't flatten them */
+h1 {
+  font-size: 56px !important;
+  font-weight: 500 !important;
+  color: #f3f4f6 !important;
 }
 
-/* ============================================================ */
-/* 🛠️ Add back essential components Tailwind broke            */
-/* ============================================================ */
-
-/* If your login inputs are unstyled, you can explicitly add 
-   this to restore basic styling if needed: */
-/*
-input[type="email"], input[type="password"] {
-  padding: 1rem;
-  border-radius: 1rem;
-  background: white;
-  color: black;
-  width: 100%;
+h2 {
+  font-size: 24px !important;
+  font-weight: 500 !important;
 }
-*/
