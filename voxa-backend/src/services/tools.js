@@ -136,103 +136,60 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (PAYWALL BYPASS HACK)
+            // ⚽ ROUTE 1: FOOTBALL (TheSportsDB - 100% FREE, NO KEY NEEDED)
             // ==========================================
             if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
 
-                const apiKey = process.env.FOOTBALL_API_KEY;
-                if (!apiKey) throw new Error("FOOTBALL_API_KEY missing from .env");
-                const headers = { 'x-apisports-key': apiKey, 'Content-Type': 'application/json' };
-
+                // Hardcoded TheSportsDB IDs for instant caching
                 const POPULAR_TEAMS = {
-                    "manchester city": 50, "manchester united": 33, "chelsea": 49,
-                    "arsenal": 42, "liverpool": 40, "tottenham": 47,
-                    "real madrid": 54, "barcelona": 52, "atletico madrid": 53,
-                    "bayern munich": 157, "borussia dortmund": 165,
-                    "psg": 85, "juventus": 496, "ac milan": 489, "inter": 505
+                    "manchester city": 133613, "manchester united": 133612, "chelsea": 133610,
+                    "arsenal": 133604, "liverpool": 133602, "tottenham": 133616,
+                    "real madrid": 133739, "barcelona": 133738, "atletico madrid": 133729,
+                    "bayern munich": 133664, "borussia dortmund": 133667,
+                    "psg": 133714, "juventus": 133697, "ac milan": 133690, "inter": 133692
                 };
 
                 let teamId = POPULAR_TEAMS[t1];
 
                 if (!teamId) {
-                    const teamData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/teams?search=${encodeURIComponent(t1)}`, { headers }, 86400000);
-                    if (teamData.errors && Object.keys(teamData.errors).length > 0) throw new Error(`API-Sports Error: ${JSON.stringify(teamData.errors)}`);
-                    if (!teamData.response || teamData.response.length === 0) throw new Error(`Team not found`);
-                    teamId = teamData.response[0].team.id;
+                    const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
+                    if (!teamData.teams || teamData.teams.length === 0) throw new Error(`Team not found`);
+                    teamId = teamData.teams[0].idTeam;
                 }
 
-                // 🧠 THE HACK: Calculate Current Season to bypass "last" and "next" premium parameters
-                const currentYear = new Date().getFullYear();
-                const seasonYear = new Date().getMonth() > 5 ? currentYear : currentYear - 1;
+                let fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
+                if (isUpcoming) fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
 
-                let fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&season=${seasonYear}`;
-                if (!isUpcoming && !isFinished && voiceNormalizedQuery.includes("live")) {
-                    fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`;
-                }
-
-                const fixData = await fetchWithCacheAndRetry(fetchUrl, { headers }, 30000);
-
-                if (fixData.errors && Object.keys(fixData.errors).length > 0) {
-                    throw new Error(`API-Sports Error: ${JSON.stringify(fixData.errors)}`);
-                }
-
-                let allFixtures = fixData.response || [];
-                let eventsArray = [];
-
-                // 🧠 Local Sorting & Slicing Engine
-                if (fetchUrl.includes("live=all")) {
-                    eventsArray = allFixtures;
-                } else {
-                    const now = new Date().getTime();
-                    if (isUpcoming) {
-                        eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() > now)
-                            .sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime())
-                            .slice(0, 15);
-                    } else {
-                        eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() < now)
-                            .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime())
-                            .slice(0, 15);
-                    }
-                }
-
-                // If summer break and no matches, check previous season
-                if ((!eventsArray || eventsArray.length === 0) && !isUpcoming) {
-                    const prevFixData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/fixtures?team=${teamId}&season=${seasonYear - 1}`, { headers }, 60000);
-                    allFixtures = prevFixData.response || [];
-                    const now = new Date().getTime();
-                    eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() < now)
-                        .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime())
-                        .slice(0, 15);
-                }
+                const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
+                const eventsArray = isUpcoming ? fixData.events : fixData.results;
 
                 if (!eventsArray || eventsArray.length === 0) throw new Error("No fixtures found.");
 
+                // 🚀 DUMMY DATA INTERCEPTOR (Blocks the fake Bolton games)
+                if (eventsArray[0].strHomeTeam === "Bolton Wanderers" && !t1.toLowerCase().includes("bolton")) {
+                    throw new Error("DUMMY_DATA");
+                }
+
                 let match = eventsArray[0];
                 if (t2) {
-                    const h2hMatch = eventsArray.find(m => m.teams.home.name.toLowerCase().includes(t2) || m.teams.away.name.toLowerCase().includes(t2));
+                    const h2hMatch = eventsArray.find(m => m.strHomeTeam.toLowerCase().includes(t2) || m.strAwayTeam.toLowerCase().includes(t2));
                     if (h2hMatch) match = h2hMatch;
                     else throw new Error("H2H_NOT_FOUND");
                 }
 
-                const isLiveResponse = ["1H", "2H", "HT", "LIVE", "ET", "PEN"].includes(match.fixture.status.short);
-                const isFinishedResponse = ["FT", "AET", "PEN"].includes(match.fixture.status.short);
-
-                const formattedGoals = (match.events || []).filter(e => e.type === "Goal").map(g => ({
-                    team: g.team.name, scorer: g.player.name, minute: g.time.elapsed
-                }));
-
                 return JSON.stringify({
-                    league: match.league.name || "Football", isLive: isLiveResponse,
-                    matchSeconds: isLiveResponse ? (match.fixture.status.elapsed * 60) : (isFinishedResponse ? 5400 : 0),
-                    teamA: { name: match.teams.home.name, score: match.goals.home !== null ? match.goals.home : "-" },
-                    teamB: { name: match.teams.away.name, score: match.goals.away !== null ? match.goals.away : "-" },
-                    goals: formattedGoals,
-                    status: (isLiveResponse ? "Match Live" : (isUpcoming ? `Scheduled: ${new Date(match.fixture.date).toLocaleDateString()}` : "Full Time"))
+                    league: match.strLeague || "Football",
+                    isLive: false,
+                    matchSeconds: isUpcoming ? 0 : 5400,
+                    teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
+                    teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
+                    goals: [],
+                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Full Time"
                 });
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB - 100% FREE NO KEY NEEDED)
             // ==========================================
             if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba") || cleanQuery.includes("lakers") || cleanQuery.includes("warriors")) {
                 const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
@@ -340,7 +297,6 @@ export const getSportsDataTool = tool(
             let failReason = "Match Data Unavailable";
             if (error.message === "H2H_NOT_FOUND") failReason = "Match not in recent API window";
             if (error.message === "DUMMY_DATA") failReason = "Schedule Locked in Free Tier";
-            if (error.message.includes("API-Sports Error")) failReason = "API Access Issue (Check Logs)";
 
             if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: failReason });
             if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: failReason });
