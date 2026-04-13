@@ -6,28 +6,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-// 🛡️ ENTERPRISE NETWORK ENGINE: Auto-Retry + Timeout
-const fetchWithRetry = async (url, options = {}, retries = 1, timeoutMs = 6000) => {
-    for (let i = 0; i <= retries; i++) {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const response = await fetch(url, { ...options, signal: controller.signal });
-            clearTimeout(timeoutId);
-            if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-            return response;
-        } catch (error) {
-            clearTimeout(timeoutId);
-            if (i === retries) throw error;
-            await new Promise(res => setTimeout(res, 500));
-        }
-    }
-};
+// ============================================================================
+// 🧠 ENTERPRISE INFRASTRUCTURE 
+// ============================================================================
 
-// 1. In-Memory TTL Cache
 const apiCache = new Map();
 
-// 2. Auto-Healing Network Engine with Caching
 const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries = 1, timeoutMs = 6000) => {
     const cacheKey = url;
     if (apiCache.has(cacheKey)) {
@@ -59,7 +43,6 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
     }
 };
 
-// 3. STT Failsafe Dictionary
 const normalizeVoiceInput = (query) => {
     let clean = query.toLowerCase();
     const map = {
@@ -116,7 +99,6 @@ export const getCryptoPriceTool = tool(
     { name: "get_crypto_price", description: "Fetches live crypto prices.", schema: z.object({ coinId: z.string() }) }
 );
 
-// 🚀 FIX: Removed the .email() regex that was crashing Groq
 export const sendEmailTool = tool(
     async ({ to, subject, body }) => {
         try {
@@ -131,11 +113,7 @@ export const sendEmailTool = tool(
     {
         name: "send_email",
         description: "Sends an email.",
-        schema: z.object({
-            to: z.string().describe("The exact, valid email address to send the message to."), // FIX IS HERE
-            subject: z.string(),
-            body: z.string()
-        })
+        schema: z.object({ to: z.string().describe("The exact, valid email address."), subject: z.string(), body: z.string() })
     }
 );
 
@@ -158,36 +136,50 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (API-Football)
+            // ⚽ ROUTE 1: FOOTBALL (DIRECT API-SPORTS - NO RAPIDAPI)
             // ==========================================
-            if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal")) {
-                const apiKey = process.env.RAPIDAPI_KEY;
-                if (!apiKey) throw new Error("RAPIDAPI_KEY missing");
-                const headers = { 'x-rapidapi-key': apiKey, 'Content-Type': 'application/json' };
+            if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
 
-                const teamData = await fetchWithCacheAndRetry(`https://api-football-v1.p.rapidapi.com/v3/teams?search=${encodeURIComponent(t1)}`, { headers }, 86400000);
-                if (!teamData.response || teamData.response.length === 0) throw new Error(`Team not found`);
+                const apiKey = process.env.FOOTBALL_API_KEY;
+                if (!apiKey) throw new Error("FOOTBALL_API_KEY missing from .env");
+                const headers = { 'x-apisports-key': apiKey, 'Content-Type': 'application/json' };
 
-                const teamId = teamData.response[0].team.id;
-                let fetchUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&last=15`;
-                if (isUpcoming) fetchUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&next=15`;
-                else if (!isFinished && voiceNormalizedQuery.includes("live")) fetchUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&live=all`;
+                // 🧠 THE HACK: Local Team ID Cache saves 50% of your API requests!
+                const POPULAR_TEAMS = {
+                    "manchester city": 50, "manchester united": 33, "chelsea": 49,
+                    "arsenal": 42, "liverpool": 40, "tottenham": 47,
+                    "real madrid": 54, "barcelona": 52, "atletico madrid": 53,
+                    "bayern munich": 157, "borussia dortmund": 165,
+                    "psg": 85, "juventus": 496, "ac milan": 489, "inter": 505
+                };
+
+                let teamId = POPULAR_TEAMS[t1];
+
+                if (!teamId) {
+                    const teamData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/teams?search=${encodeURIComponent(t1)}`, { headers }, 86400000);
+                    if (!teamData.response || teamData.response.length === 0) throw new Error(`Team not found`);
+                    teamId = teamData.response[0].team.id;
+                }
+
+                let fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&last=15`;
+                if (isUpcoming) fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&next=15`;
+                else if (!isFinished && voiceNormalizedQuery.includes("live")) fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`;
 
                 const fixData = await fetchWithCacheAndRetry(fetchUrl, { headers }, 30000);
                 let eventsArray = fixData.response;
 
                 if ((!eventsArray || eventsArray.length === 0) && !isUpcoming && !isFinished) {
-                    const fbData = await fetchWithCacheAndRetry(`https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&last=10`, { headers }, 60000);
+                    const fbData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=10`, { headers }, 60000);
                     eventsArray = fbData.response;
                 }
 
                 if (!eventsArray || eventsArray.length === 0) throw new Error("No fixtures found.");
 
-                let match = eventsArray[0], statusSuffix = "";
+                let match = eventsArray[0];
                 if (t2) {
                     const h2hMatch = eventsArray.find(m => m.teams.home.name.toLowerCase().includes(t2) || m.teams.away.name.toLowerCase().includes(t2));
                     if (h2hMatch) match = h2hMatch;
-                    else statusSuffix = " (H2H not in recent logs)";
+                    else throw new Error("H2H_NOT_FOUND");
                 }
 
                 const isLiveResponse = ["1H", "2H", "HT", "LIVE", "ET", "PEN"].includes(match.fixture.status.short);
@@ -203,12 +195,12 @@ export const getSportsDataTool = tool(
                     teamA: { name: match.teams.home.name, score: match.goals.home !== null ? match.goals.home : "-" },
                     teamB: { name: match.teams.away.name, score: match.goals.away !== null ? match.goals.away : "-" },
                     goals: formattedGoals,
-                    status: (isLiveResponse ? "Match Live" : (isUpcoming ? `Scheduled: ${new Date(match.fixture.date).toLocaleDateString()}` : "Full Time")) + statusSuffix
+                    status: (isLiveResponse ? "Match Live" : (isUpcoming ? `Scheduled: ${new Date(match.fixture.date).toLocaleDateString()}` : "Full Time"))
                 });
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB - 100% FREE NO KEY NEEDED)
             // ==========================================
             if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba") || cleanQuery.includes("lakers") || cleanQuery.includes("warriors")) {
                 const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
@@ -223,38 +215,37 @@ export const getSportsDataTool = tool(
 
                 if (!eventsArray || eventsArray.length === 0) throw new Error("No matches found.");
 
-                let match = eventsArray[0], statusSuffix = "";
+                let match = eventsArray[0];
                 if (t2) {
                     const h2hMatch = eventsArray.find(m => m.strHomeTeam.toLowerCase().includes(t2) || m.strAwayTeam.toLowerCase().includes(t2));
                     if (h2hMatch) match = h2hMatch;
-                    else statusSuffix = " (H2H not in recent logs)";
+                    else throw new Error("H2H_NOT_FOUND");
                 }
 
                 return JSON.stringify({
                     league: match.strLeague || "NBA", isLive: false, quarter: isUpcoming ? null : "Final", quarterSeconds: 0,
                     teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
                     teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
-                    status: (isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score") + statusSuffix
+                    status: (isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score")
                 });
             }
 
             // ==========================================
             // 🏏 ROUTE 3: CRICKET (CRICAPI)
             // ==========================================
-            if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl") || cleanQuery.includes("india")) {
+            if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl") || cleanQuery.includes("india") || cleanQuery.includes("csk") || cleanQuery.includes("rcb") || cleanQuery.includes("super kings") || cleanQuery.includes("challengers")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
                 const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data found.");
 
-                let targetMatch = null, statusSuffix = "";
+                let targetMatch = null;
 
                 if (t2) {
                     targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1) && m.name.toLowerCase().includes(t2));
                     if (!targetMatch) {
-                        targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1));
-                        statusSuffix = " (Archived)";
+                        throw new Error("H2H_NOT_FOUND");
                     }
                 } else {
                     targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1)) || matchData.data[0];
@@ -290,27 +281,38 @@ export const getSportsDataTool = tool(
                     league: targetMatch.matchType ? targetMatch.matchType.toUpperCase() : "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB, bowlingOvers: oversB,
-                    crr: calculatedCrr, rrr: null, status: (targetMatch.status || "Match Info") + statusSuffix
+                    crr: calculatedCrr, rrr: null, status: targetMatch.status || "Match Info"
                 });
             }
 
             throw new Error("No specific sport route hit.");
 
         } catch (error) {
-            console.warn(`[Tool Warning] Sports API Failed: ${error.message}`);
+            console.warn(`[Tool Warning] API/Match Failed: ${error.message}`);
 
-            const cleanQ = query.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of)/gi, '').trim();
+            const voiceNormalizedQuery = normalizeVoiceInput(query);
+            const cleanQ = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of)/gi, '').trim();
+
             const isFB = sport.toLowerCase() === "football" || cleanQ.toLowerCase().includes("ucl") || cleanQ.toLowerCase().includes("city");
             const isBB = sport.toLowerCase() === "basketball" || cleanQ.toLowerCase().includes("nba");
 
             let fb1 = cleanQ || "Team 1", fb2 = "TBD Opponent";
-            if (cleanQ.toLowerCase().includes(' vs ')) {
+            if (cleanQ.includes(' vs ')) {
                 const p = cleanQ.split(/ vs /i); fb1 = p[0].trim(); fb2 = p[1].trim();
             }
 
-            if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: "API Timeout" });
-            if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: "API Timeout" });
-            return JSON.stringify({ league: cleanQ.toLowerCase().includes("ipl") ? "IPL" : "Cricket", isLive: false, battingTeam: fb1, battingScore: "-", battingOvers: null, bowlingTeam: fb2, bowlingScore: "-", bowlingOvers: null, crr: null, rrr: null, status: "API Timeout" });
+            const toTitleCase = (str) => str.replace(/\b\w/g, l => l.toUpperCase());
+            fb1 = toTitleCase(fb1);
+            if (fb2 !== "TBD Opponent") fb2 = toTitleCase(fb2);
+
+            let failReason = "Match Data Unavailable";
+            if (error.message === "H2H_NOT_FOUND") failReason = "Match not in recent API window";
+            if (error.message === "DUMMY_DATA") failReason = "Schedule Locked in Free Tier";
+
+            if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: failReason });
+            if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: failReason });
+
+            return JSON.stringify({ league: cleanQ.toLowerCase().includes("ipl") ? "IPL" : "Cricket", isLive: false, battingTeam: fb1, battingScore: "-", battingOvers: null, bowlingTeam: fb2, bowlingScore: "-", bowlingOvers: null, crr: null, rrr: null, status: failReason });
         }
     },
     {
@@ -324,25 +326,20 @@ export const getSportsDataTool = tool(
     }
 );
 
-// 🌤️ TOOL 5: The Global Weather Radar
 export const getWeatherTool = tool(
     async ({ location }) => {
         try {
             const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`, {}, 86400000);
             if (!geoData.results || geoData.results.length === 0) return `||CARD:WEATHER:${location}:--:Unknown Location||`;
-
             const { latitude, longitude, name } = geoData.results[0];
             const weatherData = await fetchWithCacheAndRetry(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`, {}, 300000);
-
             const temp = Math.round(weatherData.current_weather.temperature);
             const code = weatherData.current_weather.weathercode;
-
             let condition = "Clear";
             if (code >= 51 && code <= 69) condition = "Rain";
             else if (code >= 71 && code <= 79) condition = "Snow";
             else if (code >= 80 && code <= 99) condition = "Storm";
             else if (code >= 1 && code <= 3) condition = "Cloudy";
-
             return `||CARD:WEATHER:${name}:${temp}:${condition}||`;
         } catch (error) {
             return `||CARD:WEATHER:${location}:--:Network Error||`;
