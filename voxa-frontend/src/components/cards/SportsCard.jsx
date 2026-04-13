@@ -191,11 +191,11 @@ function CricketLayout({ data }) {
 
             {/* Batting Team */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 11 }}>
-                <AvatarBadge name={data.battingTeam || 'Team A'} size={36} />
-                <span style={T.teamName}>{data.battingTeam || 'Team A'}</span>
+                <AvatarBadge name={data.battingTeam || data.teamA || 'Team A'} size={36} />
+                <span style={T.teamName}>{data.battingTeam || data.teamA || 'Team A'}</span>
             </div>
             <div style={{ ...T.row, marginTop: 3 }}>
-                <span style={T.bigScore}>{data.battingScore || '0/0'}</span>
+                <span style={T.bigScore}>{data.battingScore || data.scoreA || '0/0'}</span>
                 <span style={T.overs}>{data.battingOvers || '0'} ov</span>
             </div>
 
@@ -204,11 +204,11 @@ function CricketLayout({ data }) {
 
             {/* Bowling Team */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 0 }}>
-                <AvatarBadge name={data.bowlingTeam || 'Team B'} size={36} />
-                <span style={T.teamName}>{data.bowlingTeam || 'Team B'}</span>
+                <AvatarBadge name={data.bowlingTeam || data.teamB || 'Team B'} size={36} />
+                <span style={T.teamName}>{data.bowlingTeam || data.teamB || 'Team B'}</span>
             </div>
             <div style={{ ...T.row, marginTop: 3 }}>
-                <span style={T.bigScore}>{data.bowlingScore || '0/0'}</span>
+                <span style={T.bigScore}>{data.bowlingScore || data.scoreB || '0/0'}</span>
                 <span style={T.overs}>{data.bowlingOvers || '0'} ov</span>
             </div>
 
@@ -236,8 +236,8 @@ function CricketLayout({ data }) {
 
 function FootballLayout({ data }) {
     const label = leagueLabel(data.league);
-    const t1 = data.team1 || { name: 'Home', score: 0 };
-    const t2 = data.team2 || { name: 'Away', score: 0 };
+    const t1 = data.team1 || { name: data.teamA || 'Home', score: data.scoreA || 0 };
+    const t2 = data.team2 || { name: data.teamB || 'Away', score: data.scoreB || 0 };
     const goals = data.goals || [];
 
     /* Timer: count UP from matchSeconds, direct DOM update */
@@ -368,8 +368,8 @@ function FootballLayout({ data }) {
 function TennisLayout({ data }) {
     const label = leagueLabel(data.league);
     const players = data.players || [
-        { name: 'Player 1', sets: [] },
-        { name: 'Player 2', sets: [] },
+        { name: data.teamA || 'Player 1', sets: [] },
+        { name: data.teamB || 'Player 2', sets: [] },
     ];
     const serving = data.serving ?? 0;
     const maxSets = Math.max(
@@ -462,8 +462,8 @@ function TennisLayout({ data }) {
 function BadmintonLayout({ data }) {
     const label = leagueLabel(data.league);
     const players = data.players || [
-        { name: 'Player A', games: [] },
-        { name: 'Player B', games: [] },
+        { name: data.teamA || 'Player A', games: [] },
+        { name: data.teamB || 'Player B', games: [] },
     ];
     const maxGames = Math.max(
         players[0]?.games?.length || 0,
@@ -538,8 +538,8 @@ function BadmintonLayout({ data }) {
 function BasketballLayout({ data }) {
     const label = leagueLabel(data.league);
     const teams = data.teams || [
-        { name: 'Team A', score: 0 },
-        { name: 'Team B', score: 0 },
+        { name: data.teamA || 'Team A', score: data.scoreA || 0 },
+        { name: data.teamB || 'Team B', score: data.scoreB || 0 },
     ];
 
     /* Timer: count DOWN from quarterSeconds, direct DOM update */
@@ -735,7 +735,8 @@ function GlassScene({ data, sport, mouseRef }) {
                     <Html
                         center
                         transform
-                        occlude="blending"
+                        position={[0, 0, 0.15]}
+                        zIndexRange={[100, 0]}
                         style={{ width: '280px', pointerEvents: 'none' }}
                     >
                         <div style={{
