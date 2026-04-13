@@ -1,1177 +1,829 @@
-import React, { useRef, useState, useCallback, useMemo } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import {
-    MeshTransmissionMaterial,
-    RoundedBox,
-    Html,
-    Environment,
-} from "@react-three/drei";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useRef, useState, useEffect, useMemo } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Html, MeshTransmissionMaterial, Environment, Float, Sparkles, RoundedBox } from "@react-three/drei";
 import * as THREE from "three";
+import { motion } from "framer-motion";
 
 /* =========================================================
-   0. CONSTANTS & LEAGUE MAPPING
+   SAMPLE DATA CONSTANTS
+========================================================= */
+
+const CRICKET_DATA = {
+    league: 'ipl', battingTeam: 'India', battingScore: '145/1', battingOvers: '25.2',
+    bowlingTeam: 'Pakistan', bowlingScore: '310/10', bowlingOvers: '50',
+    crr: 5.73, rrr: 7.94, status: 'India need 166 runs', isLive: true
+};
+
+const FOOTBALL_DATA = {
+    league: 'epl',
+    team1: { name: 'Barcelona', score: 2 },
+    team2: { name: 'Real Madrid', score: 1 },
+    matchSeconds: 67 * 60 + 22,
+    goals: [
+        { team: 1, scorer: 'Lewandowski', minute: 23 },
+        { team: 1, scorer: 'Lewandowski', minute: 58 },
+        { team: 2, scorer: 'Bellingham', minute: 41 },
+    ],
+    status: 'Barcelona leading', isLive: true
+};
+
+const TENNIS_DATA = {
+    league: 'wimbledon',
+    players: [
+        { name: 'Nadal', sets: [6, 3, 4] },
+        { name: 'Federer', sets: [4, 6, 2] },
+    ],
+    serving: 0, currentScore: '40 – 30', isLive: true
+};
+
+const BADMINTON_DATA = {
+    league: 'bwf',
+    players: [
+        { name: 'Player A', games: [21, 18] },
+        { name: 'Player B', games: [18, 21] },
+    ],
+    currentScore: '12 – 10', isLive: true
+};
+
+const BASKETBALL_DATA = {
+    league: 'nba',
+    teams: [
+        { name: 'Lakers', score: 89 },
+        { name: 'Warriors', score: 92 },
+    ],
+    quarter: 3, quarterSeconds: 5 * 60 + 32,
+    status: 'Warriors lead by 3', isLive: true
+};
+
+/* =========================================================
+   LEAGUE DETECTION
 ========================================================= */
 
 const LEAGUE_MAP = {
-    ipl: "cricket", bbl: "cricket", psl: "cricket", cpl: "cricket", t20wc: "cricket",
-    epl: "football", laliga: "football", bundesliga: "football", seriea: "football", ucl: "football",
-    wimbledon: "tennis", usopen: "tennis", rolandgarros: "tennis", ausopen: "tennis", atptour: "tennis",
-    bwf: "badminton", bwftour: "badminton", allengland: "badminton",
-    nba: "basketball", euroleague: "basketball", fiba: "basketball",
+    ipl: 'cricket', bbl: 'cricket', psl: 'cricket', cpl: 'cricket', t20wc: 'cricket',
+    epl: 'football', laliga: 'football', bundesliga: 'football', seriea: 'football', ucl: 'football',
+    wimbledon: 'tennis', usopen: 'tennis', rolandgarros: 'tennis', ausopen: 'tennis', atptour: 'tennis',
+    bwf: 'badminton', bwftour: 'badminton', allengland: 'badminton',
+    nba: 'basketball', euroleague: 'basketball', fiba: 'basketball',
 };
 
-const SPORT_THEMES = {
-    cricket: { accent: "#0ea5e9", glow: "#0284c7" },
-    football: { accent: "#10b981", glow: "#059669" },
-    tennis: { accent: "#a78bfa", glow: "#7c3aed" },
-    badminton: { accent: "#f472b6", glow: "#ec4899" },
-    basketball: { accent: "#fb923c", glow: "#f97316" },
-    fallback: { accent: "#94a3b8", glow: "#64748b" },
+const LEAGUE_LABELS = {
+    ipl: 'IPL', bbl: 'BBL', psl: 'PSL', cpl: 'CPL', t20wc: 'T20 World Cup',
+    epl: 'Premier League', laliga: 'La Liga', bundesliga: 'Bundesliga', seriea: 'Serie A', ucl: 'Champions League',
+    wimbledon: 'Wimbledon', usopen: 'US Open', rolandgarros: 'Roland Garros', ausopen: 'Australian Open', atptour: 'ATP Tour',
+    bwf: 'BWF World Tour', bwftour: 'BWF Tour', allengland: 'All England Open',
+    nba: 'NBA', euroleague: 'EuroLeague', fiba: 'FIBA',
 };
-
-/* =========================================================
-   1. UTILITY HELPERS
-========================================================= */
 
 function detectSport(league) {
-    if (!league) return "fallback";
-    const key = league.toLowerCase().replace(/[\s\-_]/g, "");
-    return LEAGUE_MAP[key] || "fallback";
+    if (!league) return 'fallback';
+    const key = league.toLowerCase().replace(/[\s\-_]/g, '');
+    return LEAGUE_MAP[key] || 'fallback';
 }
 
-function avatarUrl(teamName) {
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(
-        teamName
-    )}&background=1a1a2e&color=fff&size=128&bold=true&rounded=true`;
-}
-
-function getInitials(name) {
-    if (!name) return "??";
-    return name.split(/\s+/).map((w) => w[0]).join("").toUpperCase().slice(0, 2);
+function leagueLabel(league) {
+    if (!league) return 'LIVE';
+    const key = league.toLowerCase().replace(/[\s\-_]/g, '');
+    return LEAGUE_LABELS[key] || league.toUpperCase();
 }
 
 /* =========================================================
-   2. REUSABLE STYLE TOKENS
+   TEAM THEMES + AVATAR BADGE
 ========================================================= */
 
-const PILL = {
-    background: "rgba(0,0,0,0.45)",
-    borderRadius: 16,
-    padding: "14px 18px",
-    backdropFilter: "blur(12px)",
-    WebkitBackdropFilter: "blur(12px)",
-    border: "1px solid rgba(255,255,255,0.06)",
+const TEAM_THEMES = {
+    'Barcelona': { bg: 'a50044', color: 'fff' },
+    'Real Madrid': { bg: '00529f', color: 'fff' },
+    'Lakers': { bg: '552583', color: 'FDB927' },
+    'Warriors': { bg: '1D428A', color: 'FFC72C' },
+    'India': { bg: 'FF9933', color: 'fff' },
+    'Pakistan': { bg: '01411C', color: 'fff' },
 };
 
-const PILL_SUBTLE = {
-    ...PILL,
-    background: "rgba(0,0,0,0.30)",
-    borderRadius: 12,
-    padding: "10px 14px",
-};
-
-const PILL_TINY = {
-    background: "rgba(255,255,255,0.06)",
-    borderRadius: 20,
-    padding: "5px 14px",
-    border: "1px solid rgba(255,255,255,0.04)",
-};
-
-const TABULAR = { fontVariantNumeric: "tabular-nums" };
-
-const FONT = "'Inter', 'SF Pro Display', -apple-system, system-ui, sans-serif";
-
-/* =========================================================
-   3. SAFE IMAGE COMPONENT (with fallback initials)
-========================================================= */
-
-function TeamLogo({ name, size = 48, style = {} }) {
+function AvatarBadge({ name, size = 44 }) {
+    const theme = TEAM_THEMES[name] || { bg: '1a2a5e', color: '7eb8ff' };
+    const url = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=${theme.bg}&color=${theme.color}&size=128&bold=true&font-size=0.45&rounded=false`;
+    const initials = (name || '').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
     const [failed, setFailed] = useState(false);
-
-    const fallbackStyle = {
-        width: size,
-        height: size,
-        borderRadius: "50%",
-        background: "rgba(255,255,255,0.08)",
-        border: "1px solid rgba(255,255,255,0.1)",
-        color: "#fff",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: size * 0.36,
-        fontWeight: 800,
-        letterSpacing: "0.5px",
+    const boxStyle = {
+        width: size, height: size,
+        borderRadius: 10,
+        border: '2px solid rgba(255,255,255,0.15)',
+        background: `#${theme.bg}`,
+        objectFit: 'cover',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 12, fontWeight: 800, color: `#${theme.color}`,
         flexShrink: 0,
-        ...style,
     };
-
-    if (failed) {
-        return <div style={fallbackStyle}>{getInitials(name)}</div>;
-    }
-
-    return (
-        <img
-            src={avatarUrl(name)}
-            alt={name}
-            onError={() => setFailed(true)}
-            style={{
-                width: size,
-                height: size,
-                borderRadius: "50%",
-                objectFit: "cover",
-                flexShrink: 0,
-                border: "1px solid rgba(255,255,255,0.1)",
-                ...style,
-            }}
-        />
-    );
+    if (failed) return <div style={boxStyle}>{initials}</div>;
+    return <img src={url} style={boxStyle} onError={() => setFailed(true)} alt={name} />;
 }
 
 /* =========================================================
-   4. CRICKET LAYOUT — Premium Broadcast
-   ─────────────────────────────────
-   IPL                🔴 LIVE
-   ┌─────────────────────────────┐
-   │ [Logo] India                │
-   │         145/1  (25.2 ov)    │
-   └─────────────────────────────┘
-   ┌─────────────────────────────┐
-   │ [Logo] Pakistan             │
-   │         310/10 (50 ov)      │
-   └─────────────────────────────┘
-   ┌──────────────────────┐
-   │ CRR: 5.73  •  RRR: 7.94    │
-   └──────────────────────┘
-   India need 166 runs
-   ─────────────────────────────────
+   SHARED STYLE TOKENS
 ========================================================= */
 
-function CricketLayout({ data, accent }) {
-    const crr = data.crr || data.currentRunRate || "";
-    const rrr = data.rrr || data.requiredRunRate || "";
-    const summary = data.summary || data.status || data.statusText || "";
-    const teamAName = data.teamA || "Team A";
-    const teamBName = data.teamB || "Team B";
+const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif";
 
-    /* Break "145/1 (25.2)" into score + overs if combined */
-    const parseScore = (raw) => {
-        if (!raw) return { score: "0/0", overs: "" };
-        const str = String(raw);
-        const match = str.match(/^([\d\/]+)\s*\(([^)]+)\)$/);
-        if (match) return { score: match[1], overs: match[2] };
-        return { score: str, overs: "" };
-    };
-
-    const a = parseScore(data.scoreA);
-    const b = parseScore(data.scoreB);
-    const oversA = a.overs || data.oversA || "";
-    const oversB = b.overs || data.oversB || "";
-
-    const TeamScorePanel = ({ name, score, overs, isPrimary }) => (
-        <div
-            style={{
-                ...(isPrimary ? PILL : PILL_SUBTLE),
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-            }}
-        >
-            {/* Top: Logo + Name */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <TeamLogo name={name} size={28} />
-                <span
-                    style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: isPrimary ? "#fff" : "rgba(255,255,255,0.7)",
-                        letterSpacing: "0.3px",
-                    }}
-                >
-                    {name}
-                </span>
-            </div>
-            {/* Bottom: Score + Overs aligned to baseline */}
-            <div
-                style={{
-                    display: "flex",
-                    alignItems: "baseline",
-                    gap: 8,
-                    paddingLeft: 38,
-                }}
-            >
-                <span
-                    style={{
-                        fontSize: isPrimary ? 38 : 28,
-                        fontWeight: 800,
-                        color: isPrimary ? "#fff" : "rgba(255,255,255,0.8)",
-                        lineHeight: 1,
-                        letterSpacing: "-1px",
-                        ...TABULAR,
-                    }}
-                >
-                    {score}
-                </span>
-                {overs && (
-                    <span
-                        style={{
-                            fontSize: 14,
-                            fontWeight: 500,
-                            color: "rgba(255,255,255,0.40)",
-                            ...TABULAR,
-                        }}
-                    >
-                        ({overs} ov)
-                    </span>
-                )}
-            </div>
-        </div>
-    );
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%" }}>
-            <TeamScorePanel name={teamAName} score={a.score} overs={oversA} isPrimary={true} />
-            <TeamScorePanel name={teamBName} score={b.score} overs={oversB} isPrimary={false} />
-
-            {/* CRR / RRR Stat Pill */}
-            {(crr || rrr) && (
-                <div
-                    style={{
-                        ...PILL_TINY,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 12,
-                        alignSelf: "flex-start",
-                    }}
-                >
-                    {crr && (
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.50)", ...TABULAR }}>
-                            CRR: <span style={{ color: "rgba(255,255,255,0.8)" }}>{crr}</span>
-                        </span>
-                    )}
-                    {crr && rrr && (
-                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)" }}>•</span>
-                    )}
-                    {rrr && (
-                        <span style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.50)", ...TABULAR }}>
-                            RRR: <span style={{ color: "rgba(255,255,255,0.8)" }}>{rrr}</span>
-                        </span>
-                    )}
-                </div>
-            )}
-
-            {/* Summary Footer */}
-            {summary && (
-                <div
-                    style={{
-                        fontSize: 13,
-                        fontWeight: 700,
-                        color: accent,
-                        marginTop: 4,
-                        paddingLeft: 2,
-                        letterSpacing: "0.2px",
-                    }}
-                >
-                    {summary}
-                </div>
-            )}
-        </div>
-    );
-}
+const T = {
+    league: { fontSize: 10.5, fontWeight: 700, color: 'rgba(255,255,255,0.42)', letterSpacing: '0.1em', textTransform: 'uppercase' },
+    teamName: { fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.82)' },
+    bigScore: { fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '-0.5px', lineHeight: 1, fontVariantNumeric: 'tabular-nums' },
+    overs: { fontSize: 11, color: 'rgba(255,255,255,0.35)', fontVariantNumeric: 'tabular-nums' },
+    rate: { fontSize: 11, color: 'rgba(255,255,255,0.45)', fontVariantNumeric: 'tabular-nums' },
+    status: { fontSize: 11.5, color: 'rgba(100,170,255,0.8)', fontStyle: 'italic', textAlign: 'center', marginTop: 6 },
+    divider: { width: '100%', height: 1, background: 'rgba(255,255,255,0.09)', margin: '11px 0' },
+    row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' },
+    cur: { fontSize: 20, fontWeight: 800, color: '#7ab8ff', textAlign: 'center', width: '100%', marginTop: 6, fontVariantNumeric: 'tabular-nums' },
+};
 
 /* =========================================================
-   5. FOOTBALL LAYOUT — Broadcast Center Axis
-   ─────────────────────────────────
-   Premier League         🔴 LIVE
-   ┌─────────────────────────────┐
-   │ [Logo]              [Logo]  │
-   │  Barca   2  –  1   Madrid  │
-   └─────────────────────────────┘
-         ┌──────────┐
-         │   67'    │
-         └──────────┘
-   ⚽ Lewandowski 23', 58'
-   ⚽ Bellingham 41'
-   Barcelona leading
-   ─────────────────────────────────
+   LIVE BADGES
 ========================================================= */
 
-function FootballLayout({ data, accent }) {
-    const minute = data.minute || data.time || "";
-    const goalsA = data.goalsA || data.scorersA || [];
-    const goalsB = data.goalsB || data.scorersB || [];
-    const summary = data.summary || data.status || data.statusText || "";
-    const teamAName = data.teamA || "Team A";
-    const teamBName = data.teamB || "Team B";
-
+function RedLivePill() {
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", alignItems: "center" }}>
-            {/* ── Center Axis Panel ── */}
-            <div
-                style={{
-                    ...PILL,
-                    width: "100%",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    padding: "18px 16px",
-                    gap: 8,
-                }}
-            >
-                {/* Team A Side */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-                    <TeamLogo name={teamAName} size={44} />
-                    <span
-                        style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: "rgba(255,255,255,0.85)",
-                            textAlign: "center",
-                            maxWidth: 80,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            letterSpacing: "0.3px",
-                        }}
-                    >
-                        {teamAName}
-                    </span>
-                </div>
-
-                {/* Score Block */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-                    <span style={{ fontSize: 42, fontWeight: 800, color: "#fff", lineHeight: 1, ...TABULAR }}>
-                        {data.scoreA ?? "0"}
-                    </span>
-                    <span style={{ fontSize: 20, fontWeight: 300, color: "rgba(255,255,255,0.25)", marginTop: -2 }}>
-                        –
-                    </span>
-                    <span style={{ fontSize: 42, fontWeight: 800, color: "#fff", lineHeight: 1, ...TABULAR }}>
-                        {data.scoreB ?? "0"}
-                    </span>
-                </div>
-
-                {/* Team B Side */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1, minWidth: 0 }}>
-                    <TeamLogo name={teamBName} size={44} />
-                    <span
-                        style={{
-                            fontSize: 11,
-                            fontWeight: 700,
-                            color: "rgba(255,255,255,0.85)",
-                            textAlign: "center",
-                            maxWidth: 80,
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                            letterSpacing: "0.3px",
-                        }}
-                    >
-                        {teamBName}
-                    </span>
-                </div>
-            </div>
-
-            {/* ── Minute Pill ── */}
-            {minute && (
-                <div
-                    style={{
-                        background: `${accent}18`,
-                        border: `1px solid ${accent}30`,
-                        borderRadius: 20,
-                        padding: "4px 18px",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                    }}
-                >
-                    <span style={{ fontSize: 16, fontWeight: 800, color: accent, ...TABULAR }}>
-                        {minute}'
-                    </span>
-                </div>
-            )}
-
-            {/* ── Goals List ── */}
-            {(goalsA.length > 0 || goalsB.length > 0) && (
-                <div
-                    style={{
-                        ...PILL_SUBTLE,
-                        width: "100%",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 4,
-                        padding: "10px 14px",
-                    }}
-                >
-                    {goalsA.map((g, i) => (
-                        <div key={`a-${i}`} style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 13 }}>⚽</span>
-                            <span>{g}</span>
-                        </div>
-                    ))}
-                    {goalsB.map((g, i) => (
-                        <div key={`b-${i}`} style={{ fontSize: 12, color: "rgba(255,255,255,0.65)", fontWeight: 500, display: "flex", alignItems: "center", gap: 6 }}>
-                            <span style={{ fontSize: 13 }}>⚽</span>
-                            <span>{g}</span>
-                        </div>
-                    ))}
-                </div>
-            )}
-
-            {/* ── Summary Footer ── */}
-            {summary && (
-                <div style={{ fontSize: 13, fontWeight: 700, color: accent, letterSpacing: "0.2px", textAlign: "center" }}>
-                    {summary}
-                </div>
-            )}
-        </div>
-    );
-}
-
-/* =========================================================
-   6. TENNIS LAYOUT — Matrix Scoreboard
-   ─────────────────────────────────
-   Wimbledon            LIVE
-   ┌─────────────────────────────┐
-   │ Nadal         6    3    4   │
-   │ ─────────────────────────── │
-   │ Federer       4    6    2   │
-   └─────────────────────────────┘
-   ┌──────────────────┐
-   │ Current: 40–30   │
-   └──────────────────┘
-   ─────────────────────────────────
-========================================================= */
-
-function TennisLayout({ data, accent }) {
-    const setsA = data.setsA || data.sets?.[0] || [];
-    const setsB = data.setsB || data.sets?.[1] || [];
-    const currentScore = data.currentScore || data.gameScore || "";
-    const playerA = data.playerA || data.teamA || "Player A";
-    const playerB = data.playerB || data.teamB || "Player B";
-
-    const setsAArr = Array.isArray(setsA) ? setsA : [setsA];
-    const setsBArr = Array.isArray(setsB) ? setsB : [setsB];
-    const maxSets = Math.max(setsAArr.length, setsBArr.length, 1);
-
-    const MatrixRow = ({ name, sets, isPrimary }) => (
-        <div
-            style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 0",
-            }}
-        >
-            <span
-                style={{
-                    fontSize: 15,
-                    fontWeight: isPrimary ? 700 : 600,
-                    color: isPrimary ? "#fff" : "rgba(255,255,255,0.6)",
-                    minWidth: 100,
-                    letterSpacing: "0.2px",
-                }}
-            >
-                {name}
-            </span>
-            <div style={{ display: "flex", gap: 0, alignItems: "center" }}>
-                {Array.from({ length: maxSets }).map((_, i) => (
-                    <span
-                        key={i}
-                        style={{
-                            width: 36,
-                            textAlign: "center",
-                            fontSize: 20,
-                            fontWeight: 800,
-                            color: isPrimary ? "#fff" : "rgba(255,255,255,0.6)",
-                            ...TABULAR,
-                        }}
-                    >
-                        {sets[i] !== undefined ? sets[i] : "–"}
-                    </span>
-                ))}
-            </div>
-        </div>
-    );
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", marginTop: 4 }}>
-            {/* ── Matrix Panel ── */}
-            <div
-                style={{
-                    ...PILL,
-                    padding: "6px 18px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0,
-                }}
-            >
-                <MatrixRow name={playerA} sets={setsAArr} isPrimary={true} />
-                <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 -2px" }} />
-                <MatrixRow name={playerB} sets={setsBArr} isPrimary={false} />
-            </div>
-
-            {/* ── Current Score Pill ── */}
-            {currentScore && (
-                <div
-                    style={{
-                        background: `${accent}15`,
-                        border: `1px solid ${accent}28`,
-                        borderRadius: 20,
-                        padding: "6px 18px",
-                        alignSelf: "flex-start",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                    }}
-                >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>Current:</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: accent, ...TABULAR }}>{currentScore}</span>
-                </div>
-            )}
-        </div>
-    );
-}
-
-/* =========================================================
-   7. BADMINTON LAYOUT — Matrix Scoreboard
-   ─────────────────────────────────
-   BWF Tour             LIVE
-   ┌─────────────────────────────┐
-   │ Player A     21    18       │
-   │ ─────────────────────────── │
-   │ Player B     18    21       │
-   └─────────────────────────────┘
-   ┌──────────────────┐
-   │ Current: 12–10   │
-   └──────────────────┘
-   ─────────────────────────────────
-========================================================= */
-
-function BadmintonLayout({ data, accent }) {
-    const gamesA = data.gamesA || data.sets?.[0] || [];
-    const gamesB = data.gamesB || data.sets?.[1] || [];
-    const currentScore = data.currentScore || data.gameScore || "";
-    const playerA = data.playerA || data.teamA || "Player A";
-    const playerB = data.playerB || data.teamB || "Player B";
-
-    const gamesAArr = Array.isArray(gamesA) ? gamesA : [gamesA];
-    const gamesBArr = Array.isArray(gamesB) ? gamesB : [gamesB];
-    const maxGames = Math.max(gamesAArr.length, gamesBArr.length, 1);
-
-    const MatrixRow = ({ name, games, isPrimary }) => (
-        <div
-            style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                padding: "10px 0",
-            }}
-        >
-            <span
-                style={{
-                    fontSize: 15,
-                    fontWeight: isPrimary ? 700 : 600,
-                    color: isPrimary ? "#fff" : "rgba(255,255,255,0.6)",
-                    minWidth: 100,
-                    letterSpacing: "0.2px",
-                }}
-            >
-                {name}
-            </span>
-            <div style={{ display: "flex", gap: 0, alignItems: "center" }}>
-                {Array.from({ length: maxGames }).map((_, i) => (
-                    <span
-                        key={i}
-                        style={{
-                            width: 40,
-                            textAlign: "center",
-                            fontSize: 20,
-                            fontWeight: 800,
-                            color: isPrimary ? "#fff" : "rgba(255,255,255,0.6)",
-                            ...TABULAR,
-                        }}
-                    >
-                        {games[i] !== undefined ? games[i] : "–"}
-                    </span>
-                ))}
-            </div>
-        </div>
-    );
-
-    return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", marginTop: 4 }}>
-            {/* ── Matrix Panel ── */}
-            <div
-                style={{
-                    ...PILL,
-                    padding: "6px 18px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0,
-                }}
-            >
-                <MatrixRow name={playerA} games={gamesAArr} isPrimary={true} />
-                <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 -2px" }} />
-                <MatrixRow name={playerB} games={gamesBArr} isPrimary={false} />
-            </div>
-
-            {/* ── Current Score Pill ── */}
-            {currentScore && (
-                <div
-                    style={{
-                        background: `${accent}15`,
-                        border: `1px solid ${accent}28`,
-                        borderRadius: 20,
-                        padding: "6px 18px",
-                        alignSelf: "flex-start",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                    }}
-                >
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)" }}>Current:</span>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: accent, ...TABULAR }}>{currentScore}</span>
-                </div>
-            )}
-        </div>
-    );
-}
-
-/* =========================================================
-   8. BASKETBALL LAYOUT — Stacked Leaderboard
-   ─────────────────────────────────
-   NBA                  Q3 LIVE
-   ┌─────────────────────────────┐
-   │ [Logo] Lakers           89  │
-   │ ─────────────────────────── │
-   │ [Logo] Warriors         92  │
-   └─────────────────────────────┘
-        ┌────────────────┐
-        │  Q3 – 5:32     │
-        └────────────────┘
-     Warriors lead by 3
-   ─────────────────────────────────
-========================================================= */
-
-function BasketballLayout({ data, accent }) {
-    const quarter = data.quarter || data.period || "";
-    const clock = data.clock || data.time || "";
-    const summary = data.summary || data.status || data.statusText || "";
-    const teamAName = data.teamA || "Team A";
-    const teamBName = data.teamB || "Team B";
-
-    const TeamRow = ({ name, score, isPrimary }) => (
-        <div
-            style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "12px 0",
-            }}
-        >
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <TeamLogo name={name} size={32} />
-                <span
-                    style={{
-                        fontSize: 15,
-                        fontWeight: isPrimary ? 700 : 600,
-                        color: isPrimary ? "#fff" : "rgba(255,255,255,0.75)",
-                        letterSpacing: "0.2px",
-                    }}
-                >
-                    {name}
-                </span>
-            </div>
-            <span
-                style={{
-                    fontSize: 34,
-                    fontWeight: 800,
-                    color: isPrimary ? "#fff" : "rgba(255,255,255,0.75)",
-                    lineHeight: 1,
-                    ...TABULAR,
-                }}
-            >
-                {score ?? "0"}
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: 5,
+            background: 'rgba(255,50,50,0.13)',
+            border: '1px solid rgba(255,80,80,0.28)',
+            borderRadius: 99, padding: '3px 10px',
+        }}>
+            <motion.div
+                animate={{ opacity: [1, 0.35, 1], scale: [1, 1.4, 1] }}
+                transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff4444' }}
+            />
+            <span style={{ fontSize: 9.5, fontWeight: 800, color: '#ff6a6a', letterSpacing: '0.07em' }}>
+                LIVE
             </span>
         </div>
     );
+}
+
+function StaticLiveBadge({ text = 'LIVE' }) {
+    return (
+        <div style={{
+            fontSize: 10, fontWeight: 700, color: 'rgba(255,255,255,0.45)',
+            background: 'rgba(255,255,255,0.07)',
+            border: '1px solid rgba(255,255,255,0.10)',
+            borderRadius: 7, padding: '3px 9px', letterSpacing: '0.05em',
+        }}>
+            {text}
+        </div>
+    );
+}
+
+/* =========================================================
+   LAYOUT 1 · CricketLayout
+========================================================= */
+
+function CricketLayout({ data }) {
+    const label = leagueLabel(data.league);
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10, width: "100%", marginTop: 4 }}>
-            {/* ── Stacked Leaderboard Panel ── */}
-            <div
-                style={{
-                    ...PILL,
-                    padding: "4px 18px",
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 0,
-                }}
-            >
-                <TeamRow name={teamAName} score={data.scoreA} isPrimary={true} />
-                <div style={{ height: 1, background: "rgba(255,255,255,0.08)", margin: "0 -2px" }} />
-                <TeamRow name={teamBName} score={data.scoreB} isPrimary={false} />
+        <div style={{ width: '100%' }}>
+            {/* Header */}
+            <div style={{ ...T.row, marginBottom: 2 }}>
+                <span style={T.league}>{label}</span>
+                {data.isLive && <RedLivePill />}
             </div>
 
-            {/* ── Quarter + Clock Pill ── */}
-            {(quarter || clock) && (
-                <div
-                    style={{
-                        ...PILL_TINY,
-                        alignSelf: "center",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                    }}
-                >
-                    {quarter && (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.55)", ...TABULAR }}>
-                            {quarter}
-                        </span>
-                    )}
-                    {quarter && clock && (
-                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>–</span>
-                    )}
-                    {clock && (
-                        <span style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.55)", ...TABULAR }}>
-                            {clock}
-                        </span>
-                    )}
-                </div>
-            )}
+            {/* Batting Team */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 11 }}>
+                <AvatarBadge name={data.battingTeam || 'Team A'} size={36} />
+                <span style={T.teamName}>{data.battingTeam || 'Team A'}</span>
+            </div>
+            <div style={{ ...T.row, marginTop: 3 }}>
+                <span style={T.bigScore}>{data.battingScore || '0/0'}</span>
+                <span style={T.overs}>{data.battingOvers || '0'} ov</span>
+            </div>
 
-            {/* ── Summary Footer ── */}
-            {summary && (
-                <div style={{ fontSize: 13, fontWeight: 700, color: accent, textAlign: "center", letterSpacing: "0.2px" }}>
-                    {summary}
-                </div>
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Bowling Team */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 0 }}>
+                <AvatarBadge name={data.bowlingTeam || 'Team B'} size={36} />
+                <span style={T.teamName}>{data.bowlingTeam || 'Team B'}</span>
+            </div>
+            <div style={{ ...T.row, marginTop: 3 }}>
+                <span style={T.bigScore}>{data.bowlingScore || '0/0'}</span>
+                <span style={T.overs}>{data.bowlingOvers || '0'} ov</span>
+            </div>
+
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Rates Row */}
+            <div style={{ ...T.row }}>
+                <span style={T.rate}>CRR: {data.crr ?? '–'}</span>
+                <span style={{ ...T.rate, color: 'rgba(255,255,255,0.18)' }}>•</span>
+                <span style={T.rate}>RRR: {data.rrr ?? '–'}</span>
+            </div>
+
+            {/* Status */}
+            {data.status && (
+                <div style={T.status}>{data.status}</div>
             )}
         </div>
     );
 }
 
 /* =========================================================
-   9. FALLBACK LAYOUT (raw key-value pairs)
+   LAYOUT 2 · FootballLayout
 ========================================================= */
 
-function FallbackLayout({ data, accent }) {
-    const entries = Object.entries(data || {}).filter(([k]) => k !== "league");
+function FootballLayout({ data }) {
+    const label = leagueLabel(data.league);
+    const t1 = data.team1 || { name: 'Home', score: 0 };
+    const t2 = data.team2 || { name: 'Away', score: 0 };
+    const goals = data.goals || [];
+
+    /* Timer: count UP from matchSeconds, direct DOM update */
+    useEffect(() => {
+        let secs = data.matchSeconds || 0;
+        const el = document.getElementById('fl-timer');
+        if (!el) return;
+        const fmt = (s) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${m}:${String(sec).padStart(2, '0')}`;
+        };
+        el.textContent = fmt(secs);
+        const iv = setInterval(() => {
+            secs++;
+            const target = document.getElementById('fl-timer');
+            if (target) target.textContent = fmt(secs);
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [data.matchSeconds]);
+
+    /* Goal grid — team separation */
+    const team1Goals = goals.filter(g => g.team === 1);
+    const team2Goals = goals.filter(g => g.team === 2);
+    const rowCount = Math.max(team1Goals.length, team2Goals.length);
 
     return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, width: "100%", marginTop: 4 }}>
-            <div style={{ ...PILL, display: "flex", flexDirection: "column", gap: 8 }}>
-                {entries.map(([key, value]) => (
-                    <div
-                        key={key}
-                        style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "flex-start",
-                            gap: 12,
-                            fontSize: 13,
-                        }}
-                    >
-                        <span
-                            style={{
-                                fontWeight: 600,
-                                color: "rgba(255,255,255,0.45)",
-                                textTransform: "capitalize",
-                                flexShrink: 0,
-                            }}
-                        >
-                            {key}
-                        </span>
-                        <span
-                            style={{
-                                fontWeight: 700,
-                                color: "#fff",
-                                textAlign: "right",
-                                wordBreak: "break-word",
-                                maxWidth: "65%",
-                                ...TABULAR,
-                            }}
-                        >
-                            {typeof value === "object" ? JSON.stringify(value) : String(value)}
-                        </span>
-                    </div>
-                ))}
-                {entries.length === 0 && (
-                    <div style={{ fontSize: 14, color: "rgba(255,255,255,0.35)", textAlign: "center", padding: "16px 0" }}>
-                        No data available
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-/* =========================================================
-   10. DOM CONTENT SHELL (Header + Sport Router)
-========================================================= */
-
-function DOMScoreContent({ data, sport, accent, isLive }) {
-    const leagueLabel = data.league || sport.toUpperCase();
-    const quarterLabel = sport === "basketball" && data.quarter ? `${data.quarter} ` : "";
-
-    return (
-        <div
-            style={{
-                width: 312,
-                padding: "24px 22px",
-                color: "white",
-                fontFamily: FONT,
-                background: "transparent",
-                boxSizing: "border-box",
-                userSelect: "none",
-            }}
-        >
-            {/* ── GLOBAL HEADER ── */}
-            <div
-                style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    marginBottom: 18,
-                }}
-            >
-                <span
-                    style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "rgba(255,255,255,0.55)",
-                        letterSpacing: "1.2px",
-                        textTransform: "uppercase",
-                    }}
-                >
-                    {leagueLabel}
-                </span>
-
-                {isLive && (
-                    <div
-                        style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                            background: "rgba(239,68,68,0.12)",
-                            border: "1px solid rgba(239,68,68,0.2)",
-                            borderRadius: 20,
-                            padding: "3px 10px 3px 8px",
-                        }}
-                    >
-                        <motion.div
-                            animate={{ opacity: [1, 0.25, 1] }}
-                            transition={{ duration: 1.3, repeat: Infinity, ease: "easeInOut" }}
-                            style={{
-                                width: 7,
-                                height: 7,
-                                borderRadius: "50%",
-                                background: "#ef4444",
-                                boxShadow: "0 0 8px #ef4444, 0 0 16px rgba(239,68,68,0.4)",
-                            }}
-                        />
-                        <span
-                            style={{
-                                fontSize: 10,
-                                fontWeight: 800,
-                                color: "#ef4444",
-                                letterSpacing: "1px",
-                            }}
-                        >
-                            {quarterLabel}LIVE
-                        </span>
-                    </div>
-                )}
+        <div style={{ width: '100%' }}>
+            {/* Header */}
+            <div style={{ ...T.row, marginBottom: 6 }}>
+                <span style={T.league}>{label}</span>
+                {data.isLive && <RedLivePill />}
             </div>
 
-            {/* ── SPORT LAYOUT ROUTER ── */}
-            <AnimatePresence mode="wait">
+            {/* Timer Bar */}
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10, padding: '5px 12px',
+                marginBottom: 12,
+            }}>
                 <motion.div
-                    key={sport}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.35, ease: [0.25, 0.46, 0.45, 0.94] }}
-                >
-                    {sport === "cricket" && <CricketLayout data={data} accent={accent} />}
-                    {sport === "football" && <FootballLayout data={data} accent={accent} />}
-                    {sport === "tennis" && <TennisLayout data={data} accent={accent} />}
-                    {sport === "badminton" && <BadmintonLayout data={data} accent={accent} />}
-                    {sport === "basketball" && <BasketballLayout data={data} accent={accent} />}
-                    {sport === "fallback" && <FallbackLayout data={data} accent={accent} />}
-                </motion.div>
-            </AnimatePresence>
+                    animate={{ opacity: [1, 0.35, 1], scale: [1, 1.3, 1] }}
+                    transition={{ duration: 1.4, repeat: Infinity, ease: "easeInOut" }}
+                    style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff4444', flexShrink: 0 }}
+                />
+                <span id="fl-timer" style={{
+                    fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.85)',
+                    fontVariantNumeric: 'tabular-nums', minWidth: 36,
+                }} />
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', letterSpacing: '0.04em' }}>
+                    match time
+                </span>
+            </div>
+
+            {/* Score Row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                {/* Team 1 */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flex: 1 }}>
+                    <AvatarBadge name={t1.name} size={44} />
+                    <span style={{ ...T.teamName, fontSize: 11, textAlign: 'center', maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t1.name}
+                    </span>
+                </div>
+
+                {/* Score */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                        {t1.score ?? 0}
+                    </span>
+                    <span style={{ fontSize: 16, fontWeight: 300, color: 'rgba(255,255,255,0.22)' }}>–</span>
+                    <span style={{ fontSize: 34, fontWeight: 900, color: '#fff', lineHeight: 1, fontVariantNumeric: 'tabular-nums' }}>
+                        {t2.score ?? 0}
+                    </span>
+                </div>
+
+                {/* Team 2 */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, flex: 1 }}>
+                    <AvatarBadge name={t2.name} size={44} />
+                    <span style={{ ...T.teamName, fontSize: 11, textAlign: 'center', maxWidth: 72, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {t2.name}
+                    </span>
+                </div>
+            </div>
+
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Goal Grid — 2-column */}
+            {rowCount > 0 && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 8px', width: '100%', marginTop: 2 }}>
+                    {Array.from({ length: rowCount }).map((_, i) => {
+                        const g1 = team1Goals[i];
+                        const g2 = team2Goals[i];
+                        return (
+                            <React.Fragment key={i}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-start' }}>
+                                    {g1 && <>
+                                        <span style={{ fontSize: 10 }}>⚽</span>
+                                        <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.52)' }}>{g1.scorer} {g1.minute}'</span>
+                                    </>}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
+                                    {g2 && <>
+                                        <span style={{ fontSize: 10.5, color: 'rgba(255,255,255,0.52)' }}>{g2.scorer} {g2.minute}'</span>
+                                        <span style={{ fontSize: 10 }}>⚽</span>
+                                    </>}
+                                </div>
+                            </React.Fragment>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Status */}
+            {data.status && (
+                <div style={T.status}>{data.status}</div>
+            )}
         </div>
     );
 }
 
 /* =========================================================
-   11. VOLUMETRIC LIGHT RAYS (WebGL)
+   LAYOUT 3 · TennisLayout
 ========================================================= */
 
-function VolumetricRays({ accent, glow }) {
-    const meshRef = useRef();
-    const startTime = useRef(Date.now());
+function TennisLayout({ data }) {
+    const label = leagueLabel(data.league);
+    const players = data.players || [
+        { name: 'Player 1', sets: [] },
+        { name: 'Player 2', sets: [] },
+    ];
+    const serving = data.serving ?? 0;
+    const maxSets = Math.max(
+        players[0]?.sets?.length || 0,
+        players[1]?.sets?.length || 0,
+        1
+    );
 
-    useFrame(() => {
-        if (!meshRef.current) return;
-        const elapsed = (Date.now() - startTime.current) / 1000;
-        meshRef.current.rotation.z = elapsed * 0.15;
-        meshRef.current.material.opacity = 0.04 + Math.sin(elapsed * 0.8) * 0.015;
-    });
+    const SetPill = ({ value, won }) => (
+        <div style={{
+            width: 28, height: 28, borderRadius: 8,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: won ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.05)',
+            color: won ? '#fff' : 'rgba(255,255,255,0.28)',
+            fontSize: 14, fontWeight: 800,
+            fontVariantNumeric: 'tabular-nums',
+            flexShrink: 0,
+        }}>
+            {value !== undefined ? value : '–'}
+        </div>
+    );
+
+    const PlayerRow = ({ player, opponentSets, idx }) => {
+        const isServing = serving === idx;
+        const sets = player.sets || [];
+        const oppSets = opponentSets || [];
+
+        return (
+            <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 6, padding: '7px 0' }}>
+                {/* Serving indicator */}
+                {isServing ? (
+                    <div style={{
+                        width: 7, height: 7, borderRadius: '50%',
+                        background: '#7ab8ff', flexShrink: 0,
+                    }} />
+                ) : (
+                    <div style={{ width: 7, flexShrink: 0 }} />
+                )}
+
+                {/* Name */}
+                <span style={{
+                    ...T.teamName,
+                    flex: 1,
+                    fontWeight: isServing ? 700 : 600,
+                    color: isServing ? '#fff' : 'rgba(255,255,255,0.55)',
+                }}>
+                    {player.name}
+                </span>
+
+                {/* Set pills */}
+                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                    {Array.from({ length: maxSets }).map((_, si) => {
+                        const val = sets[si];
+                        const opp = oppSets[si];
+                        const won = val !== undefined && opp !== undefined && val > opp;
+                        return <SetPill key={si} value={val} won={won} />;
+                    })}
+                </div>
+            </div>
+        );
+    };
 
     return (
-        <group>
-            {/* Central ambient glow */}
-            <mesh position={[0, 0, -1.5]}>
-                <sphereGeometry args={[2.8, 32, 32]} />
-                <meshBasicMaterial color={glow} transparent opacity={0.06} depthWrite={false} />
-            </mesh>
+        <div style={{ width: '100%' }}>
+            {/* Header */}
+            <div style={{ ...T.row, marginBottom: 6 }}>
+                <span style={T.league}>{label}</span>
+                {data.isLive && <StaticLiveBadge text="LIVE" />}
+            </div>
 
-            {/* Sweeping ray disk */}
-            <mesh ref={meshRef} position={[0, 0, -1.2]}>
-                <planeGeometry args={[8, 8]} />
-                <meshBasicMaterial color={accent} transparent opacity={0.04} depthWrite={false} blending={THREE.AdditiveBlending} />
-            </mesh>
+            {/* Player rows */}
+            <PlayerRow player={players[0]} opponentSets={players[1]?.sets} idx={0} />
+            <PlayerRow player={players[1]} opponentSets={players[0]?.sets} idx={1} />
 
-            {/* Top-right accent bloom */}
-            <mesh position={[2.2, 1.6, -1]}>
-                <sphereGeometry args={[1.2, 24, 24]} />
-                <meshBasicMaterial color={accent} transparent opacity={0.08} depthWrite={false} blending={THREE.AdditiveBlending} />
-            </mesh>
+            {/* Divider */}
+            <div style={T.divider} />
 
-            {/* Bottom-left accent bloom */}
-            <mesh position={[-2, -1.4, -1]}>
-                <sphereGeometry args={[1, 24, 24]} />
-                <meshBasicMaterial color={glow} transparent opacity={0.06} depthWrite={false} blending={THREE.AdditiveBlending} />
-            </mesh>
-        </group>
+            {/* Current Score */}
+            {data.currentScore && (
+                <div style={T.cur}>{data.currentScore}</div>
+            )}
+        </div>
     );
 }
 
 /* =========================================================
-   12. GLASS SLAB WITH MOUSE PARALLAX
+   LAYOUT 4 · BadmintonLayout
 ========================================================= */
 
-function GlassSlab({ children, mousePos, accent }) {
-    const slabRef = useRef();
-    const targetRotation = useRef({ x: 0, y: 0 });
+function BadmintonLayout({ data }) {
+    const label = leagueLabel(data.league);
+    const players = data.players || [
+        { name: 'Player A', games: [] },
+        { name: 'Player B', games: [] },
+    ];
+    const maxGames = Math.max(
+        players[0]?.games?.length || 0,
+        players[1]?.games?.length || 0,
+        1
+    );
 
-    useFrame(() => {
-        if (!slabRef.current) return;
+    const PlayerRow = ({ player, opponentGames, isFirst }) => {
+        const games = player.games || [];
+        const oppGames = opponentGames || [];
 
-        targetRotation.current.y = mousePos.current.x * 0.18;
-        targetRotation.current.x = -mousePos.current.y * 0.12;
-
-        slabRef.current.rotation.y = THREE.MathUtils.lerp(
-            slabRef.current.rotation.y,
-            targetRotation.current.y,
-            0.08
+        return (
+            <div style={{
+                display: 'flex', alignItems: 'center', width: '100%', gap: 9,
+                paddingTop: 8, paddingBottom: 8,
+            }}>
+                <AvatarBadge name={player.name} size={36} />
+                <span style={{ ...T.teamName, flex: 1 }}>{player.name}</span>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                    {Array.from({ length: maxGames }).map((_, gi) => {
+                        const val = games[gi];
+                        const opp = oppGames[gi];
+                        const won = val !== undefined && opp !== undefined && val > opp;
+                        return (
+                            <span key={gi} style={{
+                                fontSize: 18, fontWeight: 800,
+                                color: won ? '#fff' : 'rgba(255,255,255,0.25)',
+                                minWidth: 24, textAlign: 'center',
+                                fontVariantNumeric: 'tabular-nums',
+                            }}>
+                                {val !== undefined ? val : '–'}
+                            </span>
+                        );
+                    })}
+                </div>
+            </div>
         );
-        slabRef.current.rotation.x = THREE.MathUtils.lerp(
-            slabRef.current.rotation.x,
-            targetRotation.current.x,
-            0.08
-        );
-    });
+    };
 
     return (
-        <group ref={slabRef}>
-            {/* Glass body */}
-            <mesh>
-                <RoundedBox args={[3.8, 5.6, 0.12]} radius={0.22} smoothness={8}>
-                    <MeshTransmissionMaterial
-                        thickness={0.5}
-                        roughness={0.12}
-                        transmission={0.97}
-                        ior={1.25}
-                        chromaticAberration={0.04}
-                        distortion={0.1}
-                        distortionScale={0.2}
-                        temporalDistortion={0.04}
-                        color="#ffffff"
-                        anisotropy={0.3}
-                        backside
-                        backsideThickness={0.3}
-                        samples={6}
-                        resolution={256}
-                    />
-                </RoundedBox>
-            </mesh>
+        <div style={{ width: '100%' }}>
+            {/* Header */}
+            <div style={{ ...T.row, marginBottom: 4 }}>
+                <span style={T.league}>{label}</span>
+                {data.isLive && <StaticLiveBadge text="LIVE" />}
+            </div>
 
-            {/* Subtle edge highlight */}
-            <mesh position={[0, 0, 0.065]}>
-                <RoundedBox args={[3.82, 5.62, 0.005]} radius={0.22} smoothness={8}>
-                    <meshBasicMaterial color="#ffffff" transparent opacity={0.04} depthWrite={false} />
-                </RoundedBox>
-            </mesh>
+            {/* Player A */}
+            <PlayerRow player={players[0]} opponentGames={players[1]?.games} isFirst={true} />
 
-            {/* Html portal for DOM content */}
-            <Html
-                transform
-                distanceFactor={2.4}
-                position={[0, 0, 0.08]}
-                zIndexRange={[100, 0]}
-                style={{ pointerEvents: "none" }}
-            >
-                {children}
-            </Html>
-        </group>
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Player B */}
+            <PlayerRow player={players[1]} opponentGames={players[0]?.games} isFirst={false} />
+
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Current Score */}
+            {data.currentScore && (
+                <div style={T.cur}>{data.currentScore}</div>
+            )}
+        </div>
     );
 }
 
 /* =========================================================
-   13. SCENE LIGHTING
+   LAYOUT 5 · BasketballLayout
 ========================================================= */
 
-function SceneLights({ accent, glow }) {
+function BasketballLayout({ data }) {
+    const label = leagueLabel(data.league);
+    const teams = data.teams || [
+        { name: 'Team A', score: 0 },
+        { name: 'Team B', score: 0 },
+    ];
+
+    /* Timer: count DOWN from quarterSeconds, direct DOM update */
+    useEffect(() => {
+        let secs = data.quarterSeconds || 0;
+        const el = document.getElementById('bk-timer');
+        if (!el) return;
+        const fmt = (s) => {
+            const m = Math.floor(s / 60);
+            const sec = s % 60;
+            return `${m}:${String(sec).padStart(2, '0')}`;
+        };
+        el.textContent = fmt(secs);
+        const iv = setInterval(() => {
+            if (secs <= 0) {
+                const target = document.getElementById('bk-timer');
+                if (target) target.textContent = '0:00';
+                clearInterval(iv);
+                return;
+            }
+            secs--;
+            const target = document.getElementById('bk-timer');
+            if (target) target.textContent = fmt(secs);
+        }, 1000);
+        return () => clearInterval(iv);
+    }, [data.quarterSeconds]);
+
+    const TeamRow = ({ team }) => (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', gap: 9, padding: '6px 0' }}>
+            <AvatarBadge name={team.name} size={36} />
+            <span style={{ ...T.teamName, flex: 1 }}>{team.name}</span>
+            <span style={{
+                fontSize: 28, fontWeight: 800, color: '#fff', lineHeight: 1,
+                fontVariantNumeric: 'tabular-nums',
+            }}>
+                {team.score ?? 0}
+            </span>
+        </div>
+    );
+
+    return (
+        <div style={{ width: '100%' }}>
+            {/* Header */}
+            <div style={{ ...T.row, marginBottom: 6 }}>
+                <span style={T.league}>{label}</span>
+                {data.isLive && <StaticLiveBadge text={`Q${data.quarter || '?'} LIVE`} />}
+            </div>
+
+            {/* Timer Bar (countdown) */}
+            <div style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: 10, padding: '5px 12px',
+                marginBottom: 10,
+            }}>
+                <span id="bk-timer" style={{
+                    fontSize: 15, fontWeight: 800, color: 'rgba(255,255,255,0.85)',
+                    fontVariantNumeric: 'tabular-nums',
+                }} />
+                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.30)', letterSpacing: '0.04em' }}>
+                    quarter time
+                </span>
+            </div>
+
+            {/* Team rows */}
+            <TeamRow team={teams[0]} />
+            <TeamRow team={teams[1]} />
+
+            {/* Divider */}
+            <div style={T.divider} />
+
+            {/* Footer: quarter info + lead */}
+            <div style={{ ...T.row }}>
+                <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)' }}>
+                    Quarter {data.quarter || '?'}
+                </span>
+                {data.status && (
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: '#7ab8ff' }}>
+                        {data.status}
+                    </span>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/* =========================================================
+   FALLBACK LAYOUT
+========================================================= */
+
+function FallbackLayout({ data }) {
+    const entries = Object.entries(data || {}).filter(([k]) => k !== 'league');
+
+    return (
+        <div style={{ width: '100%' }}>
+            <div style={{ ...T.row, marginBottom: 8 }}>
+                <span style={T.league}>{data?.league?.toUpperCase() || 'UNKNOWN'}</span>
+            </div>
+            {entries.map(([key, value]) => (
+                <div key={key} style={{ ...T.row, marginBottom: 5 }}>
+                    <span style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: 'rgba(255,255,255,0.38)',
+                        textTransform: 'capitalize',
+                    }}>
+                        {key}
+                    </span>
+                    <span style={{
+                        fontSize: 12, fontWeight: 700, color: 'rgba(255,255,255,0.75)',
+                        maxWidth: '60%', textAlign: 'right', wordBreak: 'break-word',
+                        fontVariantNumeric: 'tabular-nums',
+                    }}>
+                        {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                    </span>
+                </div>
+            ))}
+            {entries.length === 0 && (
+                <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textAlign: 'center', padding: '20px 0' }}>
+                    No data
+                </div>
+            )}
+        </div>
+    );
+}
+
+/* =========================================================
+   GLASS SCENE (3D)
+========================================================= */
+
+function GlassScene({ data, sport, mouseRef }) {
+    const groupRef = useRef();
+
+    useFrame(() => {
+        if (!groupRef.current || !mouseRef.current) return;
+        const { x, y } = mouseRef.current;
+        groupRef.current.rotation.y = THREE.MathUtils.lerp(
+            groupRef.current.rotation.y, x * 0.12, 0.06
+        );
+        groupRef.current.rotation.x = THREE.MathUtils.lerp(
+            groupRef.current.rotation.x, y * 0.12, 0.06
+        );
+    });
+
     return (
         <>
-            <ambientLight intensity={0.4} />
-            <directionalLight position={[5, 5, 5]} intensity={1.2} color="#f8fafc" />
-            <pointLight position={[3, 2, 3]} intensity={2.5} color={accent} distance={12} decay={2} />
-            <pointLight position={[-3, -2, 2]} intensity={1.8} color="#e2e8f0" distance={10} decay={2} />
-            <pointLight position={[0, -3, 1]} intensity={1} color={glow} distance={8} decay={2} />
+            {/* Lighting */}
+            <ambientLight intensity={0.6} />
+            <directionalLight position={[3, 4, 2]} intensity={1.2} />
+
+            {/* Light planes behind glass */}
+            <mesh position={[-0.8, 0.6, -2]} rotation={[0, 0, 0.3]}>
+                <planeGeometry args={[2, 2]} />
+                <meshBasicMaterial color="#3060ff" transparent opacity={0.12} blending={THREE.AdditiveBlending} depthWrite={false} />
+            </mesh>
+            <mesh position={[0.9, -0.4, -2.5]} rotation={[0, 0, -0.2]}>
+                <planeGeometry args={[2, 2]} />
+                <meshBasicMaterial color="#8040ff" transparent opacity={0.18} blending={THREE.AdditiveBlending} depthWrite={false} />
+            </mesh>
+            <mesh position={[0, 0.3, -3]} rotation={[0, 0, 0.1]}>
+                <planeGeometry args={[2, 2]} />
+                <meshBasicMaterial color="#20c8ff" transparent opacity={0.08} blending={THREE.AdditiveBlending} depthWrite={false} />
+            </mesh>
+
+            {/* Sparkles */}
+            <group position={[0, 0, -0.5]}>
+                <Sparkles count={90} scale={5} size={0.7} speed={0.3} opacity={0.55} color="#a0c4ff" />
+            </group>
+
+            {/* Glass Slab */}
+            <Float speed={1.4} rotationIntensity={0.3} floatIntensity={0.4}>
+                <group ref={groupRef}>
+                    <mesh>
+                        <RoundedBox args={[3.2, 5.0, 0.18]} radius={0.12} smoothness={6}>
+                            <MeshTransmissionMaterial
+                                backside={true}
+                                samples={12}
+                                thickness={0.3}
+                                roughness={0.04}
+                                transmission={1}
+                                ior={1.5}
+                                chromaticAberration={0.06}
+                                anisotropy={0.15}
+                                distortion={0.1}
+                                distortionScale={0.3}
+                                temporalDistortion={0.2}
+                                color="#c8d8ff"
+                            />
+                        </RoundedBox>
+                    </mesh>
+
+                    {/* Html portal — DOM content on glass */}
+                    <Html
+                        center
+                        transform
+                        occlude="blending"
+                        style={{ width: '280px', pointerEvents: 'none' }}
+                    >
+                        <div style={{
+                            fontFamily: FONT,
+                            color: '#fff',
+                            width: 280,
+                            userSelect: 'none',
+                        }}>
+                            {sport === 'cricket' && <CricketLayout data={data} />}
+                            {sport === 'football' && <FootballLayout data={data} />}
+                            {sport === 'tennis' && <TennisLayout data={data} />}
+                            {sport === 'badminton' && <BadmintonLayout data={data} />}
+                            {sport === 'basketball' && <BasketballLayout data={data} />}
+                            {sport === 'fallback' && <FallbackLayout data={data} />}
+                        </div>
+                    </Html>
+                </group>
+            </Float>
+
+            <Environment preset="city" />
         </>
     );
 }
 
 /* =========================================================
-   14. MAIN EXPORT — SportsCard
+   MAIN COMPONENT — SportsCard
 ========================================================= */
 
-export default function SportsCard({ data }) {
-    const mousePos = useRef({ x: 0, y: 0 });
-    const containerRef = useRef(null);
+function SportsCard({ data }) {
+    const wrapperRef = useRef(null);
+    const mouseRef = useRef({ x: 0, y: 0 });
 
     const sport = useMemo(() => detectSport(data?.league), [data?.league]);
-    const theme = SPORT_THEMES[sport] || SPORT_THEMES.fallback;
 
-    const isLive = useMemo(() => {
-        if (!data) return false;
-        const status = (data.status || data.statusText || data.summary || "").toLowerCase();
-        if (status.includes("live")) return true;
-        if (data.isLive === true) return true;
-        if (
-            data.scoreA && data.scoreA !== "-" &&
-            !status.includes("won") && !status.includes("completed") &&
-            !status.includes("finished") && !status.includes("final")
-        ) {
-            return true;
-        }
-        return false;
-    }, [data]);
-
-    const handleMouseMove = useCallback((e) => {
-        if (!containerRef.current) return;
-        const rect = containerRef.current.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-        const y = ((e.clientY - rect.top) / rect.height) * 2 - 1;
-        mousePos.current = { x, y };
-    }, []);
-
-    const handleMouseLeave = useCallback(() => {
-        mousePos.current = { x: 0, y: 0 };
+    /* Mouse tracking on wrapper div */
+    useEffect(() => {
+        const el = wrapperRef.current;
+        if (!el) return;
+        const onMove = (e) => {
+            const rect = el.getBoundingClientRect();
+            mouseRef.current = {
+                x: ((e.clientX - rect.left) / rect.width - 0.5) * 2,
+                y: -((e.clientY - rect.top) / rect.height - 0.5) * 2,
+            };
+        };
+        const onLeave = () => {
+            mouseRef.current = { x: 0, y: 0 };
+        };
+        el.addEventListener('mousemove', onMove);
+        el.addEventListener('mouseleave', onLeave);
+        return () => {
+            el.removeEventListener('mousemove', onMove);
+            el.removeEventListener('mouseleave', onLeave);
+        };
     }, []);
 
     if (!data) return null;
 
     return (
-        <div
-            ref={containerRef}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={handleMouseLeave}
+        <motion.div
+            ref={wrapperRef}
+            initial={{ opacity: 0, scale: 0.88, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             style={{
                 width: 360,
                 height: 560,
-                position: "relative",
+                position: 'relative',
                 borderRadius: 28,
-                overflow: "hidden",
-                cursor: "default",
+                overflow: 'hidden',
+                cursor: 'default',
             }}
         >
-            {/* ── BACKGROUND LAYERS ── */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: "linear-gradient(145deg, #020617 0%, #0f172a 40%, #1e1b4b 100%)",
-                    zIndex: 0,
-                }}
-            />
-
-            {/* Radial accent glow */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: `radial-gradient(ellipse at 65% 30%, ${theme.accent}18 0%, transparent 55%)`,
-                    zIndex: 0,
-                    pointerEvents: "none",
-                }}
-            />
-
-            {/* Secondary glow */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    background: `radial-gradient(ellipse at 20% 85%, ${theme.glow}12 0%, transparent 50%)`,
-                    zIndex: 0,
-                    pointerEvents: "none",
-                }}
-            />
-
-            {/* Noise overlay */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    opacity: 0.03,
-                    backgroundImage:
-                        "url(\"data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
-                    backgroundSize: "128px 128px",
-                    zIndex: 0,
-                    pointerEvents: "none",
-                }}
-            />
-
-            {/* ── 3D CANVAS ── */}
             <Canvas
-                camera={{ position: [0, 0, 6.5], fov: 40 }}
+                gl={{ antialias: true, alpha: true }}
+                camera={{ position: [0, 0, 6.5], fov: 42 }}
                 dpr={[1, 2]}
-                gl={{
-                    antialias: true,
-                    alpha: true,
-                    toneMapping: THREE.ACESFilmicToneMapping,
-                    toneMappingExposure: 1.1,
-                }}
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    zIndex: 1,
-                }}
+                style={{ position: 'absolute', inset: 0 }}
             >
-                <SceneLights accent={theme.accent} glow={theme.glow} />
-                <VolumetricRays accent={theme.accent} glow={theme.glow} />
-                <GlassSlab mousePos={mousePos} accent={theme.accent}>
-                    <DOMScoreContent data={data} sport={sport} accent={theme.accent} isLive={isLive} />
-                </GlassSlab>
-                <Environment preset="city" />
+                <GlassScene data={data} sport={sport} mouseRef={mouseRef} />
             </Canvas>
-
-            {/* ── BORDER GLINT (CSS overlay) ── */}
-            <div
-                style={{
-                    position: "absolute",
-                    inset: 0,
-                    borderRadius: 28,
-                    border: "1px solid rgba(255,255,255,0.06)",
-                    pointerEvents: "none",
-                    zIndex: 2,
-                }}
-            />
-        </div>
+        </motion.div>
     );
 }
+
+/* =========================================================
+   EXPORTS
+========================================================= */
+
+export default SportsCard;
+export { CricketLayout, FootballLayout, TennisLayout, BadmintonLayout, BasketballLayout };
