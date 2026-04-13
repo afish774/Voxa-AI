@@ -51,7 +51,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 THE CLEANED, POSITIVE-REINFORCEMENT PROMPT (UPDATED FOR JSON SPORTS)
+        // 🚀 THE CLEANED, STRICT JSON SYSTEM PROMPT
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
 RULES:
 1. Speak in natural, complete sentences (under 40 words).
@@ -61,9 +61,8 @@ RULES:
 - SPORTS: You must use the get_sports_data tool. The tool will return a JSON string. You MUST embed that EXACT JSON string inside the card tag without altering it.
     * Example Output: "Here is the sports update." ||CARD:SPORTS:{"league":"ipl","isLive":true,"battingTeam":"India","battingScore":"145/1","battingOvers":"25.2","bowlingTeam":"Pakistan","bowlingScore":"310/10","bowlingOvers":"50.0","crr":5.73,"rrr":7.94,"status":"India need 166 runs"}||
 4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-5. FULL AUTHORITY: You have full permission to interact with the real world. Do NOT say tasks are outside your capabilities.
-6. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}.
-7. BIOGRAPHY: You were created by Afish Abdulkader, a BCA final year student from Yenepoya University.`;
+5. FULL AUTHORITY: You have full permission to interact with the real world.
+6. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}.`;
 
         let result;
 
@@ -101,23 +100,19 @@ RULES:
                             toolResultText = typeof searchData === 'string' ? searchData : JSON.stringify(searchData);
                         }
                         else if (toolCall.name === "save_reminder") {
-                            if (onStatusUpdate) onStatusUpdate("Accessing secure database...");
                             toolResultText = await reminderTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_crypto_price") {
-                            if (onStatusUpdate) onStatusUpdate("Fetching live market data...");
                             toolResultText = await getCryptoPriceTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "send_email") {
-                            if (onStatusUpdate) onStatusUpdate("Drafting and sending email...");
                             toolResultText = await sendEmailTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_sports_data") {
-                            if (onStatusUpdate) onStatusUpdate("Analyzing global sports network...");
+                            if (onStatusUpdate) onStatusUpdate("Fetching live sports data...");
                             toolResultText = await getSportsDataTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_weather") {
-                            if (onStatusUpdate) onStatusUpdate("Accessing global weather satellites...");
                             toolResultText = await getWeatherTool.invoke(toolCall.args);
                         }
 
@@ -152,7 +147,7 @@ RULES:
 
         let cardData = null;
 
-        // 🚀 Robust Card Extraction for JSON and legacy formats
+        // 🚀 ROBUST JSON EXTRACTOR (DO NOT USE COLON SPLITTING FOR SPORTS)
         const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is);
 
         if (cardMatch) {
@@ -167,33 +162,16 @@ RULES:
                     const segments = payload.split(':').map(s => s.trim());
                     cardData = { type: 'weather', location: segments[0], temp: segments[1], condition: segments[2] };
                 } else if (cardType === 'SPORTS') {
-                    // Attempt to parse new strict JSON format
                     if (payload.startsWith('{') && payload.endsWith('}')) {
                         try {
                             const parsedData = JSON.parse(payload);
                             cardData = { type: 'sports', ...parsedData };
                         } catch (error) {
-                            console.error("❌ Voxa generated invalid JSON for Sports Card:", error);
+                            console.error("❌ Invalid JSON:", error);
                         }
-                    }
-
-                    // FALLBACK: If it's not JSON, parse the OLD colon-separated format
-                    if (!cardData) {
-                        console.warn("⚠️ Falling back to legacy colon-separated sports extraction.");
-                        const parts = payload.split(':').map(s => s.trim());
-                        cardData = {
-                            type: 'sports',
-                            teamA: parts[0] || 'Team A',
-                            teamB: parts[1] || 'Team B',
-                            scoreA: parts[2] || '-',
-                            scoreB: parts[3] || '-',
-                            status: parts[4] || 'FT',
-                            league: parts[5] || 'UNKNOWN'
-                        };
                     }
                 }
             }
-
             responseText = responseText.replace(cardMatch[0], '').trim();
         }
 
@@ -204,8 +182,6 @@ RULES:
         return { text: responseText, card: cardData };
 
     } catch (error) {
-        const rawError = error.message || error.toString();
-        console.error("🔥 LLM ENGINE CRASH:", rawError);
-        return { error: true, text: `GROQ ERROR: ${rawError}` };
+        return { error: true, text: `GROQ ERROR: ${error.message}` };
     }
 };
