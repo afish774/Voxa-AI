@@ -1,8 +1,9 @@
-const express = require('express');
+import express from 'express';
+import { getLiveMatches } from '../controllers/sportsController.js';
+
 const router = express.Router();
-const { getLiveMatches } = require('../controllers/sportsController');
 
 // GET /api/sports/live
 router.get('/live', getLiveMatches);
 
-module.exports = router;
+export default router;

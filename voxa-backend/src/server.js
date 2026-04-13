@@ -5,6 +5,7 @@ import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import memoryRoutes from './routes/memoryRoutes.js'; // 🚀 IMPORTED NEW ROUTE
+import sportsRoutes from './routes/sportsRoutes.js'; // 🏀 IMPORTED SPORTS ROUTE
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/memory', memoryRoutes); // 🚀 WIRED UP THE MEMORY DASHBOARD
+app.use('/api/sports', sportsRoutes); // 🏀 WIRED UP SPORTS API
 
 // Basic health check route for Render
 app.get('/', (req, res) => {
