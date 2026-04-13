@@ -93,7 +93,7 @@ export const sendEmailTool = tool(
     }
 );
 
-// 🌍 TOOL 4: The Global Sports Hub (MASTER ROUTER WITH RAPIDAPI + MOCK FALLBACKS)
+// 🌍 TOOL 4: The Global Sports Hub (LIVE, FINISHED, UPCOMING, & HEAD-TO-HEAD)
 export const getSportsDataTool = tool(
     async ({ requestType, sport, query }) => {
         try {
@@ -101,71 +101,68 @@ export const getSportsDataTool = tool(
             const apiKey = process.env.RAPIDAPI_KEY;
 
             // ==========================================
-            // 🧠 ROUTE 1: TACTICS & FORMATIONS (Preserved)
+            // 🧠 INTENT & HEAD-TO-HEAD (H2H) PARSER
             // ==========================================
-            if (requestType === "tactics") {
-                if (lowerQuery.includes("long ball") || lowerQuery.includes("counter")) return "The Long Ball Counter is a tactical setup focusing on absorbing pressure deep, drawing the opponent in, and launching rapid, direct passes to fast forwards. A classic example is Jose Mourinho's peak 4-3-3.";
-                if (lowerQuery.includes("tiki taka") || lowerQuery.includes("possession")) return "Tiki-Taka is characterized by short passing and movement, working the ball through various channels, and maintaining possession.";
-                if (lowerQuery.includes("pick and roll")) return "The Pick and Roll is a classic offensive play in basketball where a player sets a screen (pick) for a teammate handling the ball and then moves toward the basket (rolls) to accept a pass.";
-                return `Tactical analysis for ${query} in ${sport}: This system generally requires high situational awareness and exploits specific defensive weaknesses.`;
+            const isUpcoming = requestType === "fixtures" || lowerQuery.includes("upcoming") || lowerQuery.includes("tomorrow") || lowerQuery.includes("next");
+            const isFinished = requestType === "scores" || lowerQuery.includes("finished") || lowerQuery.includes("result") || lowerQuery.includes("last") || lowerQuery.includes("yesterday");
+
+            // Extract the primary team (t1) and secondary team (t2) if user asks for "A vs B"
+            let t1 = query;
+            let t2 = null;
+            if (lowerQuery.includes(' vs ')) {
+                const parts = query.split(/ vs /i);
+                t1 = parts[0].trim();
+                t2 = parts[1].trim();
+            } else if (lowerQuery.includes(' match')) {
+                t1 = lowerQuery.replace(' match', '').trim();
             }
 
             // ==========================================
-            // 🏏 ROUTE 2: CRICKET & IPL (API-Cricket via RapidAPI)
-            // ==========================================
-            if (sport.toLowerCase() === "cricket" || lowerQuery.includes("ipl") || lowerQuery.includes("india")) {
-                if (!apiKey) throw new Error("RAPIDAPI_KEY is missing");
-
-                const response = await fetch('https://api-cricket-v1.p.rapidapi.com/fixtures?status=LIVE', {
-                    headers: { 'x-rapidapi-key': apiKey, 'Content-Type': 'application/json' }
-                });
-                if (!response.ok) throw new Error("Cricket API Error");
-
-                const rawData = await response.json();
-
-                // If there are no live matches, throw error to trigger the fallback logic below
-                if (!rawData.response || rawData.response.length === 0) throw new Error("No live cricket matches found");
-
-                const match = rawData.response[0];
-                const localTeam = match.localteam;
-                const visitorTeam = match.visitorteam;
-                const runsLocal = match.runs.find(r => r.team_id === localTeam.id) || { score: 0, wickets: 0, overs: 0 };
-                const runsVisitor = match.runs.find(r => r.team_id === visitorTeam.id) || { score: 0, wickets: 0, overs: 0 };
-
-                const formattedCricket = {
-                    league: match.league.name || "ipl",
-                    isLive: match.status === "LIVE",
-                    battingTeam: localTeam.name,
-                    battingScore: `${runsLocal.score}/${runsLocal.wickets}`,
-                    battingOvers: `${runsLocal.overs}`,
-                    bowlingTeam: visitorTeam.name,
-                    bowlingScore: `${runsVisitor.score}/${runsVisitor.wickets}`,
-                    bowlingOvers: `${runsVisitor.overs}`,
-                    crr: null,
-                    rrr: null,
-                    status: match.note || "Match in progress"
-                };
-
-                return JSON.stringify(formattedCricket);
-            }
-
-            // ==========================================
-            // ⚽ ROUTE 3: FOOTBALL (API-Football via RapidAPI)
+            // ⚽ ROUTE 1: FOOTBALL (H2H Engine)
             // ==========================================
             if (sport.toLowerCase() === "football" || lowerQuery.includes("epl") || lowerQuery.includes("ucl") || lowerQuery.includes("bayern") || lowerQuery.includes("madrid")) {
                 if (!apiKey) throw new Error("RAPIDAPI_KEY is missing");
 
-                const response = await fetch('https://api-football-v1.p.rapidapi.com/v3/fixtures?live=all', {
-                    headers: { 'x-rapidapi-key': apiKey, 'Content-Type': 'application/json' }
-                });
-                if (!response.ok) throw new Error("Football API Error");
+                const headers = { 'x-rapidapi-key': apiKey, 'Content-Type': 'application/json' };
 
-                const rawData = await response.json();
-                if (!rawData.response || rawData.response.length === 0) throw new Error("No live football matches found");
+                // Step 1: Get the Team ID for Team A
+                const teamRes = await fetch(`https://api-football-v1.p.rapidapi.com/v3/teams?search=${encodeURIComponent(t1)}`, { headers });
+                const teamData = await teamRes.json();
 
-                const match = rawData.response[0];
+                let match = null;
 
-                const formattedGoals = match.events
+                if (teamData.response && teamData.response.length > 0) {
+                    const teamId = teamData.response[0].team.id;
+
+                    // Step 2: Fetch a wide batch of fixtures so we can filter for Team B
+                    let fixUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&last=30`;
+                    if (isUpcoming) fixUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&next=30`;
+                    // If live is requested, we just ask for live
+                    else if (!isFinished && lowerQuery.includes("live")) fixUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?team=${teamId}&live=all`;
+
+                    const fixRes = await fetch(fixUrl, { headers });
+                    const fixData = await fixRes.json();
+
+                    if (fixData.response && fixData.response.length > 0) {
+                        // 🚀 H2H FILTERING LOGIC
+                        if (t2) {
+                            match = fixData.response.find(m =>
+                                m.teams.home.name.toLowerCase().includes(t2.toLowerCase()) ||
+                                m.teams.away.name.toLowerCase().includes(t2.toLowerCase())
+                            );
+                        }
+                        // If no specific opponent was found or asked for, default to their most recent match
+                        if (!match) match = fixData.response[0];
+                    }
+                }
+
+                if (!match) throw new Error("No football matches found for these teams.");
+
+                // Map the status dynamically
+                const isLiveResponse = ["1H", "2H", "HT", "LIVE", "ET", "PEN"].includes(match.fixture.status.short);
+                const isFinishedResponse = ["FT", "AET", "PEN"].includes(match.fixture.status.short);
+
+                const formattedGoals = (match.events || [])
                     .filter(e => e.type === "Goal")
                     .map(g => ({
                         team: g.team.name,
@@ -175,67 +172,113 @@ export const getSportsDataTool = tool(
 
                 const formattedFootball = {
                     league: match.league.name,
-                    isLive: true,
-                    matchSeconds: match.fixture.status.elapsed * 60,
-                    teamA: { name: match.teams.home.name, score: match.goals.home },
-                    teamB: { name: match.teams.away.name, score: match.goals.away },
+                    isLive: isLiveResponse,
+                    matchSeconds: isLiveResponse ? (match.fixture.status.elapsed * 60) : (isFinishedResponse ? 5400 : 0),
+                    teamA: { name: match.teams.home.name, score: match.goals.home !== null ? match.goals.home : "-" },
+                    teamB: { name: match.teams.away.name, score: match.goals.away !== null ? match.goals.away : "-" },
                     goals: formattedGoals,
-                    status: match.fixture.status.long
+                    status: match.fixture.status.long // Prints "Not Started", "Full-Time", etc.
                 };
 
                 return JSON.stringify(formattedFootball);
             }
 
-            throw new Error("No matches found for query.");
+            // ==========================================
+            // 🏏 ROUTE 2: CRICKET (H2H Engine)
+            // ==========================================
+            if (sport.toLowerCase() === "cricket" || lowerQuery.includes("ipl") || lowerQuery.includes("india")) {
+                if (!apiKey) throw new Error("RAPIDAPI_KEY is missing");
+                const headers = { 'x-rapidapi-key': apiKey, 'Content-Type': 'application/json' };
 
-        } catch (error) {
-            console.warn(`[Tool Warning] API failed or limits reached (${error.message}). Falling back to strict mock JSON.`);
+                // Fetching matches
+                const response = await fetch('https://api-cricket-v1.p.rapidapi.com/fixtures', { headers });
+                const rawData = await response.json();
 
-            // 🛡️ JSON FALLBACKS: If the API fails or no matches are live, return your exact requested JSON formats.
-            const lowerQuery = query.toLowerCase();
-            if (sport.toLowerCase() === "football" || lowerQuery.includes('football') || lowerQuery.includes('ucl') || lowerQuery.includes('bayern')) {
-                return JSON.stringify({
-                    league: "ucl",
-                    isLive: false,
-                    matchSeconds: 5400,
-                    teamA: { name: "Bayern Munich", score: 3 },
-                    teamB: { name: "PSG", score: 1 },
-                    goals: [
-                        { team: "Bayern Munich", scorer: "Kane", minute: 12 },
-                        { team: "Bayern Munich", scorer: "Musiala", minute: 44 },
-                        { team: "PSG", scorer: "Mbappe", minute: 78 },
-                        { team: "Bayern Munich", scorer: "Kane", minute: 89 }
-                    ],
-                    status: "Full Time"
-                });
-            } else if (requestType === "fixtures" || lowerQuery.includes('tomorrow')) {
-                return JSON.stringify({
-                    league: "ipl",
-                    isLive: false,
-                    battingTeam: "CSK",
-                    battingScore: "-",
-                    battingOvers: "",
-                    bowlingTeam: "MI",
-                    bowlingScore: "-",
-                    bowlingOvers: "",
+                if (!rawData.response || rawData.response.length === 0) throw new Error("No cricket matches found. Triggering smart fallback.");
+
+                let match = null;
+
+                // 🚀 H2H FILTERING LOGIC FOR CRICKET
+                if (t2) {
+                    match = rawData.response.find(m =>
+                        (m.localteam.name.toLowerCase().includes(t1.toLowerCase()) || m.visitorteam.name.toLowerCase().includes(t1.toLowerCase())) &&
+                        (m.localteam.name.toLowerCase().includes(t2.toLowerCase()) || m.visitorteam.name.toLowerCase().includes(t2.toLowerCase()))
+                    );
+                }
+
+                // If no exact H2H match was found, look for Team 1's most recent match
+                if (!match) {
+                    match = rawData.response.find(m =>
+                        m.localteam.name.toLowerCase().includes(t1.toLowerCase()) || m.visitorteam.name.toLowerCase().includes(t1.toLowerCase())
+                    ) || rawData.response[0]; // Absolute fallback to any match
+                }
+
+                const localTeam = match.localteam;
+                const visitorTeam = match.visitorteam;
+                const runsLocal = match.runs.find(r => r.team_id === localTeam.id) || { score: 0, wickets: 0, overs: 0 };
+                const runsVisitor = match.runs.find(r => r.team_id === visitorTeam.id) || { score: 0, wickets: 0, overs: 0 };
+
+                const isLiveResponse = match.status === "LIVE";
+
+                const formattedCricket = {
+                    league: match.league.name || "ipl",
+                    isLive: isLiveResponse,
+                    battingTeam: localTeam.name,
+                    battingScore: isUpcoming ? "-" : `${runsLocal.score}/${runsLocal.wickets}`,
+                    battingOvers: isUpcoming ? null : `${runsLocal.overs}`,
+                    bowlingTeam: visitorTeam.name,
+                    bowlingScore: isUpcoming ? "-" : `${runsVisitor.score}/${runsVisitor.wickets}`,
+                    bowlingOvers: isUpcoming ? null : `${runsVisitor.overs}`,
                     crr: null,
                     rrr: null,
-                    status: "Starts Tomorrow at 19:30 IST"
+                    status: match.note || match.status || "Match Info"
+                };
+
+                return JSON.stringify(formattedCricket);
+            }
+
+            throw new Error("No specific sport route hit.");
+
+        } catch (error) {
+            console.warn(`[Tool Warning] API failed (${error.message}). Executing Smart Fallback.`);
+
+            // 🛡️ SMART FALLBACK: Safely uses the H2H parsing even if the API breaks
+            const isUpcomingFb = requestType === "fixtures" || query.toLowerCase().includes("upcoming") || query.toLowerCase().includes("tomorrow") || query.toLowerCase().includes("next");
+
+            let fb1 = "Team A", fb2 = "Team B";
+            if (query.toLowerCase().includes(' vs ')) {
+                const parts = query.split(/ vs /i);
+                fb1 = parts[0].trim().toUpperCase();
+                fb2 = parts[1].trim().toUpperCase();
+            } else {
+                fb1 = query.toUpperCase();
+            }
+
+            const isFootballFb = sport.toLowerCase() === "football" || query.toLowerCase().includes('football') || query.toLowerCase().includes('ucl');
+
+            if (isFootballFb) {
+                return JSON.stringify({
+                    league: "Football",
+                    isLive: false,
+                    matchSeconds: 0,
+                    teamA: { name: fb1, score: "-" },
+                    teamB: { name: fb2, score: "-" },
+                    goals: [],
+                    status: isUpcomingFb ? "Scheduled Fixture" : "Data Not Available"
                 });
             } else {
                 return JSON.stringify({
-                    id: "cric_101",
-                    league: "ipl",
-                    isLive: true,
-                    battingTeam: "India",
-                    battingScore: "145/1",
-                    battingOvers: "25.2",
-                    bowlingTeam: "Pakistan",
-                    bowlingScore: "310/10",
-                    bowlingOvers: "50.0",
-                    crr: 5.73,
-                    rrr: 7.94,
-                    status: "India need 166 runs"
+                    league: query.toLowerCase().includes("ipl") ? "IPL" : "Cricket",
+                    isLive: false,
+                    battingTeam: fb1,
+                    battingScore: "-",
+                    battingOvers: null,
+                    bowlingTeam: fb2,
+                    bowlingScore: "-",
+                    bowlingOvers: null,
+                    crr: null,
+                    rrr: null,
+                    status: isUpcomingFb ? "Scheduled Fixture" : "Data Not Available"
                 });
             }
         }
@@ -244,9 +287,9 @@ export const getSportsDataTool = tool(
         name: "get_sports_data",
         description: "Fetches live scores, match results, upcoming fixtures, and team info for global sports. MUST return exact JSON format for scores.",
         schema: z.object({
-            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]).describe("The specific type of information requested."),
+            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]).describe("The specific type of information requested. 'fixtures' for upcoming, 'scores' for recent/live."),
             sport: z.string().describe("The name of the sport (e.g., 'cricket', 'football')."),
-            query: z.string().describe("The name of the team, league, or topic (e.g., 'IPL', 'Bayern', 'Tiki Taka')."),
+            query: z.string().describe("The name of the team, league, or matchup (e.g., 'IPL', 'RCB vs MI', 'Bayern Munich vs PSG')."),
         }),
     }
 );
