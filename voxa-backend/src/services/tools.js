@@ -29,6 +29,9 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
         try {
             const response = await fetch(url, { ...options, signal: controller.signal });
             clearTimeout(timeoutId);
+
+            // Football-Data.org specific rate limit error catching
+            if (response.status === 429) throw new Error("RATE_LIMIT");
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
             const data = await response.json();
@@ -136,79 +139,113 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (TheSportsDB - 100% FREE, NO KEY NEEDED)
+            // ⚽ ROUTE 1: FOOTBALL (Football-Data.org)
             // ==========================================
             if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
 
-                // Hardcoded TheSportsDB IDs for instant caching
+                const apiKey = process.env.FOOTBALL_DATA_TOKEN;
+                if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing from .env");
+                const headers = { 'X-Auth-Token': apiKey };
+
+                // 🧠 STATIC ID DICTIONARY (Bypasses the search endpoint, saves 50% API limits)
                 const POPULAR_TEAMS = {
-                    "manchester city": 133613, "manchester united": 133612, "chelsea": 133610,
-                    "arsenal": 133604, "liverpool": 133602, "tottenham": 133616,
-                    "real madrid": 133739, "barcelona": 133738, "atletico madrid": 133729,
-                    "bayern munich": 133664, "borussia dortmund": 133667,
-                    "psg": 133714, "juventus": 133697, "ac milan": 133690, "inter": 133692
+                    "arsenal": 57, "aston villa": 58, "chelsea": 61, "everton": 62,
+                    "liverpool": 64, "manchester city": 65, "manchester united": 66,
+                    "newcastle": 67, "tottenham": 73, "real madrid": 86,
+                    "barcelona": 81, "atletico madrid": 78, "bayern munich": 5,
+                    "borussia dortmund": 4, "bayer leverkusen": 3, "psg": 524,
+                    "juventus": 109, "ac milan": 98, "inter": 108, "napoli": 113, "roma": 100
                 };
 
                 let teamId = POPULAR_TEAMS[t1];
+                if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB"); // Protects against obscure queries wasting limits
 
-                if (!teamId) {
-                    const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
-                    if (!teamData.teams || teamData.teams.length === 0) throw new Error(`Team not found`);
-                    teamId = teamData.teams[0].idTeam;
-                }
+                // Fetch current season matches for the team (Caches for 30 seconds)
+                const fixData = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/teams/${teamId}/matches`, { headers }, 30000);
+                const allMatches = fixData.matches || [];
 
-                let fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
-                if (isUpcoming) fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
+                if (allMatches.length === 0) throw new Error("No fixtures found.");
 
-                const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
-                const eventsArray = isUpcoming ? fixData.events : fixData.results;
+                let match = null;
+                const now = new Date().getTime();
 
-                if (!eventsArray || eventsArray.length === 0) throw new Error("No fixtures found.");
-
-                // 🚀 DUMMY DATA INTERCEPTOR (Blocks the fake Bolton games)
-                if (eventsArray[0].strHomeTeam === "Bolton Wanderers" && !t1.toLowerCase().includes("bolton")) {
-                    throw new Error("DUMMY_DATA");
-                }
-
-                let match = eventsArray[0];
+                // Advanced Local Sorting & H2H Extraction
                 if (t2) {
-                    const h2hMatch = eventsArray.find(m => m.strHomeTeam.toLowerCase().includes(t2) || m.strAwayTeam.toLowerCase().includes(t2));
-                    if (h2hMatch) match = h2hMatch;
-                    else throw new Error("H2H_NOT_FOUND");
+                    const h2hMatches = allMatches.filter(m => m.homeTeam.name.toLowerCase().includes(t2) || m.awayTeam.name.toLowerCase().includes(t2));
+                    if (h2hMatches.length === 0) throw new Error("H2H_NOT_FOUND");
+
+                    if (isUpcoming) {
+                        match = h2hMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0];
+                    } else {
+                        match = h2hMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
+                    }
+                } else {
+                    if (isUpcoming) {
+                        match = allMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0];
+                    } else {
+                        match = allMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
+                    }
                 }
+
+                if (!match) throw new Error("No specific match found.");
+
+                const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
+                const isFinishedResponse = match.status === "FINISHED";
+
+                let formattedStatus = "Scheduled: " + new Date(match.utcDate).toLocaleDateString();
+                if (isLiveResponse) formattedStatus = "Match Live";
+                if (isFinishedResponse) formattedStatus = "Full Time";
 
                 return JSON.stringify({
-                    league: match.strLeague || "Football",
-                    isLive: false,
-                    matchSeconds: isUpcoming ? 0 : 5400,
-                    teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
-                    teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
+                    league: match.competition.name || "Football",
+                    isLive: isLiveResponse,
+                    matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
+                    teamA: { name: match.homeTeam.name, score: match.score?.fullTime?.home ?? "-" },
+                    teamB: { name: match.awayTeam.name, score: match.score?.fullTime?.away ?? "-" },
                     goals: [],
-                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Full Time"
+                    status: formattedStatus
                 });
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB - 100% FREE NO KEY NEEDED)
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB H2H Engine)
             // ==========================================
             if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba") || cleanQuery.includes("lakers") || cleanQuery.includes("warriors")) {
-                const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
-                if (!teamData.teams) throw new Error(`Basketball Team not found`);
+                let match = null;
 
-                const teamId = teamData.teams[0].idTeam;
-                let fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
-                if (isUpcoming) fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
-
-                const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
-                const eventsArray = isUpcoming ? fixData.events : fixData.results;
-
-                if (!eventsArray || eventsArray.length === 0) throw new Error("No matches found.");
-
-                let match = eventsArray[0];
                 if (t2) {
-                    const h2hMatch = eventsArray.find(m => m.strHomeTeam.toLowerCase().includes(t2) || m.strAwayTeam.toLowerCase().includes(t2));
-                    if (h2hMatch) match = h2hMatch;
-                    else throw new Error("H2H_NOT_FOUND");
+                    const q1 = `${t1.replace(/\s+/g, '_')}_vs_${t2.replace(/\s+/g, '_')}`;
+                    const q2 = `${t2.replace(/\s+/g, '_')}_vs_${t1.replace(/\s+/g, '_')}`;
+
+                    let res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q1)}`, {}, 60000);
+                    if (!res.event) res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`, {}, 60000);
+
+                    const allMatches = res.event || [];
+                    if (allMatches.length === 0) throw new Error("H2H_NOT_FOUND");
+
+                    const now = Date.now();
+                    if (isUpcoming) {
+                        const future = allMatches.filter(m => new Date(m.dateEvent).getTime() >= now).sort((a, b) => new Date(a.dateEvent).getTime() - new Date(b.dateEvent).getTime());
+                        match = future[0];
+                    } else {
+                        const past = allMatches.filter(m => new Date(m.dateEvent).getTime() <= now).sort((a, b) => new Date(b.dateEvent).getTime() - new Date(a.dateEvent).getTime());
+                        match = past[0];
+                    }
+                    if (!match) throw new Error("H2H_NOT_FOUND");
+
+                } else {
+                    const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
+                    if (!teamData.teams) throw new Error(`Basketball Team not found`);
+
+                    const teamId = teamData.teams[0].idTeam;
+                    let fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
+                    if (isUpcoming) fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
+
+                    const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
+                    const eventsArray = isUpcoming ? fixData.events : fixData.results;
+
+                    if (!eventsArray || eventsArray.length === 0) throw new Error("No matches found.");
+                    match = eventsArray[0];
                 }
 
                 return JSON.stringify({
@@ -233,9 +270,7 @@ export const getSportsDataTool = tool(
 
                 if (t2) {
                     targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1) && m.name.toLowerCase().includes(t2));
-                    if (!targetMatch) {
-                        throw new Error("H2H_NOT_FOUND");
-                    }
+                    if (!targetMatch) throw new Error("H2H_NOT_FOUND");
                 } else {
                     targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1)) || matchData.data[0];
                 }
@@ -295,8 +330,9 @@ export const getSportsDataTool = tool(
             if (fb2 !== "TBD Opponent") fb2 = toTitleCase(fb2);
 
             let failReason = "Match Data Unavailable";
-            if (error.message === "H2H_NOT_FOUND") failReason = "Match not in recent API window";
-            if (error.message === "DUMMY_DATA") failReason = "Schedule Locked in Free Tier";
+            if (error.message === "H2H_NOT_FOUND") failReason = "Specific match not found in recent records";
+            if (error.message === "TEAM_NOT_IN_LOCAL_DB") failReason = "Team not supported in Free Tier DB";
+            if (error.message === "RATE_LIMIT") failReason = "API Rate Limit hit (Wait 60s)";
 
             if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: failReason });
             if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: failReason });
