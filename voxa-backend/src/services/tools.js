@@ -136,7 +136,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (DIRECT API-SPORTS)
+            // ⚽ ROUTE 1: FOOTBALL (PAYWALL BYPASS HACK)
             // ==========================================
             if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
 
@@ -156,37 +156,53 @@ export const getSportsDataTool = tool(
 
                 if (!teamId) {
                     const teamData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/teams?search=${encodeURIComponent(t1)}`, { headers }, 86400000);
-
-                    // 🚀 ERROR INTERCEPTOR 
-                    if (teamData.errors && Object.keys(teamData.errors).length > 0) {
-                        throw new Error(`API-Sports Error: ${JSON.stringify(teamData.errors)}`);
-                    }
-
+                    if (teamData.errors && Object.keys(teamData.errors).length > 0) throw new Error(`API-Sports Error: ${JSON.stringify(teamData.errors)}`);
                     if (!teamData.response || teamData.response.length === 0) throw new Error(`Team not found`);
                     teamId = teamData.response[0].team.id;
                 }
 
-                let fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&last=15`;
-                if (isUpcoming) fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&next=15`;
-                else if (!isFinished && voiceNormalizedQuery.includes("live")) fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`;
+                // 🧠 THE HACK: Calculate Current Season to bypass "last" and "next" premium parameters
+                const currentYear = new Date().getFullYear();
+                const seasonYear = new Date().getMonth() > 5 ? currentYear : currentYear - 1;
+
+                let fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&season=${seasonYear}`;
+                if (!isUpcoming && !isFinished && voiceNormalizedQuery.includes("live")) {
+                    fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`;
+                }
 
                 const fixData = await fetchWithCacheAndRetry(fetchUrl, { headers }, 30000);
 
-                // 🚀 ERROR INTERCEPTOR
                 if (fixData.errors && Object.keys(fixData.errors).length > 0) {
                     throw new Error(`API-Sports Error: ${JSON.stringify(fixData.errors)}`);
                 }
 
-                let eventsArray = fixData.response;
+                let allFixtures = fixData.response || [];
+                let eventsArray = [];
 
-                if ((!eventsArray || eventsArray.length === 0) && !isUpcoming && !isFinished) {
-                    const fbData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=10`, { headers }, 60000);
-
-                    if (fbData.errors && Object.keys(fbData.errors).length > 0) {
-                        throw new Error(`API-Sports Error: ${JSON.stringify(fbData.errors)}`);
+                // 🧠 Local Sorting & Slicing Engine
+                if (fetchUrl.includes("live=all")) {
+                    eventsArray = allFixtures;
+                } else {
+                    const now = new Date().getTime();
+                    if (isUpcoming) {
+                        eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() > now)
+                            .sort((a, b) => new Date(a.fixture.date).getTime() - new Date(b.fixture.date).getTime())
+                            .slice(0, 15);
+                    } else {
+                        eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() < now)
+                            .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime())
+                            .slice(0, 15);
                     }
+                }
 
-                    eventsArray = fbData.response;
+                // If summer break and no matches, check previous season
+                if ((!eventsArray || eventsArray.length === 0) && !isUpcoming) {
+                    const prevFixData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/fixtures?team=${teamId}&season=${seasonYear - 1}`, { headers }, 60000);
+                    allFixtures = prevFixData.response || [];
+                    const now = new Date().getTime();
+                    eventsArray = allFixtures.filter(f => new Date(f.fixture.date).getTime() < now)
+                        .sort((a, b) => new Date(b.fixture.date).getTime() - new Date(a.fixture.date).getTime())
+                        .slice(0, 15);
                 }
 
                 if (!eventsArray || eventsArray.length === 0) throw new Error("No fixtures found.");
