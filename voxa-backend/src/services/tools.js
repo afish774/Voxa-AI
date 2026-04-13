@@ -136,7 +136,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (DIRECT API-SPORTS - NO RAPIDAPI)
+            // ⚽ ROUTE 1: FOOTBALL (DIRECT API-SPORTS)
             // ==========================================
             if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
 
@@ -144,7 +144,6 @@ export const getSportsDataTool = tool(
                 if (!apiKey) throw new Error("FOOTBALL_API_KEY missing from .env");
                 const headers = { 'x-apisports-key': apiKey, 'Content-Type': 'application/json' };
 
-                // 🧠 THE HACK: Local Team ID Cache saves 50% of your API requests!
                 const POPULAR_TEAMS = {
                     "manchester city": 50, "manchester united": 33, "chelsea": 49,
                     "arsenal": 42, "liverpool": 40, "tottenham": 47,
@@ -157,6 +156,12 @@ export const getSportsDataTool = tool(
 
                 if (!teamId) {
                     const teamData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/teams?search=${encodeURIComponent(t1)}`, { headers }, 86400000);
+
+                    // 🚀 ERROR INTERCEPTOR 
+                    if (teamData.errors && Object.keys(teamData.errors).length > 0) {
+                        throw new Error(`API-Sports Error: ${JSON.stringify(teamData.errors)}`);
+                    }
+
                     if (!teamData.response || teamData.response.length === 0) throw new Error(`Team not found`);
                     teamId = teamData.response[0].team.id;
                 }
@@ -166,10 +171,21 @@ export const getSportsDataTool = tool(
                 else if (!isFinished && voiceNormalizedQuery.includes("live")) fetchUrl = `https://v3.football.api-sports.io/fixtures?team=${teamId}&live=all`;
 
                 const fixData = await fetchWithCacheAndRetry(fetchUrl, { headers }, 30000);
+
+                // 🚀 ERROR INTERCEPTOR
+                if (fixData.errors && Object.keys(fixData.errors).length > 0) {
+                    throw new Error(`API-Sports Error: ${JSON.stringify(fixData.errors)}`);
+                }
+
                 let eventsArray = fixData.response;
 
                 if ((!eventsArray || eventsArray.length === 0) && !isUpcoming && !isFinished) {
                     const fbData = await fetchWithCacheAndRetry(`https://v3.football.api-sports.io/fixtures?team=${teamId}&last=10`, { headers }, 60000);
+
+                    if (fbData.errors && Object.keys(fbData.errors).length > 0) {
+                        throw new Error(`API-Sports Error: ${JSON.stringify(fbData.errors)}`);
+                    }
+
                     eventsArray = fbData.response;
                 }
 
@@ -200,7 +216,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB - 100% FREE NO KEY NEEDED)
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
             // ==========================================
             if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba") || cleanQuery.includes("lakers") || cleanQuery.includes("warriors")) {
                 const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
@@ -308,6 +324,7 @@ export const getSportsDataTool = tool(
             let failReason = "Match Data Unavailable";
             if (error.message === "H2H_NOT_FOUND") failReason = "Match not in recent API window";
             if (error.message === "DUMMY_DATA") failReason = "Schedule Locked in Free Tier";
+            if (error.message.includes("API-Sports Error")) failReason = "API Access Issue (Check Logs)";
 
             if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: failReason });
             if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: failReason });
