@@ -2,7 +2,6 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-// 🚀 UPDATED: Imported getWeatherTool
 import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js';
 import dotenv from 'dotenv';
 
@@ -52,16 +51,15 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 THE CLEANED, POSITIVE-REINFORCEMENT PROMPT
+        // 🚀 THE CLEANED, POSITIVE-REINFORCEMENT PROMPT (UPDATED FOR JSON SPORTS)
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
 RULES:
 1. Speak in natural, complete sentences (under 40 words).
 2. Do NOT use markdown formatting.
 3. WIDGET PROTOCOL: If you provide Weather or Sports information, you MUST append the exact hidden tag at the very end of your response.
 - WEATHER: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition|| 
-- SPORTS: ||CARD:SPORTS:TeamA:TeamB:ScoreA:ScoreB:Status:League||
-    * Example: "Real Madrid won 2-1." ||CARD:SPORTS:Real Madrid:Barcelona:2:1:FT:La Liga||
-    * Example Schedule: "They play tomorrow at 8 PM." ||CARD:SPORTS:Lakers:Warriors:-:-:Tomorrow 8 PM:NBA||
+- SPORTS: You must use the get_sports_data tool. The tool will return a JSON string. You MUST embed that EXACT JSON string inside the card tag without altering it.
+    * Example Output: "Here is the sports update." ||CARD:SPORTS:{"league":"ipl","isLive":true,"battingTeam":"India","battingScore":"145/1","battingOvers":"25.2","bowlingTeam":"Pakistan","bowlingScore":"310/10","bowlingOvers":"50.0","crr":5.73,"rrr":7.94,"status":"India need 166 runs"}||
 4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
 5. FULL AUTHORITY: You have full permission to interact with the real world. Do NOT say tasks are outside your capabilities.
 6. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}.
@@ -84,7 +82,6 @@ RULES:
             let messages = [new SystemMessage(systemInstruction), new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`)];
 
             const reminderTool = createReminderTool(userId);
-            // 🚀 UPDATED: Added getWeatherTool to activeTools
             const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
@@ -119,7 +116,6 @@ RULES:
                             if (onStatusUpdate) onStatusUpdate("Analyzing global sports network...");
                             toolResultText = await getSportsDataTool.invoke(toolCall.args);
                         }
-                        // 🚀 UPDATED: Added logic to execute get_weather
                         else if (toolCall.name === "get_weather") {
                             if (onStatusUpdate) onStatusUpdate("Accessing global weather satellites...");
                             toolResultText = await getWeatherTool.invoke(toolCall.args);
@@ -155,16 +151,47 @@ RULES:
         }
 
         let cardData = null;
-        const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*([^|]+)\s*\|\|/i);
+
+        // 🚀 Robust Card Extraction for JSON and legacy formats
+        const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is);
 
         if (cardMatch) {
-            const segments = cardMatch[1].split(':').map(s => s.trim());
-            const cardType = segments[0].toUpperCase();
+            const rawContent = cardMatch[1].trim();
+            const firstColonIndex = rawContent.indexOf(':');
 
-            if (cardType === 'WEATHER') {
-                cardData = { type: 'weather', location: segments[1], temp: segments[2], condition: segments[3] };
-            } else if (cardType === 'SPORTS') {
-                cardData = { type: 'sports', teamA: segments[1], teamB: segments[2], scoreA: segments[3], scoreB: segments[4], status: segments[5], league: segments[6] };
+            if (firstColonIndex !== -1) {
+                const cardType = rawContent.substring(0, firstColonIndex).trim().toUpperCase();
+                const payload = rawContent.substring(firstColonIndex + 1).trim();
+
+                if (cardType === 'WEATHER') {
+                    const segments = payload.split(':').map(s => s.trim());
+                    cardData = { type: 'weather', location: segments[0], temp: segments[1], condition: segments[2] };
+                } else if (cardType === 'SPORTS') {
+                    // Attempt to parse new strict JSON format
+                    if (payload.startsWith('{') && payload.endsWith('}')) {
+                        try {
+                            const parsedData = JSON.parse(payload);
+                            cardData = { type: 'sports', ...parsedData };
+                        } catch (error) {
+                            console.error("❌ Voxa generated invalid JSON for Sports Card:", error);
+                        }
+                    }
+
+                    // FALLBACK: If it's not JSON, parse the OLD colon-separated format
+                    if (!cardData) {
+                        console.warn("⚠️ Falling back to legacy colon-separated sports extraction.");
+                        const parts = payload.split(':').map(s => s.trim());
+                        cardData = {
+                            type: 'sports',
+                            teamA: parts[0] || 'Team A',
+                            teamB: parts[1] || 'Team B',
+                            scoreA: parts[2] || '-',
+                            scoreB: parts[3] || '-',
+                            status: parts[4] || 'FT',
+                            league: parts[5] || 'UNKNOWN'
+                        };
+                    }
+                }
             }
 
             responseText = responseText.replace(cardMatch[0], '').trim();
