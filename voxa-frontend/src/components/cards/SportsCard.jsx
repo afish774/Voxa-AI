@@ -1,5 +1,5 @@
 import React from 'react';
-import { Trophy, Clock, Activity, Radio, Target } from 'lucide-react';
+import { Trophy, Clock, Activity, Radio } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const SportsCard = ({ data }) => {
@@ -39,7 +39,6 @@ const SportsCard = ({ data }) => {
             {/* BODY */}
             <div className="relative z-10">
                 {isCricket ? <CricketScoreboard data={data} /> : <FootballScoreboard data={data} />}
-                {!isCricket && data.timeline?.length > 0 && <MatchTimeline events={data.timeline} />}
             </div>
 
             {/* FOOTER */}
@@ -51,25 +50,6 @@ const SportsCard = ({ data }) => {
         </motion.div>
     );
 };
-
-const MatchTimeline = ({ events }) => (
-    <div className="mt-6 space-y-3 max-h-32 overflow-y-auto pr-2 custom-scrollbar">
-        {events.map((ev, i) => (
-            <motion.div initial={{ opacity: 0, x: -5 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.05 }} key={i} className="flex items-center gap-3 text-[11px]">
-                <span className="font-mono text-amber-400 w-6">{ev.min}'</span>
-                <div className="flex-1 flex items-center justify-between bg-white/5 px-3 py-2 rounded-lg border border-white/5">
-                    <div className="flex items-center gap-2">
-                        {ev.type === 'GOAL' && <Target className="w-3 h-3 text-emerald-400" />}
-                        {ev.type === 'YELLOW_CARD' && <div className="w-2 h-3 bg-yellow-400 rounded-sm" />}
-                        {ev.type === 'RED_CARD' && <div className="w-2 h-3 bg-red-600 rounded-sm" />}
-                        <span className="text-white/80 font-semibold">{ev.player}</span>
-                    </div>
-                    <span className="text-[9px] text-white/30 truncate max-w-[80px] text-right">{ev.team}</span>
-                </div>
-            </motion.div>
-        ))}
-    </div>
-);
 
 const FootballScoreboard = ({ data }) => (
     <div className="flex items-center justify-between px-2">

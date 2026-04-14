@@ -91,8 +91,16 @@ export const getCryptoPriceTool = tool(
     async ({ coinId }) => {
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
-            const data = await fetchWithCacheAndRetry(`https://api.coingecko.com/api/v3/simple/price?ids=${normalizedCoin}&vs_currencies=usd`, {}, 120000);
-            if (data[normalizedCoin] && data[normalizedCoin].usd) return `Live price of ${normalizedCoin} is $${data[normalizedCoin].usd} USD.`;
+            // Upgraded API call to include 24h change for the premium UI
+            const data = await fetchWithCacheAndRetry(`https://api.coingecko.com/api/v3/simple/price?ids=${normalizedCoin}&vs_currencies=usd&include_24hr_change=true`, {}, 120000);
+
+            if (data[normalizedCoin] && data[normalizedCoin].usd) {
+                const price = data[normalizedCoin].usd;
+                const change = data[normalizedCoin].usd_24h_change?.toFixed(2) || "0.00";
+
+                // Formatted Output for the React Frontend to intercept
+                return `||CARD:CRYPTO:${normalizedCoin}:${price}:${change}||`;
+            }
             return `I could not find the live price for ${normalizedCoin}.`;
         } catch (error) {
             return "Error: Failed to connect to crypto API.";
@@ -178,15 +186,6 @@ export const getSportsDataTool = tool(
 
                 if (!match) throw new Error("No match found.");
 
-                // ✨ DEEP FETCH FOR TIMELINE EVENTS
-                let timeline = [];
-                try {
-                    const detail = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/matches/${match.id}`, { headers }, 60000);
-                    if (detail.goals) detail.goals.forEach(g => timeline.push({ min: g.minute, type: 'GOAL', player: g.scorer?.name || 'Unknown', team: g.team.name }));
-                    if (detail.bookings) detail.bookings.forEach(b => timeline.push({ min: b.minute, type: b.card, player: b.player?.name || 'Unknown', team: b.team.name }));
-                    timeline.sort((a, b) => a.min - b.min);
-                } catch (e) { console.warn("Timeline fetch failed"); }
-
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
@@ -196,7 +195,6 @@ export const getSportsDataTool = tool(
                     matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
                     teamA: { name: match.homeTeam.name, score: match.score?.fullTime?.home ?? "-" },
                     teamB: { name: match.awayTeam.name, score: match.score?.fullTime?.away ?? "-" },
-                    timeline: timeline,
                     status: isLiveResponse ? "Match Live" : (isFinishedResponse ? "Full Time" : "Scheduled: " + new Date(match.utcDate).toLocaleDateString())
                 });
             }

@@ -11,6 +11,11 @@ import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
 
+// 🚀 NEW: Import your Premium UI Cards here
+import CryptoCard from './components/CryptoCard';
+import SportsCard from './components/SportsCard';
+// import WeatherCard from './components/WeatherCard'; // Uncomment if you have WeatherCard wired
+
 import './index.css';
 
 export default function VoiceAssistant({ user, onLogout }) {
@@ -136,19 +141,18 @@ export default function VoiceAssistant({ user, onLogout }) {
 
     let finalImage = uploadedImage;
 
-    // 🚀 THE FIX: Severely compress and scale down the image payload before sending!
     if (cameraModeRef.current) {
       try {
         const videoElement = document.getElementById("voxa-camera-feed");
         if (videoElement && videoElement.videoWidth) {
           const canvas = document.createElement("canvas");
-          const MAX_WIDTH = 512; // Tiny footprint!
+          const MAX_WIDTH = 512;
           const scale = MAX_WIDTH / videoElement.videoWidth;
           canvas.width = MAX_WIDTH;
           canvas.height = videoElement.videoHeight * scale;
           const ctx = canvas.getContext("2d");
           ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-          finalImage = canvas.toDataURL("image/jpeg", 0.4); // Compress heavily to bypass server limits
+          finalImage = canvas.toDataURL("image/jpeg", 0.4);
         }
       } catch (err) { console.error("Image capture failed:", err); }
     }
@@ -156,8 +160,58 @@ export default function VoiceAssistant({ user, onLogout }) {
     await streamChatResponse(
       { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: user?.token },
       {
-        onStatus: (text) => setCurrentResponse(text),
-        onText: (text, card) => { setPhase(PHASES.RESPONDING); setCurrentResponse(text); if (card) setCurrentCard(card); setTyping(true); },
+        onStatus: (text) => {
+          // 🧠 INTERCEPTOR 1: Hide raw tags from the UI while streaming
+          let cleanStream = text;
+          if (cleanStream.includes('||CARD:')) cleanStream = cleanStream.split('||CARD:')[0];
+          if (cleanStream.includes('{"league"')) cleanStream = cleanStream.split('{"league"')[0];
+          setCurrentResponse(cleanStream);
+        },
+        onText: (text, card) => {
+          setPhase(PHASES.RESPONDING);
+
+          let finalText = text;
+          let finalCard = card || null; // Fallback to your existing card logic if present
+
+          // 🧠 INTERCEPTOR 2: Parse final text into beautiful UI Cards
+          try {
+            // 1. Check for Crypto
+            if (text.includes("||CARD:CRYPTO:")) {
+              const match = text.match(/\|\|CARD:CRYPTO:(.+?):(.+?):(.+?)\|\|/);
+              if (match) {
+                finalCard = <CryptoCard coin={match[1]} price={match[2]} change={match[3]} />;
+                finalText = text.replace(match[0], "").trim();
+              }
+            }
+            // 2. Check for Weather (Uncomment WeatherCard import at the top to use this)
+            else if (text.includes("||CARD:WEATHER:")) {
+              const match = text.match(/\|\|CARD:WEATHER:(.+?):(.+?):(.+?)\|\|/);
+              if (match) {
+                // finalCard = <WeatherCard location={match[1]} temp={match[2]} condition={match[3]} />;
+                finalText = text.replace(match[0], "").trim();
+              }
+            }
+            // 3. Check for Sports JSON
+            else if (text.includes('"league":') && text.includes('"teamA":')) {
+              const jsonStart = text.indexOf('{');
+              const jsonEnd = text.lastIndexOf('}') + 1;
+              const jsonStr = text.slice(jsonStart, jsonEnd);
+              const sportsData = JSON.parse(jsonStr);
+
+              finalCard = <SportsCard data={sportsData} />;
+              finalText = text.replace(jsonStr, "").trim();
+            }
+          } catch (e) {
+            console.error("UI Card Parsing Error:", e);
+          }
+
+          // If the AI only sent a card and no text, give it a default voice response
+          if (!finalText) finalText = "Here is the information you requested.";
+
+          setCurrentResponse(finalText);
+          setCurrentCard(finalCard);
+          setTyping(true);
+        },
         onAudio: (audio) => {
           if (!isAppMuted && audio && loopRef.current.audioPlayer) {
             loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${audio}`;
