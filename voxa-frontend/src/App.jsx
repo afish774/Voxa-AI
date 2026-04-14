@@ -162,7 +162,7 @@ export default function VoiceAssistant({ user, onLogout }) {
       {
         onStatus: (text) => {
           // 🧠 INTERCEPTOR 1: Hide raw tags from the UI while streaming
-          let cleanStream = text;
+          let cleanStream = text.replace("SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ", "");
           if (cleanStream.includes('||CARD:')) cleanStream = cleanStream.split('||CARD:')[0];
           if (cleanStream.includes('{"league"')) cleanStream = cleanStream.split('{"league"')[0];
           setCurrentResponse(cleanStream);

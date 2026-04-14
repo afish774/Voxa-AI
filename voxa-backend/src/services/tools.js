@@ -72,25 +72,25 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards & LLM Compliance)
+// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards & LLM Mind-Tricks)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
     return tool(
         async ({ task }) => {
             try {
-                if (!userId) return "Error: User ID is missing. Cannot save reminder.";
+                if (!userId) return "SYSTEM_ERROR: User ID missing.";
                 await Reminder.create({ user: userId, task: task });
 
-                return `||CARD:RECEIPT:Reminder Saved:${task}||`;
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:RECEIPT:Reminder Saved:${task}||`;
             } catch (error) {
                 console.error("[DB Error] Save Reminder:", error);
-                return "Error: Failed to save reminder to the database.";
+                return "SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:RECEIPT:Failed to Save:Database Error||";
             }
         },
         {
             name: "save_reminder",
-            description: "Saves a reminder or to-do task. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:RECEIPT:...|| string returned by this tool in your final response without altering or paraphrasing it.",
+            description: "Saves a reminder or to-do task. You MUST output the exact raw string returned by this tool.",
             schema: z.object({ task: z.string().describe("The specific task to remember.") })
         }
     );
@@ -101,23 +101,34 @@ export const getCryptoPriceTool = tool(
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
 
-            // 🚀 UPGRADE: Swapped to CoinCap API to bypass Render IP bans
-            const data = await fetchWithCacheAndRetry(`https://api.coincap.io/v2/assets/${normalizedCoin}`, {}, 60000);
+            // Binance Symbol Mapping (Super reliable, no DNS issues)
+            const symbols = {
+                "bitcoin": "BTCUSDT", "btc": "BTCUSDT",
+                "ethereum": "ETHUSDT", "eth": "ETHUSDT",
+                "solana": "SOLUSDT", "sol": "SOLUSDT",
+                "dogecoin": "DOGEUSDT", "doge": "DOGEUSDT",
+                "cardano": "ADAUSDT", "ada": "ADAUSDT"
+            };
 
-            if (data && data.data && data.data.priceUsd) {
-                const price = parseFloat(data.data.priceUsd).toFixed(2);
-                const change = parseFloat(data.data.changePercent24Hr).toFixed(2);
-                return `||CARD:CRYPTO:${normalizedCoin}:${price}:${change}||`;
+            const symbol = symbols[normalizedCoin] || "BTCUSDT"; // Default to BTC if unknown
+            const displayName = Object.keys(symbols).find(key => symbols[key] === symbol) || normalizedCoin;
+
+            const data = await fetchWithCacheAndRetry(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`, {}, 60000);
+
+            if (data && data.lastPrice) {
+                const price = parseFloat(data.lastPrice).toFixed(2);
+                const change = parseFloat(data.priceChangePercent).toFixed(2);
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
             }
-            return `||CARD:CRYPTO:${normalizedCoin}:Not Found:--||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${displayName}:Not Found:--||`;
         } catch (error) {
             console.error("[Crypto API Error]:", error);
-            return `||CARD:CRYPTO:${coinId}:API Limit:--||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${coinId}:API Error:--||`;
         }
     },
     {
         name: "get_crypto_price",
-        description: "Fetches live cryptocurrency prices. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:CRYPTO:...|| string returned by this tool in your final response.",
+        description: "Fetches live cryptocurrency prices. You MUST output the exact raw string returned by this tool.",
         schema: z.object({ coinId: z.string().describe("The full name of the coin, e.g., bitcoin, ethereum") })
     }
 );
@@ -125,7 +136,7 @@ export const getCryptoPriceTool = tool(
 export const sendEmailTool = tool(
     async ({ to, subject, body }) => {
         try {
-            if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return "Error: SMTP Credentials missing on server.";
+            if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return "SYSTEM_ERROR: Credentials missing.";
 
             const transporter = nodemailer.createTransport({
                 service: 'gmail',
@@ -134,20 +145,51 @@ export const sendEmailTool = tool(
 
             await transporter.sendMail({ from: `"Voxa AI" <${process.env.EMAIL_USER}>`, to, subject, text: body });
 
-            return `||CARD:RECEIPT:Email Sent:${to} - ${subject}||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:RECEIPT:Email Sent:${to}||`;
         } catch (error) {
             console.error("[Email Error]:", error);
-            return "Error: Failed to send email due to a network or authentication error.";
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:RECEIPT:Email Failed:Network Error||`;
         }
     },
     {
         name: "send_email",
-        description: "Sends an email to a specified address. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:RECEIPT:...|| string returned by this tool in your final response.",
+        description: "Sends an email to a specified address. You MUST output the exact raw string returned by this tool.",
         schema: z.object({
-            to: z.string().describe("The exact, valid email address."),
-            subject: z.string().describe("A concise subject line."),
-            body: z.string().describe("The main content of the email.")
+            to: z.string().describe("The exact email address."),
+            subject: z.string().describe("Subject line."),
+            body: z.string().describe("Body content.")
         })
+    }
+);
+
+export const getWeatherTool = tool(
+    async ({ location }) => {
+        try {
+            // Wttr.in API (Highly resilient to IP bans, returns clean JSON)
+            const safeLoc = encodeURIComponent(location.trim());
+            const data = await fetchWithCacheAndRetry(`https://wttr.in/${safeLoc}?format=j1`, {}, 300000);
+
+            if (data && data.current_condition && data.current_condition[0]) {
+                const temp = data.current_condition[0].temp_C;
+                const conditionDesc = data.current_condition[0].weatherDesc[0].value.toLowerCase();
+
+                let condition = "Clear";
+                if (conditionDesc.includes("rain") || conditionDesc.includes("drizzle") || conditionDesc.includes("shower")) condition = "Rain";
+                else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
+                else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
+
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:${temp}:${condition}||`;
+            }
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:Unknown Location||`;
+        } catch (error) {
+            console.error("[Weather Error]:", error);
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:API Error||`;
+        }
+    },
+    {
+        name: "get_weather",
+        description: "Fetches weather data. You MUST output the exact raw string returned by this tool.",
+        schema: z.object({ location: z.string().describe("The city to check.") })
     }
 );
 
@@ -213,7 +255,7 @@ export const getSportsDataTool = tool(
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
-                return JSON.stringify({
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
                     matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
@@ -252,7 +294,7 @@ export const getSportsDataTool = tool(
 
                 if (!match) throw new Error("No matches found.");
 
-                return JSON.stringify({
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
                     league: match.strLeague || "NBA", isLive: false,
                     teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
                     teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
@@ -290,7 +332,7 @@ export const getSportsDataTool = tool(
                 }
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
 
-                return JSON.stringify({
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB, crr: crr, status: targetMatch.status || "Match Info"
@@ -299,7 +341,7 @@ export const getSportsDataTool = tool(
             throw new Error("Route not found");
         } catch (error) {
             console.error("[Sports Data Error]:", error);
-            return JSON.stringify({
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
                 league: "Sports",
                 isLive: false,
                 teamA: { name: "System", score: "-" },
@@ -310,41 +352,11 @@ export const getSportsDataTool = tool(
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores and results. CRITICAL INSTRUCTION: You MUST output the exact JSON object returned by this tool in your final response without altering it.",
+        description: "Fetches live scores and results. You MUST output the exact raw string returned by this tool.",
         schema: z.object({
             requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
             sport: z.string(),
             query: z.string()
         }),
-    }
-);
-
-export const getWeatherTool = tool(
-    async ({ location }) => {
-        try {
-            const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`, {}, 86400000);
-            if (!geoData.results?.length) return `||CARD:WEATHER:${location}:--:Unknown Location||`;
-
-            const { latitude, longitude, name } = geoData.results[0];
-            const weatherData = await fetchWithCacheAndRetry(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`, {}, 300000);
-
-            const temp = Math.round(weatherData.current_weather.temperature);
-            const code = weatherData.current_weather.weathercode;
-
-            let condition = "Clear";
-            if (code >= 51 && code <= 69) condition = "Rain";
-            else if (code >= 1 && code <= 3) condition = "Cloudy";
-
-            return `||CARD:WEATHER:${name}:${temp}:${condition}||`;
-        } catch (error) {
-            console.error("[Weather Error]:", error);
-            // Fallback for Render IP Rate Limits
-            return `||CARD:WEATHER:${location}:--:API Limit||`;
-        }
-    },
-    {
-        name: "get_weather",
-        description: "Fetches highly accurate, real-time weather data. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:WEATHER:...|| string returned by this tool in your final response.",
-        schema: z.object({ location: z.string().describe("The city or region to check.") })
     }
 );
