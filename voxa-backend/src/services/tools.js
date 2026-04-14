@@ -72,7 +72,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards)
+// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards & LLM Compliance)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -82,7 +82,6 @@ export const createReminderTool = (userId) => {
                 if (!userId) return "Error: User ID is missing. Cannot save reminder.";
                 await Reminder.create({ user: userId, task: task });
 
-                // 🚀 UI TRIGGER: Returns the Action Receipt Card
                 return `||CARD:RECEIPT:Reminder Saved:${task}||`;
             } catch (error) {
                 console.error("[DB Error] Save Reminder:", error);
@@ -91,7 +90,7 @@ export const createReminderTool = (userId) => {
         },
         {
             name: "save_reminder",
-            description: "Saves a reminder or to-do task for the user.",
+            description: "Saves a reminder or to-do task. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:RECEIPT:...|| string returned by this tool in your final response without altering or paraphrasing it.",
             schema: z.object({ task: z.string().describe("The specific task to remember.") })
         }
     );
@@ -101,24 +100,24 @@ export const getCryptoPriceTool = tool(
     async ({ coinId }) => {
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
-            const data = await fetchWithCacheAndRetry(`https://api.coingecko.com/api/v3/simple/price?ids=${normalizedCoin}&vs_currencies=usd&include_24hr_change=true`, {}, 120000);
 
-            if (data[normalizedCoin] && data[normalizedCoin].usd) {
-                const price = data[normalizedCoin].usd;
-                const change = data[normalizedCoin].usd_24h_change?.toFixed(2) || "0.00";
+            // 🚀 UPGRADE: Swapped to CoinCap API to bypass Render IP bans
+            const data = await fetchWithCacheAndRetry(`https://api.coincap.io/v2/assets/${normalizedCoin}`, {}, 60000);
 
-                // 🚀 UI TRIGGER: Returns the Crypto Market Card
+            if (data && data.data && data.data.priceUsd) {
+                const price = parseFloat(data.data.priceUsd).toFixed(2);
+                const change = parseFloat(data.data.changePercent24Hr).toFixed(2);
                 return `||CARD:CRYPTO:${normalizedCoin}:${price}:${change}||`;
             }
-            return `I could not find the live price for ${normalizedCoin}.`;
+            return `||CARD:CRYPTO:${normalizedCoin}:Not Found:--||`;
         } catch (error) {
             console.error("[Crypto API Error]:", error);
-            return "Error: Failed to connect to crypto API. Rate limit may be exceeded.";
+            return `||CARD:CRYPTO:${coinId}:API Limit:--||`;
         }
     },
     {
         name: "get_crypto_price",
-        description: "Fetches live cryptocurrency prices and 24h changes.",
+        description: "Fetches live cryptocurrency prices. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:CRYPTO:...|| string returned by this tool in your final response.",
         schema: z.object({ coinId: z.string().describe("The full name of the coin, e.g., bitcoin, ethereum") })
     }
 );
@@ -135,7 +134,6 @@ export const sendEmailTool = tool(
 
             await transporter.sendMail({ from: `"Voxa AI" <${process.env.EMAIL_USER}>`, to, subject, text: body });
 
-            // 🚀 UI TRIGGER: Returns the Action Receipt Card
             return `||CARD:RECEIPT:Email Sent:${to} - ${subject}||`;
         } catch (error) {
             console.error("[Email Error]:", error);
@@ -144,7 +142,7 @@ export const sendEmailTool = tool(
     },
     {
         name: "send_email",
-        description: "Sends an email to a specified address.",
+        description: "Sends an email to a specified address. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:RECEIPT:...|| string returned by this tool in your final response.",
         schema: z.object({
             to: z.string().describe("The exact, valid email address."),
             subject: z.string().describe("A concise subject line."),
@@ -215,7 +213,6 @@ export const getSportsDataTool = tool(
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
-                // 🚀 UI TRIGGER: Returns JSON for SportsCard
                 return JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
@@ -302,9 +299,8 @@ export const getSportsDataTool = tool(
             throw new Error("Route not found");
         } catch (error) {
             console.error("[Sports Data Error]:", error);
-            // Fallback JSON so the UI parser doesn't crash
             return JSON.stringify({
-                league: "Sports Data",
+                league: "Sports",
                 isLive: false,
                 teamA: { name: "System", score: "-" },
                 teamB: { name: "Error", score: "-" },
@@ -314,7 +310,7 @@ export const getSportsDataTool = tool(
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores, match schedules, and results for Football, Basketball, and Cricket.",
+        description: "Fetches live scores and results. CRITICAL INSTRUCTION: You MUST output the exact JSON object returned by this tool in your final response without altering it.",
         schema: z.object({
             requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
             sport: z.string(),
@@ -339,16 +335,16 @@ export const getWeatherTool = tool(
             if (code >= 51 && code <= 69) condition = "Rain";
             else if (code >= 1 && code <= 3) condition = "Cloudy";
 
-            // 🚀 UI TRIGGER: Returns the Weather Card
             return `||CARD:WEATHER:${name}:${temp}:${condition}||`;
         } catch (error) {
             console.error("[Weather Error]:", error);
-            return `||CARD:WEATHER:${location}:--:Network Error||`;
+            // Fallback for Render IP Rate Limits
+            return `||CARD:WEATHER:${location}:--:API Limit||`;
         }
     },
     {
         name: "get_weather",
-        description: "Fetches highly accurate, real-time weather data.",
+        description: "Fetches highly accurate, real-time weather data. CRITICAL INSTRUCTION: You MUST output the exact ||CARD:WEATHER:...|| string returned by this tool in your final response.",
         schema: z.object({ location: z.string().describe("The city or region to check.") })
     }
 );
