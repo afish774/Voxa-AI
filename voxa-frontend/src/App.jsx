@@ -171,45 +171,31 @@ export default function VoiceAssistant({ user, onLogout }) {
           setPhase(PHASES.RESPONDING);
 
           let finalText = text;
-          let finalCard = card || null; // Fallback to your existing card logic if present
+          let finalCardComponent = null;
 
-          // 🧠 INTERCEPTOR 2: Parse final text into beautiful UI Cards
-          try {
-            // 1. Check for Crypto
-            if (text.includes("||CARD:CRYPTO:")) {
-              const match = text.match(/\|\|CARD:CRYPTO:(.+?):(.+?):(.+?)\|\|/);
-              if (match) {
-                finalCard = <CryptoCard coin={match[1]} price={match[2]} change={match[3]} />;
-                finalText = text.replace(match[0], "").trim();
+          // 🧠 INTERCEPTOR 2: Map the backend's clean JSON object to React Components
+          if (card) {
+            try {
+              if (card.type === 'crypto') {
+                finalCardComponent = <CryptoCard coin={card.coin} price={card.price} change={card.change} />;
               }
-            }
-            // 2. Check for Weather (Uncomment WeatherCard import at the top to use this)
-            else if (text.includes("||CARD:WEATHER:")) {
-              const match = text.match(/\|\|CARD:WEATHER:(.+?):(.+?):(.+?)\|\|/);
-              if (match) {
-                // finalCard = <WeatherCard location={match[1]} temp={match[2]} condition={match[3]} />;
-                finalText = text.replace(match[0], "").trim();
+              else if (card.type === 'weather') {
+                // Uncomment when ready
+                // finalCardComponent = <WeatherCard location={card.location} temp={card.temp} condition={card.condition} />;
               }
+              else if (card.type === 'sports') {
+                finalCardComponent = <SportsCard data={card} />;
+              }
+            } catch (e) {
+              console.error("UI Card Rendering Error:", e);
             }
-            // 3. Check for Sports JSON
-            else if (text.includes('"league":') && text.includes('"teamA":')) {
-              const jsonStart = text.indexOf('{');
-              const jsonEnd = text.lastIndexOf('}') + 1;
-              const jsonStr = text.slice(jsonStart, jsonEnd);
-              const sportsData = JSON.parse(jsonStr);
-
-              finalCard = <SportsCard data={sportsData} />;
-              finalText = text.replace(jsonStr, "").trim();
-            }
-          } catch (e) {
-            console.error("UI Card Parsing Error:", e);
           }
 
           // If the AI only sent a card and no text, give it a default voice response
-          if (!finalText) finalText = "Here is the information you requested.";
+          if (!finalText && card) finalText = "Here is the information you requested.";
 
           setCurrentResponse(finalText);
-          setCurrentCard(finalCard);
+          setCurrentCard(finalCardComponent); // Pass the built React component to state
           setTyping(true);
         },
         onAudio: (audio) => {
