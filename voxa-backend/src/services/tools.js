@@ -83,7 +83,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Coinpaprika + Wttr.in)
+// 🛠️ STANDARD TOOLS
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -131,7 +131,6 @@ export const getCryptoPriceTool = tool(
                 const price = parseFloat(data.quotes.USD.price).toFixed(2);
                 const change = parseFloat(data.quotes.USD.percent_change_24h).toFixed(2);
 
-                // 🛡️ Llama-Tamer string: Forces Llama to include the tag
                 return `The price was fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
             }
             return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;

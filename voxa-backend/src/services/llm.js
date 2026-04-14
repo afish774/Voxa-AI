@@ -147,37 +147,36 @@ RULES:
 
         let cardData = null;
 
-        // 🚀 FULLY PATCHED UI CARD EXTRACTOR (NOW SUPPORTS ALL 4 CARD TYPES)
-        const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is);
+        // 🚀 THE ULTIMATE PARSER (Extracts UI tags and removes them from speech)
+        const cardRegex = /\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is;
+        const match = responseText.match(cardRegex);
 
-        if (cardMatch) {
-            const rawContent = cardMatch[1].trim();
-            const firstColonIndex = rawContent.indexOf(':');
+        if (match) {
+            const rawTag = match[1].trim();
+            const firstColonIndex = rawTag.indexOf(':');
 
             if (firstColonIndex !== -1) {
-                const cardType = rawContent.substring(0, firstColonIndex).trim().toUpperCase();
-                const payload = rawContent.substring(firstColonIndex + 1).trim();
+                const type = rawTag.substring(0, firstColonIndex).trim().toUpperCase();
+                const payload = rawTag.substring(firstColonIndex + 1).trim();
 
-                if (cardType === 'WEATHER') {
-                    const segments = payload.split(':').map(s => s.trim());
-                    cardData = { type: 'weather', location: segments[0], temp: segments[1], condition: segments[2] };
-                } else if (cardType === 'CRYPTO') {
-                    const segments = payload.split(':').map(s => s.trim());
-                    cardData = { type: 'crypto', coin: segments[0], price: segments[1], change: segments[2] };
-                } else if (cardType === 'RECEIPT') {
+                if (type === 'CRYPTO') {
+                    const parts = payload.split(':').map(p => p.trim());
+                    cardData = { type: 'crypto', coin: parts[0], price: parts[1], change: parts[2] };
+                } else if (type === 'WEATHER') {
+                    const parts = payload.split(':').map(p => p.trim());
+                    cardData = { type: 'weather', location: parts[0], temp: parts[1], condition: parts[2] };
+                } else if (type === 'RECEIPT') {
                     cardData = { type: 'receipt', message: payload };
-                } else if (cardType === 'SPORTS') {
+                } else if (type === 'SPORTS') {
                     if (payload.startsWith('{') && payload.endsWith('}')) {
                         try {
-                            const parsedData = JSON.parse(payload);
-                            cardData = { type: 'sports', ...parsedData };
-                        } catch (error) {
-                            console.error("❌ Invalid JSON:", error);
-                        }
+                            cardData = { type: 'sports', ...JSON.parse(payload) };
+                        } catch (e) { console.error("❌ Sports JSON Error"); }
                     }
                 }
             }
-            responseText = responseText.replace(cardMatch[0], '').trim();
+            // Strip the tag so it is not spoken aloud by the voice engine
+            responseText = responseText.replace(match[0], '').trim();
         }
 
         console.log("🤖 LLAMA RAW TEXT:", result.content);
