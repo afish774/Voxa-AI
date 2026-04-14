@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // ============================================================================
-// 🧠 ENTERPRISE INFRASTRUCTURE (With Bot-Bypass & Exponential Backoff)
+// 🧠 ENTERPRISE INFRASTRUCTURE 
 // ============================================================================
 
 const apiCache = new Map();
@@ -27,12 +27,11 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         try {
-            // Standardizing the request so it doesn't look like a generic bot script
             const response = await fetch(url, {
                 ...options,
                 headers: {
                     'Accept': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 VoxaServer/1.0',
+                    'User-Agent': 'VoxaServer/1.0',
                     ...options.headers
                 },
                 signal: controller.signal
@@ -40,6 +39,7 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
             clearTimeout(timeoutId);
 
             if (response.status === 429) throw new Error("RATE_LIMIT");
+            if (response.status === 451) throw new Error("GEO_BLOCKED_451");
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
             const data = await response.json();
@@ -83,7 +83,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Binance & Wttr.in)
+// 🛠️ STANDARD TOOLS (Coinpaprika + Wttr.in)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -92,15 +92,14 @@ export const createReminderTool = (userId) => {
             try {
                 if (!userId) return "SYSTEM_ERROR: User ID missing.";
                 await Reminder.create({ user: userId, task: task });
-                return `||CARD:RECEIPT:Reminder Saved:${task}||`;
+                return `Task saved successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Reminder Saved:${task}||`;
             } catch (error) {
-                console.error("[DB Error] Save Reminder:", error);
-                return `||CARD:RECEIPT:Failed to Save:Database Error||`;
+                return `Database error. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Failed to Save:Database Error||`;
             }
         },
         {
             name: "save_reminder",
-            description: "Saves a reminder or to-do task. CRITICAL: Output ONLY the raw string returned by this tool.",
+            description: "Saves a reminder or to-do task.",
             schema: z.object({ task: z.string().describe("The specific task to remember.") })
         }
     );
@@ -111,38 +110,39 @@ export const getCryptoPriceTool = tool(
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
 
-            // 🔥 BINANCE API: Bulletproof against Render IP bans
+            // 🔥 COINPAPRIKA API: Immune to US Geo-blocks (451) and IP bans. 
             const symbols = {
-                "bitcoin": "BTCUSDT", "btc": "BTCUSDT",
-                "ethereum": "ETHUSDT", "eth": "ETHUSDT",
-                "solana": "SOLUSDT", "sol": "SOLUSDT",
-                "dogecoin": "DOGEUSDT", "doge": "DOGEUSDT",
-                "cardano": "ADAUSDT", "ada": "ADAUSDT",
-                "xrp": "XRPUSDT", "ripple": "XRPUSDT",
-                "binance coin": "BNBUSDT", "bnb": "BNBUSDT",
-                "polkadot": "DOTUSDT", "dot": "DOTUSDT"
+                "bitcoin": "btc-bitcoin", "btc": "btc-bitcoin",
+                "ethereum": "eth-ethereum", "eth": "eth-ethereum",
+                "solana": "sol-solana", "sol": "sol-solana",
+                "dogecoin": "doge-dogecoin", "doge": "doge-dogecoin",
+                "cardano": "ada-cardano", "ada": "ada-cardano",
+                "xrp": "xrp-xrp", "ripple": "xrp-xrp",
+                "binance coin": "bnb-binance-coin", "bnb": "bnb-binance-coin"
             };
 
-            const symbol = symbols[normalizedCoin] || "BTCUSDT";
-            const displayName = Object.keys(symbols).find(key => symbols[key] === symbol) || normalizedCoin;
+            const paprikacoin = symbols[normalizedCoin] || "btc-bitcoin";
+            const displayName = Object.keys(symbols).find(key => symbols[key] === paprikacoin) || normalizedCoin;
 
-            const url = `https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`;
+            const url = `https://api.coinpaprika.com/v1/tickers/${paprikacoin}`;
             const data = await fetchWithCacheAndRetry(url, {}, 60000);
 
-            if (data && data.lastPrice) {
-                const price = parseFloat(data.lastPrice).toFixed(2);
-                const change = parseFloat(data.priceChangePercent).toFixed(2);
-                return `||CARD:CRYPTO:${displayName}:${price}:${change}||`;
+            if (data && data.quotes && data.quotes.USD) {
+                const price = parseFloat(data.quotes.USD.price).toFixed(2);
+                const change = parseFloat(data.quotes.USD.percent_change_24h).toFixed(2);
+
+                // 🛡️ Llama-Tamer string: Forces Llama to include the tag
+                return `The price was fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
             }
-            return `||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
+            return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
         } catch (error) {
             console.error("[Crypto API Error]:", error);
-            return `||CARD:CRYPTO:${coinId}:System Offline:0.00||`;
+            return `System error occurred. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${coinId}:System Offline:0.00||`;
         }
     },
     {
         name: "get_crypto_price",
-        description: "Fetches live cryptocurrency prices. CRITICAL: Output ONLY the raw ||CARD...|| string returned by this tool.",
+        description: "Fetches live cryptocurrency prices. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
         schema: z.object({ coinId: z.string().describe("The full name of the coin, e.g., bitcoin, ethereum") })
     }
 );
@@ -158,15 +158,14 @@ export const sendEmailTool = tool(
             });
 
             await transporter.sendMail({ from: `"Voxa AI" <${process.env.EMAIL_USER}>`, to, subject, text: body });
-            return `||CARD:RECEIPT:Email Sent:${to}||`;
+            return `Email sent successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
         } catch (error) {
-            console.error("[Email Error]:", error);
-            return `||CARD:RECEIPT:Email Failed:Network Error||`;
+            return `Email failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Network Error||`;
         }
     },
     {
         name: "send_email",
-        description: "Sends an email to a specified address. CRITICAL: Output ONLY the raw ||CARD...|| string returned by this tool.",
+        description: "Sends an email to a specified address.",
         schema: z.object({ to: z.string(), subject: z.string(), body: z.string() })
     }
 );
@@ -189,17 +188,17 @@ export const getWeatherTool = tool(
                 else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
                 else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
 
-                return `||CARD:WEATHER:${location}:${temp}:${condition}||`;
+                return `Weather fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:${temp}:${condition}||`;
             }
-            return `||CARD:WEATHER:${location}:--:Unknown||`;
+            return `Location unknown. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Unknown||`;
         } catch (error) {
             console.error("[Weather Error]:", error);
-            return `||CARD:WEATHER:${location}:--:Offline||`;
+            return `API error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Offline||`;
         }
     },
     {
         name: "get_weather",
-        description: "Fetches weather data. CRITICAL: Output ONLY the raw ||CARD...|| string returned by this tool.",
+        description: "Fetches weather data. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
         schema: z.object({ location: z.string().describe("The city to check.") })
     }
 );
@@ -266,7 +265,7 @@ export const getSportsDataTool = tool(
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
-                return JSON.stringify({
+                const cardData = JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
                     matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
@@ -274,6 +273,7 @@ export const getSportsDataTool = tool(
                     teamB: { name: match.awayTeam.name, score: match.score?.fullTime?.away ?? "-" },
                     status: isLiveResponse ? "Match Live" : (isFinishedResponse ? "Full Time" : "Scheduled: " + new Date(match.utcDate).toLocaleDateString())
                 });
+                return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
             // ==========================================
@@ -305,12 +305,13 @@ export const getSportsDataTool = tool(
 
                 if (!match) throw new Error("No matches found.");
 
-                return JSON.stringify({
+                const cardData = JSON.stringify({
                     league: match.strLeague || "NBA", isLive: false,
                     teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
                     teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
                     status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score"
                 });
+                return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
             // ==========================================
@@ -343,27 +344,29 @@ export const getSportsDataTool = tool(
                 }
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
 
-                return JSON.stringify({
+                const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB, crr: crr, status: targetMatch.status || "Match Info"
                 });
+                return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
             throw new Error("Route not found");
         } catch (error) {
             console.error("[Sports Data Error]:", error);
-            return JSON.stringify({
+            const errorData = JSON.stringify({
                 league: "Sports Data",
                 isLive: false,
                 teamA: { name: "System", score: "-" },
                 teamB: { name: "Error", score: "-" },
                 status: "Data temporarily unavailable"
             });
+            return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
         }
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores and results. CRITICAL: Output ONLY the exact JSON object returned by this tool.",
+        description: "Fetches live scores and results. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
         schema: z.object({
             requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
             sport: z.string(),
