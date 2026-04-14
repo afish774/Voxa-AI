@@ -51,15 +51,15 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 THE CLEANED, STRICT JSON SYSTEM PROMPT
+        // 🚀 THE UPGRADED, IRONCLAD SYSTEM PROMPT
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
 RULES:
 1. Speak in natural, complete sentences (under 40 words).
 2. Do NOT use markdown formatting.
-3. WIDGET PROTOCOL: If you provide Weather or Sports information, you MUST append the exact hidden tag at the very end of your response.
-- WEATHER: ||CARD:WEATHER:Location_Name:Temperature_Number:Condition|| 
-- SPORTS: You must use the get_sports_data tool. The tool will return a JSON string. You MUST embed that EXACT JSON string inside the card tag without altering it.
-    * Example Output: "Here is the sports update." ||CARD:SPORTS:{"league":"ipl","isLive":true,"battingTeam":"India","battingScore":"145/1","battingOvers":"25.2","bowlingTeam":"Pakistan","bowlingScore":"310/10","bowlingOvers":"50.0","crr":5.73,"rrr":7.94,"status":"India need 166 runs"}||
+3. WIDGET PROTOCOL (CRITICAL): If you use a tool (Weather, Crypto, Sports, Reminder, Email), the tool will return a string formatted as ||CARD:TYPE:DATA||. You MUST append this EXACT string to the very end of your response without changing a single character. Do not paraphrase or translate it.
+    * Crypto Example: "Bitcoin is currently trading at $65,000." ||CARD:CRYPTO:Bitcoin:65000.00:2.50||
+    * Weather Example: "It is currently 25 degrees in London." ||CARD:WEATHER:London:25:Cloudy||
+    * Sports Example: You must embed the EXACT JSON string inside the card tag. ||CARD:SPORTS:{"league":"ipl","isLive":true,"status":"Match Info"}||
 4. VISION OVERRIDE: If an image is provided, describe what you see accurately.
 5. FULL AUTHORITY: You have full permission to interact with the real world.
 6. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}.`;
@@ -147,7 +147,7 @@ RULES:
 
         let cardData = null;
 
-        // 🚀 ROBUST JSON EXTRACTOR (DO NOT USE COLON SPLITTING FOR SPORTS)
+        // 🚀 FULLY PATCHED UI CARD EXTRACTOR (NOW SUPPORTS ALL 4 CARD TYPES)
         const cardMatch = responseText.match(/\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is);
 
         if (cardMatch) {
@@ -161,6 +161,11 @@ RULES:
                 if (cardType === 'WEATHER') {
                     const segments = payload.split(':').map(s => s.trim());
                     cardData = { type: 'weather', location: segments[0], temp: segments[1], condition: segments[2] };
+                } else if (cardType === 'CRYPTO') {
+                    const segments = payload.split(':').map(s => s.trim());
+                    cardData = { type: 'crypto', coin: segments[0], price: segments[1], change: segments[2] };
+                } else if (cardType === 'RECEIPT') {
+                    cardData = { type: 'receipt', message: payload };
                 } else if (cardType === 'SPORTS') {
                     if (payload.startsWith('{') && payload.endsWith('}')) {
                         try {
