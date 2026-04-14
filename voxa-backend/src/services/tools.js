@@ -39,7 +39,10 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
 
         } catch (error) {
             clearTimeout(timeoutId);
-            if (i === retries) throw error;
+            if (i === retries) {
+                console.error(`[API Error] Failed fetching ${url}:`, error.message);
+                throw error;
+            }
             await new Promise(res => setTimeout(res, 500));
         }
     }
@@ -69,21 +72,28 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS 
+// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
     return tool(
         async ({ task }) => {
             try {
-                if (!userId) return "Error: User ID is missing.";
+                if (!userId) return "Error: User ID is missing. Cannot save reminder.";
                 await Reminder.create({ user: userId, task: task });
-                return `Successfully saved reminder: "${task}".`;
+
+                // 🚀 UI TRIGGER: Returns the Action Receipt Card
+                return `||CARD:RECEIPT:Reminder Saved:${task}||`;
             } catch (error) {
-                return "Error: Failed to save reminder.";
+                console.error("[DB Error] Save Reminder:", error);
+                return "Error: Failed to save reminder to the database.";
             }
         },
-        { name: "save_reminder", description: "Saves a reminder.", schema: z.object({ task: z.string() }) }
+        {
+            name: "save_reminder",
+            description: "Saves a reminder or to-do task for the user.",
+            schema: z.object({ task: z.string().describe("The specific task to remember.") })
+        }
     );
 };
 
@@ -91,39 +101,55 @@ export const getCryptoPriceTool = tool(
     async ({ coinId }) => {
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
-            // Upgraded API call to include 24h change for the premium UI
             const data = await fetchWithCacheAndRetry(`https://api.coingecko.com/api/v3/simple/price?ids=${normalizedCoin}&vs_currencies=usd&include_24hr_change=true`, {}, 120000);
 
             if (data[normalizedCoin] && data[normalizedCoin].usd) {
                 const price = data[normalizedCoin].usd;
                 const change = data[normalizedCoin].usd_24h_change?.toFixed(2) || "0.00";
 
-                // Formatted Output for the React Frontend to intercept
+                // 🚀 UI TRIGGER: Returns the Crypto Market Card
                 return `||CARD:CRYPTO:${normalizedCoin}:${price}:${change}||`;
             }
             return `I could not find the live price for ${normalizedCoin}.`;
         } catch (error) {
-            return "Error: Failed to connect to crypto API.";
+            console.error("[Crypto API Error]:", error);
+            return "Error: Failed to connect to crypto API. Rate limit may be exceeded.";
         }
     },
-    { name: "get_crypto_price", description: "Fetches live crypto prices.", schema: z.object({ coinId: z.string() }) }
+    {
+        name: "get_crypto_price",
+        description: "Fetches live cryptocurrency prices and 24h changes.",
+        schema: z.object({ coinId: z.string().describe("The full name of the coin, e.g., bitcoin, ethereum") })
+    }
 );
 
 export const sendEmailTool = tool(
     async ({ to, subject, body }) => {
         try {
-            if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return "Error: Credentials missing.";
-            const transporter = nodemailer.createTransport({ service: 'gmail', auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS } });
+            if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return "Error: SMTP Credentials missing on server.";
+
+            const transporter = nodemailer.createTransport({
+                service: 'gmail',
+                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+            });
+
             await transporter.sendMail({ from: `"Voxa AI" <${process.env.EMAIL_USER}>`, to, subject, text: body });
-            return `Successfully sent email to ${to}.`;
+
+            // 🚀 UI TRIGGER: Returns the Action Receipt Card
+            return `||CARD:RECEIPT:Email Sent:${to} - ${subject}||`;
         } catch (error) {
-            return "Error: Failed to send email.";
+            console.error("[Email Error]:", error);
+            return "Error: Failed to send email due to a network or authentication error.";
         }
     },
     {
         name: "send_email",
-        description: "Sends an email.",
-        schema: z.object({ to: z.string().describe("The exact, valid email address."), subject: z.string(), body: z.string() })
+        description: "Sends an email to a specified address.",
+        schema: z.object({
+            to: z.string().describe("The exact, valid email address."),
+            subject: z.string().describe("A concise subject line."),
+            body: z.string().describe("The main content of the email.")
+        })
     }
 );
 
@@ -189,6 +215,7 @@ export const getSportsDataTool = tool(
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
+                // 🚀 UI TRIGGER: Returns JSON for SportsCard
                 return JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
@@ -242,20 +269,30 @@ export const getSportsDataTool = tool(
             if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
+
                 const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
+
                 let targetMatch = t2 ? matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2)) : matchData.data.find(m => m.name?.toLowerCase().includes(t1)) || matchData.data[0];
                 if (!targetMatch) throw new Error("Team not playing.");
+
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
                 let scoreA = "-", scoreB = "-", oversA = null, crr = null;
+
                 if (targetMatch.score?.length > 0) {
                     const sA = targetMatch.score.find(s => s.inning?.includes(teamAName));
                     const sB = targetMatch.score.find(s => s.inning?.includes(teamBName));
-                    if (sA) { scoreA = `${sA.r}/${sA.w}`; oversA = sA.o; const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6); if (oMath > 0) crr = (sA.r / oMath).toFixed(2); }
+                    if (sA) {
+                        scoreA = `${sA.r}/${sA.w}`;
+                        oversA = sA.o;
+                        const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6);
+                        if (oMath > 0) crr = (sA.r / oMath).toFixed(2);
+                    }
                     if (sB) { scoreB = `${sB.r}/${sB.w}`; }
                 }
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
+
                 return JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
@@ -264,13 +301,25 @@ export const getSportsDataTool = tool(
             }
             throw new Error("Route not found");
         } catch (error) {
-            return JSON.stringify({ status: error.message, error: true });
+            console.error("[Sports Data Error]:", error);
+            // Fallback JSON so the UI parser doesn't crash
+            return JSON.stringify({
+                league: "Sports Data",
+                isLive: false,
+                teamA: { name: "System", score: "-" },
+                teamB: { name: "Error", score: "-" },
+                status: "Data temporarily unavailable"
+            });
         }
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores and events.",
-        schema: z.object({ requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]), sport: z.string(), query: z.string() }),
+        description: "Fetches live scores, match schedules, and results for Football, Basketball, and Cricket.",
+        schema: z.object({
+            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
+            sport: z.string(),
+            query: z.string()
+        }),
     }
 );
 
@@ -279,15 +328,27 @@ export const getWeatherTool = tool(
         try {
             const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`, {}, 86400000);
             if (!geoData.results?.length) return `||CARD:WEATHER:${location}:--:Unknown Location||`;
+
             const { latitude, longitude, name } = geoData.results[0];
             const weatherData = await fetchWithCacheAndRetry(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`, {}, 300000);
+
             const temp = Math.round(weatherData.current_weather.temperature);
             const code = weatherData.current_weather.weathercode;
+
             let condition = "Clear";
             if (code >= 51 && code <= 69) condition = "Rain";
             else if (code >= 1 && code <= 3) condition = "Cloudy";
+
+            // 🚀 UI TRIGGER: Returns the Weather Card
             return `||CARD:WEATHER:${name}:${temp}:${condition}||`;
-        } catch (error) { return `||CARD:WEATHER:${location}:--:Network Error||`; }
+        } catch (error) {
+            console.error("[Weather Error]:", error);
+            return `||CARD:WEATHER:${location}:--:Network Error||`;
+        }
     },
-    { name: "get_weather", description: "Fetches weather data.", schema: z.object({ location: z.string() }) }
+    {
+        name: "get_weather",
+        description: "Fetches highly accurate, real-time weather data.",
+        schema: z.object({ location: z.string().describe("The city or region to check.") })
+    }
 );
