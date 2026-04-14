@@ -11,11 +11,6 @@ import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
 
-// 🚀 NEW: Import your Premium UI Cards here
-import CryptoCard from './components/cards/CryptoCard';
-import SportsCard from './components/cards/SportsCard';
-// import WeatherCard from './components/WeatherCard'; // Uncomment if you have WeatherCard wired
-
 import './index.css';
 
 export default function VoiceAssistant({ user, onLogout }) {
@@ -161,7 +156,6 @@ export default function VoiceAssistant({ user, onLogout }) {
       { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: user?.token },
       {
         onStatus: (text) => {
-          // 🧠 INTERCEPTOR 1: Hide raw tags from the UI while streaming
           let cleanStream = text.replace("SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ", "");
           if (cleanStream.includes('||CARD:')) cleanStream = cleanStream.split('||CARD:')[0];
           if (cleanStream.includes('{"league"')) cleanStream = cleanStream.split('{"league"')[0];
@@ -171,31 +165,12 @@ export default function VoiceAssistant({ user, onLogout }) {
           setPhase(PHASES.RESPONDING);
 
           let finalText = text;
-          let finalCardComponent = null;
 
-          // 🧠 INTERCEPTOR 2: Map the backend's clean JSON object to React Components
-          if (card) {
-            try {
-              if (card.type === 'crypto') {
-                finalCardComponent = <CryptoCard coin={card.coin} price={card.price} change={card.change} />;
-              }
-              else if (card.type === 'weather') {
-                // Uncomment when ready
-                // finalCardComponent = <WeatherCard location={card.location} temp={card.temp} condition={card.condition} />;
-              }
-              else if (card.type === 'sports') {
-                finalCardComponent = <SportsCard data={card} />;
-              }
-            } catch (e) {
-              console.error("UI Card Rendering Error:", e);
-            }
-          }
-
-          // If the AI only sent a card and no text, give it a default voice response
+          // 🚀 FIX: Let the backend handle parsing! Just pass the raw JSON card to state.
           if (!finalText && card) finalText = "Here is the information you requested.";
 
           setCurrentResponse(finalText);
-          setCurrentCard(finalCardComponent); // Pass the built React component to state
+          setCurrentCard(card); // Pass the raw JSON object, ChatDisplay will handle the rest!
           setTyping(true);
         },
         onAudio: (audio) => {
