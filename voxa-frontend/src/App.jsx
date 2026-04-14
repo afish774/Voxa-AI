@@ -12,8 +12,8 @@ import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
 
 // 🚀 NEW: Import your Premium UI Cards here
-import CryptoCard from './components/CryptoCard';
-import SportsCard from './components/SportsCard';
+import CryptoCard from './components/cards/CryptoCard';
+import SportsCard from './components/cards/SportsCard';
 // import WeatherCard from './components/WeatherCard'; // Uncomment if you have WeatherCard wired
 
 import './index.css';
