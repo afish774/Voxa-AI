@@ -1,72 +1,62 @@
-@import "tailwindcss";
+/* 1. LOAD UTILITIES ONLY (No Reset/Preflight) */
+@import "tailwindcss" preflight(none);
 
-/* 1. We wrap Tailwind's reset in a low-priority layer so it doesn't break your UI */
-@layer base {
-
-  *,
-  ::after,
-  ::before,
-  ::backdrop {
-    border-color: initial;
-    /* Fixes the weird border issues */
-  }
-}
-
-/* 2. Your Original App Styles (Restored exactly as they were) */
+/* 2. RESTORE YOUR ORIGINAL LANDING PAGE STYLES */
 :root {
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  --text: #9ca3af;
-  --text-h: #f3f4f6;
-  --bg: #16171d;
-  --border: #2e303a;
-  --code-bg: #1f2028;
-  --accent: #c084fc;
-  --accent-bg: rgba(192, 132, 252, 0.15);
-  --accent-border: rgba(192, 132, 252, 0.5);
-  --social-bg: rgba(47, 48, 58, 0.5);
-  --shadow: rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
+  --text: #6b6375;
+  --text-h: #08060d;
+  --bg: #fff;
+  --accent: #aa3bff;
 
   font: 18px/145% var(--sans);
   background-color: var(--bg);
   color: var(--text);
 }
 
-body {
-  margin: 0;
-  background: #16171d;
-  /* Matches your 'before' screenshot */
+/* Ensure the landing page text doesn't disappear in white-on-white */
+h1,
+h2,
+h3 {
+  color: var(--text-h);
+  font-family: var(--sans);
+  margin-top: 1rem;
+  margin-bottom: 0.5rem;
 }
 
-/* 3. The Premium Sports Card (Using the forced class) */
+/* 3. THE PREMIUM SPORTS CARD (Forced via custom CSS) */
+/* We define this manually so it works even without Tailwind's reset */
 .glass-container {
   display: flex;
   flex-direction: column;
   position: relative;
   width: 100%;
   max-width: 28rem;
-  margin: 1rem auto;
-  overflow: hidden;
+  margin: 1.5rem auto;
   padding: 1.5rem;
-  color: white;
-  background: rgba(255, 255, 255, 0.03) !important;
-  backdrop-filter: blur(24px) saturate(180%) !important;
-  -webkit-backdrop-filter: blur(24px) saturate(180%) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
   border-radius: 2rem;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.8);
+
+  /* The Glass Look */
+  background: rgba(10, 10, 12, 0.8) !important;
+  /* Dark glass for contrast */
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+
+  color: white !important;
+  /* Ensure sports text stays white */
 }
 
-/* Add back your original H1/H2 styles so Tailwind doesn't flatten them */
-h1 {
-  font-size: 56px !important;
-  font-weight: 500 !important;
-  color: #f3f4f6 !important;
+/* Fix for the landing page header layout if it's squashed */
+header,
+nav {
+  display: flex !important;
+  align-items: center;
+  justify-content: space-between;
 }
 
-h2 {
-  font-size: 24px !important;
-  font-weight: 500 !important;
+/* Restores your button layouts */
+button {
+  cursor: pointer;
 }
