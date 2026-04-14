@@ -30,7 +30,6 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
             const response = await fetch(url, { ...options, signal: controller.signal });
             clearTimeout(timeoutId);
 
-            // Football-Data.org specific rate limit error catching
             if (response.status === 429) throw new Error("RATE_LIMIT");
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
@@ -129,7 +128,6 @@ export const getSportsDataTool = tool(
         try {
             const voiceNormalizedQuery = normalizeVoiceInput(query);
             const isUpcoming = requestType === "fixtures" || voiceNormalizedQuery.includes("upcoming") || voiceNormalizedQuery.includes("tomorrow") || voiceNormalizedQuery.includes("next");
-            const isFinished = requestType === "scores" || voiceNormalizedQuery.includes("finished") || voiceNormalizedQuery.includes("last") || voiceNormalizedQuery.includes("yesterday");
 
             const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of)/gi, '').trim();
             let t1 = cleanQuery, t2 = null;
@@ -141,13 +139,12 @@ export const getSportsDataTool = tool(
             // ==========================================
             // ⚽ ROUTE 1: FOOTBALL (Football-Data.org)
             // ==========================================
-            if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united") || cleanQuery.includes("arsenal") || cleanQuery.includes("chelsea")) {
+            if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united")) {
 
                 const apiKey = process.env.FOOTBALL_DATA_TOKEN;
-                if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing from .env");
+                if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing");
                 const headers = { 'X-Auth-Token': apiKey };
 
-                // 🧠 STATIC ID DICTIONARY (Bypasses the search endpoint, saves 50% API limits)
                 const POPULAR_TEAMS = {
                     "arsenal": 57, "aston villa": 58, "chelsea": 61, "everton": 62,
                     "liverpool": 64, "manchester city": 65, "manchester united": 66,
@@ -158,43 +155,40 @@ export const getSportsDataTool = tool(
                 };
 
                 let teamId = POPULAR_TEAMS[t1];
-                if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB"); // Protects against obscure queries wasting limits
+                if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB");
 
-                // Fetch current season matches for the team (Caches for 30 seconds)
                 const fixData = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/teams/${teamId}/matches`, { headers }, 30000);
                 const allMatches = fixData.matches || [];
-
                 if (allMatches.length === 0) throw new Error("No fixtures found.");
 
                 let match = null;
                 const now = new Date().getTime();
 
-                // Advanced Local Sorting & H2H Extraction
                 if (t2) {
                     const h2hMatches = allMatches.filter(m => m.homeTeam.name.toLowerCase().includes(t2) || m.awayTeam.name.toLowerCase().includes(t2));
                     if (h2hMatches.length === 0) throw new Error("H2H_NOT_FOUND");
-
-                    if (isUpcoming) {
-                        match = h2hMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0];
-                    } else {
-                        match = h2hMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
-                    }
+                    match = isUpcoming
+                        ? h2hMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0]
+                        : h2hMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
                 } else {
-                    if (isUpcoming) {
-                        match = allMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0];
-                    } else {
-                        match = allMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
-                    }
+                    match = isUpcoming
+                        ? allMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0]
+                        : allMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
                 }
 
-                if (!match) throw new Error("No specific match found.");
+                if (!match) throw new Error("No match found.");
+
+                // ✨ DEEP FETCH FOR TIMELINE EVENTS
+                let timeline = [];
+                try {
+                    const detail = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/matches/${match.id}`, { headers }, 60000);
+                    if (detail.goals) detail.goals.forEach(g => timeline.push({ min: g.minute, type: 'GOAL', player: g.scorer?.name || 'Unknown', team: g.team.name }));
+                    if (detail.bookings) detail.bookings.forEach(b => timeline.push({ min: b.minute, type: b.card, player: b.player?.name || 'Unknown', team: b.team.name }));
+                    timeline.sort((a, b) => a.min - b.min);
+                } catch (e) { console.warn("Timeline fetch failed"); }
 
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
-
-                let formattedStatus = "Scheduled: " + new Date(match.utcDate).toLocaleDateString();
-                if (isLiveResponse) formattedStatus = "Match Live";
-                if (isFinishedResponse) formattedStatus = "Full Time";
 
                 return JSON.stringify({
                     league: match.competition.name || "Football",
@@ -202,152 +196,83 @@ export const getSportsDataTool = tool(
                     matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
                     teamA: { name: match.homeTeam.name, score: match.score?.fullTime?.home ?? "-" },
                     teamB: { name: match.awayTeam.name, score: match.score?.fullTime?.away ?? "-" },
-                    goals: [],
-                    status: formattedStatus
+                    timeline: timeline,
+                    status: isLiveResponse ? "Match Live" : (isFinishedResponse ? "Full Time" : "Scheduled: " + new Date(match.utcDate).toLocaleDateString())
                 });
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB H2H Engine)
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
             // ==========================================
-            if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba") || cleanQuery.includes("lakers") || cleanQuery.includes("warriors")) {
+            if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba")) {
                 let match = null;
-
                 if (t2) {
                     const q1 = `${t1.replace(/\s+/g, '_')}_vs_${t2.replace(/\s+/g, '_')}`;
-                    const q2 = `${t2.replace(/\s+/g, '_')}_vs_${t1.replace(/\s+/g, '_')}`;
-
                     let res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q1)}`, {}, 60000);
-                    if (!res.event) res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`, {}, 60000);
-
-                    const allMatches = res.event || [];
-                    if (allMatches.length === 0) throw new Error("H2H_NOT_FOUND");
-
-                    const now = Date.now();
-                    if (isUpcoming) {
-                        const future = allMatches.filter(m => new Date(m.dateEvent).getTime() >= now).sort((a, b) => new Date(a.dateEvent).getTime() - new Date(b.dateEvent).getTime());
-                        match = future[0];
-                    } else {
-                        const past = allMatches.filter(m => new Date(m.dateEvent).getTime() <= now).sort((a, b) => new Date(b.dateEvent).getTime() - new Date(a.dateEvent).getTime());
-                        match = past[0];
+                    if (!res.event) {
+                        const q2 = `${t2.replace(/\s+/g, '_')}_vs_${t1.replace(/\s+/g, '_')}`;
+                        res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`, {}, 60000);
                     }
-                    if (!match) throw new Error("H2H_NOT_FOUND");
-
+                    const allMatches = res.event || [];
+                    const now = Date.now();
+                    match = isUpcoming
+                        ? allMatches.filter(m => new Date(m.dateEvent).getTime() >= now).sort((a, b) => new Date(a.dateEvent).getTime() - new Date(b.dateEvent).getTime())[0]
+                        : allMatches.filter(m => new Date(m.dateEvent).getTime() <= now).sort((a, b) => new Date(b.dateEvent).getTime() - new Date(a.dateEvent).getTime())[0];
                 } else {
                     const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
                     if (!teamData.teams) throw new Error(`Basketball Team not found`);
-
                     const teamId = teamData.teams[0].idTeam;
-                    let fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
-                    if (isUpcoming) fetchUrl = `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`;
-
+                    let fetchUrl = isUpcoming ? `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}` : `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
                     const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
                     const eventsArray = isUpcoming ? fixData.events : fixData.results;
-
-                    if (!eventsArray || eventsArray.length === 0) throw new Error("No matches found.");
-                    match = eventsArray[0];
+                    match = eventsArray?.[0];
                 }
 
+                if (!match) throw new Error("No matches found.");
+
                 return JSON.stringify({
-                    league: match.strLeague || "NBA", isLive: false, quarter: isUpcoming ? null : "Final", quarterSeconds: 0,
+                    league: match.strLeague || "NBA", isLive: false,
                     teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
                     teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
-                    status: (isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score")
+                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score"
                 });
             }
 
             // ==========================================
             // 🏏 ROUTE 3: CRICKET (CRICAPI)
             // ==========================================
-            if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl") || cleanQuery.includes("india") || cleanQuery.includes("csk") || cleanQuery.includes("rcb") || cleanQuery.includes("super kings") || cleanQuery.includes("challengers")) {
+            if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
-
                 const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
-                if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data found.");
-
-                let targetMatch = null;
-
-                if (t2) {
-                    targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1) && m.name.toLowerCase().includes(t2));
-                    if (!targetMatch) throw new Error("H2H_NOT_FOUND");
-                } else {
-                    targetMatch = matchData.data.find(m => m.name && m.name.toLowerCase().includes(t1)) || matchData.data[0];
+                if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
+                let targetMatch = t2 ? matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2)) : matchData.data.find(m => m.name?.toLowerCase().includes(t1)) || matchData.data[0];
+                if (!targetMatch) throw new Error("Team not playing.");
+                const teamAName = targetMatch.teams?.[0] || "Team A";
+                const teamBName = targetMatch.teams?.[1] || "Team B";
+                let scoreA = "-", scoreB = "-", oversA = null, crr = null;
+                if (targetMatch.score?.length > 0) {
+                    const sA = targetMatch.score.find(s => s.inning?.includes(teamAName));
+                    const sB = targetMatch.score.find(s => s.inning?.includes(teamBName));
+                    if (sA) { scoreA = `${sA.r}/${sA.w}`; oversA = sA.o; const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6); if (oMath > 0) crr = (sA.r / oMath).toFixed(2); }
+                    if (sB) { scoreB = `${sB.r}/${sB.w}`; }
                 }
-
-                if (!targetMatch) throw new Error("Team not playing currently.");
-
-                const teamAName = (targetMatch.teams && targetMatch.teams[0]) ? targetMatch.teams[0] : "Team A";
-                const teamBName = (targetMatch.teams && targetMatch.teams[1]) ? targetMatch.teams[1] : "Team B";
-
-                let scoreA = "-", scoreB = "-", oversA = null, oversB = null, calculatedCrr = null;
-
-                if (targetMatch.score && targetMatch.score.length > 0) {
-                    const sA = targetMatch.score.find(s => s.inning && s.inning.includes(teamAName));
-                    const sB = targetMatch.score.find(s => s.inning && s.inning.includes(teamBName));
-
-                    if (sA) {
-                        scoreA = `${sA.r}/${sA.w}`; oversA = `${sA.o}`;
-                        const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6);
-                        if (oMath > 0) calculatedCrr = (sA.r / oMath).toFixed(2);
-                    }
-                    if (sB) {
-                        scoreB = `${sB.r}/${sB.w}`; oversB = `${sB.o}`;
-                        const oMath = Math.floor(sB.o) + (((sB.o * 10) % 10) / 6);
-                        if (oMath > 0) calculatedCrr = (sB.r / oMath).toFixed(2);
-                    }
-                }
-
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
-                if (isLiveResponse && scoreA === "-") { scoreA = "0/0"; oversA = "0.0"; }
-
                 return JSON.stringify({
-                    league: targetMatch.matchType ? targetMatch.matchType.toUpperCase() : "Cricket",
+                    league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
-                    bowlingTeam: teamBName, bowlingScore: scoreB, bowlingOvers: oversB,
-                    crr: calculatedCrr, rrr: null, status: targetMatch.status || "Match Info"
+                    bowlingTeam: teamBName, bowlingScore: scoreB, crr: crr, status: targetMatch.status || "Match Info"
                 });
             }
-
-            throw new Error("No specific sport route hit.");
-
+            throw new Error("Route not found");
         } catch (error) {
-            console.warn(`[Tool Warning] API/Match Failed: ${error.message}`);
-
-            const voiceNormalizedQuery = normalizeVoiceInput(query);
-            const cleanQ = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of)/gi, '').trim();
-
-            const isFB = sport.toLowerCase() === "football" || cleanQ.toLowerCase().includes("ucl") || cleanQ.toLowerCase().includes("city");
-            const isBB = sport.toLowerCase() === "basketball" || cleanQ.toLowerCase().includes("nba");
-
-            let fb1 = cleanQ || "Team 1", fb2 = "TBD Opponent";
-            if (cleanQ.includes(' vs ')) {
-                const p = cleanQ.split(/ vs /i); fb1 = p[0].trim(); fb2 = p[1].trim();
-            }
-
-            const toTitleCase = (str) => str.replace(/\b\w/g, l => l.toUpperCase());
-            fb1 = toTitleCase(fb1);
-            if (fb2 !== "TBD Opponent") fb2 = toTitleCase(fb2);
-
-            let failReason = "Match Data Unavailable";
-            if (error.message === "H2H_NOT_FOUND") failReason = "Specific match not found in recent records";
-            if (error.message === "TEAM_NOT_IN_LOCAL_DB") failReason = "Team not supported in Free Tier DB";
-            if (error.message === "RATE_LIMIT") failReason = "API Rate Limit hit (Wait 60s)";
-
-            if (isBB) return JSON.stringify({ league: "NBA", isLive: false, quarter: null, quarterSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, status: failReason });
-            if (isFB) return JSON.stringify({ league: "Football", isLive: false, matchSeconds: 0, teamA: { name: fb1, score: "-" }, teamB: { name: fb2, score: "-" }, goals: [], status: failReason });
-
-            return JSON.stringify({ league: cleanQ.toLowerCase().includes("ipl") ? "IPL" : "Cricket", isLive: false, battingTeam: fb1, battingScore: "-", battingOvers: null, bowlingTeam: fb2, bowlingScore: "-", bowlingOvers: null, crr: null, rrr: null, status: failReason });
+            return JSON.stringify({ status: error.message, error: true });
         }
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores, match results, and fixtures. MUST return exact JSON format.",
-        schema: z.object({
-            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
-            sport: z.string(),
-            query: z.string().describe("Extract ONLY pure team names. Remove words like 'yesterday', 'score'."),
-        }),
+        description: "Fetches live scores and events.",
+        schema: z.object({ requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]), sport: z.string(), query: z.string() }),
     }
 );
 
@@ -355,24 +280,16 @@ export const getWeatherTool = tool(
     async ({ location }) => {
         try {
             const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`, {}, 86400000);
-            if (!geoData.results || geoData.results.length === 0) return `||CARD:WEATHER:${location}:--:Unknown Location||`;
+            if (!geoData.results?.length) return `||CARD:WEATHER:${location}:--:Unknown Location||`;
             const { latitude, longitude, name } = geoData.results[0];
             const weatherData = await fetchWithCacheAndRetry(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`, {}, 300000);
             const temp = Math.round(weatherData.current_weather.temperature);
             const code = weatherData.current_weather.weathercode;
             let condition = "Clear";
             if (code >= 51 && code <= 69) condition = "Rain";
-            else if (code >= 71 && code <= 79) condition = "Snow";
-            else if (code >= 80 && code <= 99) condition = "Storm";
             else if (code >= 1 && code <= 3) condition = "Cloudy";
             return `||CARD:WEATHER:${name}:${temp}:${condition}||`;
-        } catch (error) {
-            return `||CARD:WEATHER:${location}:--:Network Error||`;
-        }
+        } catch (error) { return `||CARD:WEATHER:${location}:--:Network Error||`; }
     },
-    {
-        name: "get_weather",
-        description: "Fetches highly accurate, real-time weather data.",
-        schema: z.object({ location: z.string() }),
-    }
+    { name: "get_weather", description: "Fetches weather data.", schema: z.object({ location: z.string() }) }
 );
