@@ -83,7 +83,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS
+// 🛠️ STANDARD TOOLS (Crypto & Weather locked and perfect)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -110,7 +110,6 @@ export const getCryptoPriceTool = tool(
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
 
-            // 🔥 COINPAPRIKA API: Immune to US Geo-blocks (451) and IP bans. 
             const symbols = {
                 "bitcoin": "btc-bitcoin", "btc": "btc-bitcoin",
                 "ethereum": "eth-ethereum", "eth": "eth-ethereum",
@@ -172,7 +171,6 @@ export const sendEmailTool = tool(
 export const getWeatherTool = tool(
     async ({ location }) => {
         try {
-            // 🔥 WTTR.IN API: Resilient against shared server IPs
             const safeLoc = encodeURIComponent(location.trim());
             const url = `https://wttr.in/${safeLoc}?format=j1`;
 
@@ -203,7 +201,7 @@ export const getWeatherTool = tool(
 );
 
 // ============================================================================
-// 🌍 TOOL 4: The Global Sports Hub
+// 🌍 TOOL 4: The Global Sports Hub (Upgraded Omni-Router)
 // ============================================================================
 
 export const getSportsDataTool = tool(
@@ -212,17 +210,23 @@ export const getSportsDataTool = tool(
             const voiceNormalizedQuery = normalizeVoiceInput(query);
             const isUpcoming = requestType === "fixtures" || voiceNormalizedQuery.includes("upcoming") || voiceNormalizedQuery.includes("tomorrow") || voiceNormalizedQuery.includes("next");
 
-            const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of)/gi, '').trim();
-            let t1 = cleanQuery, t2 = null;
+            // 🛡️ THE OMNI-ROUTER: Fuse parameters so LLM parsing errors don't break routing
+            const fullContextCheck = `${sport} ${voiceNormalizedQuery}`.toLowerCase();
+
+            const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of|the|for)/gi, '').trim();
+
+            let t1 = cleanQuery;
+            let t2 = null;
             if (cleanQuery.includes(' vs ')) {
                 const parts = cleanQuery.split(/ vs /i);
-                t1 = parts[0].trim(); t2 = parts[1].trim();
+                t1 = parts[0].trim();
+                t2 = parts[1].trim();
             }
 
             // ==========================================
             // ⚽ ROUTE 1: FOOTBALL (Football-Data.org)
             // ==========================================
-            if (sport.toLowerCase() === "football" || cleanQuery.includes("epl") || cleanQuery.includes("ucl") || cleanQuery.includes("madrid") || cleanQuery.includes("city") || cleanQuery.includes("united")) {
+            if (fullContextCheck.includes("football") || fullContextCheck.includes("soccer") || fullContextCheck.includes("epl") || fullContextCheck.includes("ucl") || fullContextCheck.includes("madrid") || fullContextCheck.includes("city") || fullContextCheck.includes("united") || fullContextCheck.includes("arsenal") || fullContextCheck.includes("chelsea") || fullContextCheck.includes("liverpool")) {
 
                 const apiKey = process.env.FOOTBALL_DATA_TOKEN;
                 if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing");
@@ -278,7 +282,7 @@ export const getSportsDataTool = tool(
             // ==========================================
             // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
             // ==========================================
-            if (sport.toLowerCase() === "basketball" || cleanQuery.includes("nba")) {
+            else if (fullContextCheck.includes("basketball") || fullContextCheck.includes("nba") || fullContextCheck.includes("lakers") || fullContextCheck.includes("warriors")) {
                 let match = null;
                 if (t2) {
                     const q1 = `${t1.replace(/\s+/g, '_')}_vs_${t2.replace(/\s+/g, '_')}`;
@@ -316,15 +320,29 @@ export const getSportsDataTool = tool(
             // ==========================================
             // 🏏 ROUTE 3: CRICKET (CRICAPI)
             // ==========================================
-            if (sport.toLowerCase() === "cricket" || cleanQuery.includes("ipl")) {
+            else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
                 const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
 
-                let targetMatch = t2 ? matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2)) : matchData.data.find(m => m.name?.toLowerCase().includes(t1)) || matchData.data[0];
-                if (!targetMatch) throw new Error("Team not playing.");
+                // Fallback: If cleanQuery stripped everything away and t1 is empty, just grab the first live match
+                t1 = t1 || "match";
+
+                let targetMatch = null;
+                if (t2) {
+                    targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2));
+                } else if (t1 !== "match") {
+                    targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1));
+                }
+
+                // If specific team isn't playing right now, or user just said "IPL score", grab the first active match
+                if (!targetMatch) {
+                    targetMatch = matchData.data[0];
+                }
+
+                if (!targetMatch) throw new Error("No active cricket matches found.");
 
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
@@ -350,15 +368,17 @@ export const getSportsDataTool = tool(
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
+
             throw new Error("Route not found");
+
         } catch (error) {
-            console.error("[Sports Data Error]:", error);
+            console.error("[Sports Data Error]:", error.message);
             const errorData = JSON.stringify({
                 league: "Sports Data",
                 isLive: false,
                 teamA: { name: "System", score: "-" },
                 teamB: { name: "Error", score: "-" },
-                status: "Data temporarily unavailable"
+                status: error.message.includes("CRICKET_API_KEY missing") ? "API Key Missing" : "Data temporarily unavailable"
             });
             return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
         }
