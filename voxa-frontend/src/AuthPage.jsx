@@ -198,7 +198,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
                 <div style={{ flex: 1, position: "relative", zIndex: 10, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "flex-start", paddingRight: "40px" }}>
                     <AnimatePresence mode="wait">
                         <motion.div key={currentSlide} initial={{ opacity: 0, y: 20, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -20, filter: "blur(4px)" }} transition={{ duration: 0.5, ease: customEase }} style={{ minHeight: "160px" }}>
-                            <h1 style={{ fontSize: "clamp(40px, 4.5vw, 56px)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1, margin: "0 0 20px 0", maxWidth: 500 }}>
+                            <h1 style={{ fontSize: "clamp(40px, 4.5vw, 56px)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.1, margin: "0 0 20px 0", maxWidth: 500, color: "#fff" }}>
                                 {SLIDES[currentSlide].title.split(',')[0]}
                                 {SLIDES[currentSlide].title.includes(',') && ","}
                                 <br />
