@@ -7,12 +7,12 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // ============================================================================
-// 🧠 ENTERPRISE INFRASTRUCTURE 
+// 🧠 ENTERPRISE INFRASTRUCTURE (With Exponential Backoff)
 // ============================================================================
 
 const apiCache = new Map();
 
-const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries = 1, timeoutMs = 6000) => {
+const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries = 2, timeoutMs = 8000) => {
     const cacheKey = url;
     if (apiCache.has(cacheKey)) {
         const cached = apiCache.get(cacheKey);
@@ -40,10 +40,13 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
         } catch (error) {
             clearTimeout(timeoutId);
             if (i === retries) {
-                console.error(`[API Error] Failed fetching ${url}:`, error.message);
+                console.error(`[API Error] Failed fetching ${url} after ${retries} retries:`, error.message);
                 throw error;
             }
-            await new Promise(res => setTimeout(res, 500));
+            // 🛡️ EXPONENTIAL BACKOFF: Waits 500ms, then 1000ms, then 2000ms to bypass rate limits
+            const backoffTime = 500 * Math.pow(2, i);
+            console.warn(`[Retry ${i + 1}] Network issue, waiting ${backoffTime}ms...`);
+            await new Promise(res => setTimeout(res, backoffTime));
         }
     }
 };
@@ -72,7 +75,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards & LLM Mind-Tricks)
+// 🛠️ STANDARD TOOLS (Wired for Premium UI Cards & LLM Compliance)
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -101,29 +104,18 @@ export const getCryptoPriceTool = tool(
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
 
-            // Binance Symbol Mapping (Super reliable, no DNS issues)
-            const symbols = {
-                "bitcoin": "BTCUSDT", "btc": "BTCUSDT",
-                "ethereum": "ETHUSDT", "eth": "ETHUSDT",
-                "solana": "SOLUSDT", "sol": "SOLUSDT",
-                "dogecoin": "DOGEUSDT", "doge": "DOGEUSDT",
-                "cardano": "ADAUSDT", "ada": "ADAUSDT"
-            };
+            // 🔥 CoinGecko API with Exponential Backoff Protection
+            const data = await fetchWithCacheAndRetry(`https://api.coingecko.com/api/v3/simple/price?ids=${normalizedCoin}&vs_currencies=usd&include_24hr_change=true`, {}, 120000);
 
-            const symbol = symbols[normalizedCoin] || "BTCUSDT"; // Default to BTC if unknown
-            const displayName = Object.keys(symbols).find(key => symbols[key] === symbol) || normalizedCoin;
-
-            const data = await fetchWithCacheAndRetry(`https://api.binance.com/api/v3/ticker/24hr?symbol=${symbol}`, {}, 60000);
-
-            if (data && data.lastPrice) {
-                const price = parseFloat(data.lastPrice).toFixed(2);
-                const change = parseFloat(data.priceChangePercent).toFixed(2);
-                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
+            if (data[normalizedCoin] && data[normalizedCoin].usd) {
+                const price = data[normalizedCoin].usd;
+                const change = data[normalizedCoin].usd_24h_change?.toFixed(2) || "0.00";
+                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${normalizedCoin}:${price}:${change}||`;
             }
-            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${displayName}:Not Found:--||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${normalizedCoin}:Not Found:--||`;
         } catch (error) {
             console.error("[Crypto API Error]:", error);
-            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${coinId}:API Error:--||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:CRYPTO:${coinId}:API Limit:--||`;
         }
     },
     {
@@ -165,25 +157,25 @@ export const sendEmailTool = tool(
 export const getWeatherTool = tool(
     async ({ location }) => {
         try {
-            // Wttr.in API (Highly resilient to IP bans, returns clean JSON)
-            const safeLoc = encodeURIComponent(location.trim());
-            const data = await fetchWithCacheAndRetry(`https://wttr.in/${safeLoc}?format=j1`, {}, 300000);
+            // 🔥 Open-Meteo API with Exponential Backoff Protection
+            const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1&language=en&format=json`, {}, 86400000);
+            if (!geoData.results?.length) return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:Unknown Location||`;
 
-            if (data && data.current_condition && data.current_condition[0]) {
-                const temp = data.current_condition[0].temp_C;
-                const conditionDesc = data.current_condition[0].weatherDesc[0].value.toLowerCase();
+            const { latitude, longitude, name } = geoData.results[0];
+            const weatherData = await fetchWithCacheAndRetry(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true`, {}, 300000);
 
-                let condition = "Clear";
-                if (conditionDesc.includes("rain") || conditionDesc.includes("drizzle") || conditionDesc.includes("shower")) condition = "Rain";
-                else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
-                else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
+            const temp = Math.round(weatherData.current_weather.temperature);
+            const code = weatherData.current_weather.weathercode;
 
-                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:${temp}:${condition}||`;
-            }
-            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:Unknown Location||`;
+            let condition = "Clear";
+            if (code >= 51 && code <= 69) condition = "Rain";
+            else if (code >= 1 && code <= 3) condition = "Cloudy";
+            else if (code >= 71 && code <= 79) condition = "Snow";
+
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${name}:${temp}:${condition}||`;
         } catch (error) {
             console.error("[Weather Error]:", error);
-            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:API Error||`;
+            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ||CARD:WEATHER:${location}:--:API Limit||`;
         }
     },
     {
@@ -255,7 +247,7 @@ export const getSportsDataTool = tool(
                 const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
                 const isFinishedResponse = match.status === "FINISHED";
 
-                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
+                return JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
                     matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
@@ -294,7 +286,7 @@ export const getSportsDataTool = tool(
 
                 if (!match) throw new Error("No matches found.");
 
-                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
+                return JSON.stringify({
                     league: match.strLeague || "NBA", isLive: false,
                     teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
                     teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
@@ -332,7 +324,7 @@ export const getSportsDataTool = tool(
                 }
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
 
-                return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
+                return JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB, crr: crr, status: targetMatch.status || "Match Info"
@@ -341,8 +333,8 @@ export const getSportsDataTool = tool(
             throw new Error("Route not found");
         } catch (error) {
             console.error("[Sports Data Error]:", error);
-            return `SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ` + JSON.stringify({
-                league: "Sports",
+            return JSON.stringify({
+                league: "Sports Data",
                 isLive: false,
                 teamA: { name: "System", score: "-" },
                 teamB: { name: "Error", score: "-" },
@@ -352,7 +344,7 @@ export const getSportsDataTool = tool(
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores and results. You MUST output the exact raw string returned by this tool.",
+        description: "Fetches live scores and results. CRITICAL: You MUST output the exact JSON object returned by this tool without adding any other text.",
         schema: z.object({
             requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
             sport: z.string(),
