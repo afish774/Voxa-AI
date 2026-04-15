@@ -1,3 +1,19 @@
+// 🚀 SYNCHRONOUS OAUTH INTERCEPTOR (Runs BEFORE React mounts)
+if (typeof window !== 'undefined') {
+  const urlParams = new URLSearchParams(window.location.search);
+  const token = urlParams.get('token');
+  const userData = urlParams.get('user');
+
+  if (token && userData) {
+    localStorage.setItem('voxa_token', token);
+    // urlParams.get automatically decodes URL characters
+    localStorage.setItem('voxa_user', userData);
+
+    // Wipe the tokens from the URL bar cleanly so users don't see it
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -52,31 +68,6 @@ export default function VoiceAssistant({ user, onLogout }) {
   const handleToggleTheme = () => { setIsDark(prev => { const newTheme = !prev; try { localStorage.setItem('voxa_theme', newTheme ? 'dark' : 'light'); } catch (e) { } return newTheme; }); };
 
   useEffect(() => { cameraModeRef.current = isCameraMode; }, [isCameraMode]);
-
-  // 🚀 NEW: The OAuth URL Catcher
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const token = urlParams.get('token');
-    const userDataString = urlParams.get('user');
-
-    if (token && userDataString) {
-      try {
-        const parsedUser = JSON.parse(decodeURIComponent(userDataString));
-
-        // Save auth data to local storage
-        localStorage.setItem('voxa_token', token);
-        localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
-
-        // Clean the URL to remove the sensitive tokens
-        window.history.replaceState({}, document.title, window.location.pathname);
-
-        // Force a quick reload so the parent component picks up the new user and mounts correctly
-        window.location.reload();
-      } catch (error) {
-        console.error("Failed to parse OAuth data:", error);
-      }
-    }
-  }, []);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -188,11 +179,8 @@ export default function VoiceAssistant({ user, onLogout }) {
         },
         onText: (text, card) => {
           setPhase(PHASES.RESPONDING);
-
           let finalText = text;
-
           if (!finalText && card) finalText = "Here is the information you requested.";
-
           setCurrentResponse(finalText);
           setCurrentCard(card);
           setTyping(true);

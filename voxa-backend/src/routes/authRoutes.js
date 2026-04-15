@@ -21,7 +21,7 @@ const generateToken = (id) => {
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => done(null, await User.findById(id)));
 
-// 🌐 1. GOOGLE STRATEGY (With Gmail Send Permissions)
+// 🌐 1. GOOGLE STRATEGY
 if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
@@ -96,31 +96,21 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 }
 
 // ============================================================================
-// 🚀 OAUTH ROUTES
+// 🚀 OAUTH ROUTES (PERFECT REDIRECT TO /app)
 // ============================================================================
 
-const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+// Failsafe Permanent Domain
+const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 
 const handleOAuthCallback = (req, res) => {
     try {
-        let clientUrl = CLIENT_URL;
-
-        // 🚀 FIX 1: Ensure failsafe is strictly the base domain, NO /app at the end!
-        if (clientUrl.includes("onrender.com")) {
-            clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
-        }
-
-        if (!clientUrl.startsWith('http://') && !clientUrl.startsWith('https://')) {
-            clientUrl = 'https://' + clientUrl;
-        }
-
         if (!req.user) throw new Error("OAuth returned an empty user object.");
 
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 FIX 2: Redirect securely to the root so the LandingPage can catch the token
-        res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
+        // 🚀 DIRECT ESCORT: Sends them instantly to /app with keys in hand
+        res.redirect(`${CLIENT_URL}/app?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
         res.status(500).send("Internal Server Error: Could not generate token.");
@@ -141,7 +131,6 @@ router.get('/github/callback', passport.authenticate('github', { failureRedirect
 // Facebook
 router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }));
 router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
-
 
 // ============================================================================
 // 🔒 STANDARD EMAIL/PASSWORD ROUTES
