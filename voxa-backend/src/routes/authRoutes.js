@@ -104,9 +104,25 @@ const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-4z7wt434n-afishmv-765
 
 // Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
-    const token = generateToken(req.user._id);
-    const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
-    res.redirect(`${CLIENT_URL}/auth-success?token=${token}&user=${userData}`);
+    try {
+        let clientUrl = CLIENT_URL;
+
+        // 🚀 FAILSAFE: If the environment variable accidentally points to Render, force it to Vercel
+        if (clientUrl.includes("onrender.com")) {
+            clientUrl = "https://voxa-4z7wt434n-afishmv-7650s-projects.vercel.app";
+        }
+
+        if (!req.user) throw new Error("OAuth returned an empty user object.");
+
+        const token = generateToken(req.user._id);
+        const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
+
+        // 🚀 Redirect strictly to the ROOT (/) of the frontend where VoiceAssistant.jsx is listening
+        res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
+    } catch (error) {
+        console.error("🚨 REDIRECT CRASH:", error);
+        res.status(500).send("Internal Server Error: Could not generate token.");
+    }
 };
 
 // Google
