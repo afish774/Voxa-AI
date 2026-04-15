@@ -85,13 +85,16 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // ============================================================================
 const handleOAuthCallback = (req, res) => {
     try {
-        const clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+        let clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+        // 🚀 STRIP TRAILING SLASHES: Prevents the "//?token=" bug
+        clientUrl = clientUrl.replace(/\/+$/, '');
+
         if (!req.user) throw new Error("OAuth returned an empty user object.");
 
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 Redirects to the root URL (/) so the App.jsx Interceptor instantly catches it
+        // 🚀 Safely redirect to root
         res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);

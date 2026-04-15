@@ -1,42 +1,3 @@
-// 🚀 1. THE TITANIUM PRE-BOOT INTERCEPTOR
-// Runs globally before React even initializes. 100% immune to Race Conditions.
-let preloadedUser = null;
-
-if (typeof window !== 'undefined') {
-  try {
-    const params = new URLSearchParams(window.location.search);
-    const token = params.get('token');
-    const userStr = params.get('user');
-
-    if (token && userStr) {
-      // URLSearchParams auto-decodes, so JSON.parse is all we need.
-      preloadedUser = JSON.parse(userStr);
-
-      // Attempt to save to LocalStorage (Wrapped to survive Private Browsing)
-      try {
-        localStorage.setItem('voxa_token', token);
-        localStorage.setItem('voxa_user', JSON.stringify(preloadedUser));
-      } catch (storageErr) {
-        console.warn("⚠️ LocalStorage blocked. Using Memory-Only Auth.");
-      }
-
-      // Invisibly wipe the URL so React Strict Mode can't double-trigger
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-      // Normal visit: Check LocalStorage safely
-      try {
-        const storedUser = localStorage.getItem('voxa_user');
-        if (storedUser) {
-          preloadedUser = JSON.parse(storedUser);
-        }
-      } catch (storageErr) { }
-    }
-  } catch (criticalError) {
-    console.error("🚨 Auth Parse Error. Resetting.", criticalError);
-    window.history.replaceState({}, document.title, window.location.pathname);
-  }
-}
-
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -49,20 +10,74 @@ import Navbar from "./components/layout/Navbar";
 import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
-
-// Make sure these paths point to your actual files
 import LandingPage from "./LandingPage";
 import AuthPage from "./AuthPage";
 
 import './index.css';
 
 // ─────────────────────────────────────────────
-// MAIN APP ROUTER
+// MAIN APP ROUTER (ENTERPRISE DETERMINISTIC LOCK)
 // ─────────────────────────────────────────────
 export default function App() {
-  // React boots up and INSTANTLY knows the user state. No delays, no flashes.
-  const [user, setUser] = useState(preloadedUser);
+  // 1. DETERMINISTIC CHECK: Are there keys in the URL right now?
+  // This runs synchronously and cannot be fooled by React timing or bundlers.
+  const hasOAuthKeys = typeof window !== 'undefined' && window.location.search.includes('token=');
+
+  // 2. THE VAULT CHECK: Is there a saved user? (Only check if NOT processing OAuth)
+  const [user, setUser] = useState(() => {
+    if (typeof window !== 'undefined' && !hasOAuthKeys) {
+      try {
+        const saved = localStorage.getItem('voxa_user');
+        return saved ? JSON.parse(saved) : null;
+      } catch (e) { return null; }
+    }
+    return null;
+  });
+
+  // 3. THE IRON GATE: If keys are in the URL, start the app completely locked.
+  const [isLocked, setIsLocked] = useState(hasOAuthKeys);
   const [showAuth, setShowAuth] = useState(false);
+
+  // 4. THE SAFE PROCESSOR: Safely extract keys, unlock gate, load dashboard.
+  useEffect(() => {
+    if (!hasOAuthKeys) return;
+
+    const processGoogleLogin = () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        const userStr = params.get('user');
+
+        if (token && userStr) {
+          // Safely decode the user data
+          let parsedUser;
+          try {
+            parsedUser = JSON.parse(decodeURIComponent(userStr));
+          } catch (e) {
+            parsedUser = JSON.parse(userStr); // Fallback
+          }
+
+          // Attempt to save to LocalStorage (Wrapped to survive Strict Private Browsing)
+          try {
+            localStorage.setItem('voxa_token', token);
+            localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
+          } catch (e) { console.warn("Private mode: Memory auth active"); }
+
+          // Apply the user to the app state
+          setUser(parsedUser);
+        }
+      } catch (error) {
+        console.error("🚨 OAuth Parse Error:", error);
+      } finally {
+        // 1. Scrub the URL cleanly so it never triggers again
+        window.history.replaceState({}, document.title, window.location.pathname);
+        // 2. Unlock the app (Instantly renders Voice Assistant)
+        setIsLocked(false);
+      }
+    };
+
+    processGoogleLogin();
+  }, [hasOAuthKeys]);
 
   const handleLogout = () => {
     try {
@@ -73,17 +88,30 @@ export default function App() {
     setShowAuth(false);
   };
 
-  // 🚦 ZERO-ROUTING CONDITIONAL RENDER
+  // 🚦 ROUTING LOGIC (STRICT ORDER OF OPERATIONS)
+
+  // STATE 1: If the app is locked (processing Google login), show a dark loading screen.
+  // It is MATHEMATICALLY IMPOSSIBLE to flash the Landing Page.
+  if (isLocked) {
+    return (
+      <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 44, height: 44, border: '3px solid rgba(124, 58, 237, 0.2)', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+
+  // STATE 2: If we have a user (from LocalStorage OR Google Login), show Dashboard.
   if (user) {
-    // If Google logged us in, we go straight to the Voice Assistant.
     return <VoiceAssistant user={user} onLogout={handleLogout} />;
   }
 
+  // STATE 3: If user clicked Login/Signup manually, show Auth Form.
   if (showAuth) {
     return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
   }
 
-  // Default: Show Landing Page
+  // STATE 4: Truly no user, default to Landing Page.
   return <LandingPage onLaunch={() => setShowAuth(true)} />;
 }
 

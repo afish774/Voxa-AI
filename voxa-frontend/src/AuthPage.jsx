@@ -90,7 +90,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
-                // 🚀 Instantly update state in App.jsx. No URL refresh needed!
+                // Instantly update state in App.jsx. No URL refresh needed!
                 const userObj = { _id: data._id, name: data.name, email: data.email };
                 try {
                     localStorage.setItem('voxa_token', data.token);
