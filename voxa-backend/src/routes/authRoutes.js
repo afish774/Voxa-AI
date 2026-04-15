@@ -26,7 +26,8 @@ if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "/api/auth/google/callback"
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback", // 🚀 FORCED HTTPS
+        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             let user = await User.findOne({ email: profile.emails[0].value });
@@ -55,8 +56,8 @@ if (process.env.GITHUB_CLIENT_ID) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: "/api/auth/github/callback",
-        scope: ['user:email']
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/github/callback", // 🚀 FORCED HTTPS
+        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.username}@github.com`;
@@ -77,8 +78,9 @@ if (process.env.FACEBOOK_CLIENT_ID) {
     passport.use(new FacebookStrategy({
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-        callbackURL: "/api/auth/facebook/callback",
-        profileFields: ['id', 'displayName', 'emails']
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/facebook/callback", // 🚀 FORCED HTTPS
+        profileFields: ['id', 'displayName', 'emails'],
+        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.id}@facebook.com`;
@@ -98,7 +100,7 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // 🚀 OAUTH ROUTES
 // ============================================================================
 
-const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"; // Update for Render!
+const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-4z7wt434n-afishmv-7650s-projects.vercel.app"; // 🚀 DEFAULT TO VERCEL
 
 // Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
@@ -124,7 +126,7 @@ router.get('/facebook/callback', passport.authenticate('facebook', { failureRedi
 
 
 // ============================================================================
-// 🔒 STANDARD EMAIL/PASSWORD ROUTES (Kept for fallback)
+// 🔒 STANDARD EMAIL/PASSWORD ROUTES
 // ============================================================================
 
 router.post('/register', async (req, res) => {
