@@ -13,13 +13,13 @@ const userSchema = new mongoose.Schema({
     },
     password: {
         type: String,
-        required: false, // 🚀 Made optional for OAuth users
+        required: false, // 🚀 Made optional so Google OAuth works seamlessly
     },
     googleId: { type: String },
     githubId: { type: String },
     facebookId: { type: String },
 
-    // 🚀 We need these to let Voxa send emails later!
+    // 🚀 Tokens for sending emails via Voxa
     gmailAccessToken: { type: String },
     gmailRefreshToken: { type: String },
 }, {
@@ -31,13 +31,15 @@ userSchema.methods.matchPassword = async function (enteredPassword) {
     return await bcrypt.compare(enteredPassword, this.password);
 };
 
-userSchema.pre('save', async function (next) {
+// 🚀 THE FIX: Pure async Promise flow, completely removed the 'next' parameter
+userSchema.pre('save', async function () {
+    // If the password isn't modified or doesn't exist (like in a Google Login), just exit.
     if (!this.isModified('password') || !this.password) {
-        next();
-    } else {
-        const salt = await bcrypt.genSalt(10);
-        this.password = await bcrypt.hash(this.password, salt);
+        return;
     }
+
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
 });
 
 const User = mongoose.model('User', userSchema);
