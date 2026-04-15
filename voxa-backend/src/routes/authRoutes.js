@@ -100,7 +100,7 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // 🚀 OAUTH ROUTES
 // ============================================================================
 
-const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/app";
 
 // Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
@@ -109,7 +109,7 @@ const handleOAuthCallback = (req, res) => {
 
         // 🚀 FAILSAFE 1: If it accidentally points to Render, force it to Vercel
         if (clientUrl.includes("onrender.com")) {
-            clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+            clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/app";
         }
 
         // 🚀 FAILSAFE 2: If the environment variable is missing "https://", add it automatically
