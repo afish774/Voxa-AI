@@ -26,8 +26,8 @@ if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback", // 🚀 FORCED HTTPS
-        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback",
+        proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             let user = await User.findOne({ email: profile.emails[0].value });
@@ -56,8 +56,8 @@ if (process.env.GITHUB_CLIENT_ID) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/github/callback", // 🚀 FORCED HTTPS
-        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/github/callback",
+        proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.username}@github.com`;
@@ -78,9 +78,9 @@ if (process.env.FACEBOOK_CLIENT_ID) {
     passport.use(new FacebookStrategy({
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/facebook/callback", // 🚀 FORCED HTTPS
+        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/facebook/callback",
         profileFields: ['id', 'displayName', 'emails'],
-        proxy: true // 🚀 TRUST RENDER REVERSE PROXY
+        proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.id}@facebook.com`;
@@ -100,16 +100,17 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // 🚀 OAUTH ROUTES
 // ============================================================================
 
-const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-4z7wt434n-afishmv-7650s-projects.vercel.app"; // 🚀 DEFAULT TO VERCEL
+// 🚀 UPDATED: Now pointing to your new Vercel deployment
+const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-icnxjm5j0-afishmv-7650s-projects.vercel.app";
 
 // Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
     try {
         let clientUrl = CLIENT_URL;
 
-        // 🚀 FAILSAFE: If the environment variable accidentally points to Render, force it to Vercel
+        // 🚀 FAILSAFE: Update fallback to match your latest Vercel URL
         if (clientUrl.includes("onrender.com")) {
-            clientUrl = "https://voxa-4z7wt434n-afishmv-7650s-projects.vercel.app";
+            clientUrl = "https://voxa-icnxjm5j0-afishmv-7650s-projects.vercel.app";
         }
 
         if (!req.user) throw new Error("OAuth returned an empty user object.");
@@ -117,8 +118,8 @@ const handleOAuthCallback = (req, res) => {
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 Redirect strictly to the ROOT (/) of the frontend where VoiceAssistant.jsx is listening
-        res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
+        // 🚀 CRITICAL FIX: Redirect explicitly to the /app route!
+        res.redirect(`${clientUrl}/app?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
         res.status(500).send("Internal Server Error: Could not generate token.");
