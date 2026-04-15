@@ -400,11 +400,8 @@ export default function LandingPage({ onLaunch }) {
                 localStorage.setItem('voxa_token', token);
                 localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
 
-                // Clean the URL
-                window.history.replaceState({}, document.title, window.location.pathname);
-
-                // Force a reload so your router detects the user and switches to VoiceAssistant
-                window.location.reload();
+                // 🚀 INSTANTLY ESCORT TO DASHBOARD
+                window.location.href = "/app";
             } catch (error) {
                 console.error("Failed to parse OAuth data:", error);
             }

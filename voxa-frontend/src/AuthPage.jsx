@@ -176,7 +176,12 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
-                if (onAuthSuccess) onAuthSuccess(data);
+                // 1. Save standard login credentials
+                localStorage.setItem('voxa_token', data.token);
+                localStorage.setItem('voxa_user', JSON.stringify({ _id: data._id, name: data.name, email: data.email }));
+
+                // 2. 🚀 INSTANTLY ESCORT TO DASHBOARD
+                window.location.href = "/app";
             } else {
                 alert(data.message || "Authentication failed.");
             }
