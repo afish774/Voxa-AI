@@ -24,26 +24,34 @@ export default function App() {
     const checkAuthentication = () => {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
-      const userStr = params.get('user');
-      const error = params.get('error');
+      const userBase64 = params.get('user');
+      const authError = params.get('error');
 
-      // 🚨 IF RENDER REJECTS US, SHOW AN ALERT SO WE KNOW WHY
-      if (error) {
-        alert(`Authentication Error from Server: ${error}`);
+      // 🚨 IF THE BACKEND FAILED, ALERT THE USER
+      if (authError) {
+        alert(`Login Failed: ${authError.replace(/_/g, ' ')}. Please check the backend logs.`);
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      if (token && userStr) {
+      // 🚀 SUCCESSFUL LOGIN HANDLER (Using Base64)
+      if (token && userBase64) {
         try {
-          const parsedUser = JSON.parse(userStr);
+          // Decode Base64 safely into a string, then parse it
+          const jsonString = atob(userBase64);
+          const parsedUser = JSON.parse(jsonString);
+
           localStorage.setItem('voxa_token', token);
           localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
+
           setUser(parsedUser);
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (error) {
-          console.error("Failed to parse Google Login data:", error);
+          console.error("🚨 Failed to decode Base64 user data:", error);
+          alert("A fatal error occurred decoding the user profile.");
         }
-      } else {
+      }
+      // STANDARD RETURNING USER
+      else {
         const savedUser = localStorage.getItem('voxa_user');
         if (savedUser) {
           try {
@@ -52,6 +60,7 @@ export default function App() {
         }
       }
 
+      // Release the loading screen
       setIsCheckingAuth(false);
     };
 
@@ -65,6 +74,9 @@ export default function App() {
     setShowAuth(false);
   };
 
+  // 🚦 ROUTING LOGIC
+
+  // 1. Loader to prevent flashing
   if (isCheckingAuth) {
     return (
       <div style={{ height: '100dvh', width: '100vw', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -74,8 +86,17 @@ export default function App() {
     );
   }
 
-  if (user) return <VoiceAssistant user={user} onLogout={handleLogout} />;
-  if (showAuth) return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
+  // 2. Logged In User
+  if (user) {
+    return <VoiceAssistant user={user} onLogout={handleLogout} />;
+  }
+
+  // 3. Manual Login View
+  if (showAuth) {
+    return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
+  }
+
+  // 4. Default Landing Page
   return <LandingPage onLaunch={() => setShowAuth(true)} />;
 }
 
