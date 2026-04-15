@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence, useScroll, useTransform, useMotionTemplate, useMotionValue, useSpring, useMotionValueEvent } from "framer-motion";
 
 // ─────────────────────────────────────────────
@@ -385,6 +385,31 @@ function FinalCTA({ onLaunch }) {
 // ─────────────────────────────────────────────
 export default function LandingPage({ onLaunch }) {
     const heroRef = useRef(null);
+
+    // 🚀 THE OAUTH URL CATCHER IS NOW HERE
+    useEffect(() => {
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const userDataString = urlParams.get('user');
+
+        if (token && userDataString) {
+            try {
+                const parsedUser = JSON.parse(decodeURIComponent(userDataString));
+
+                // Save auth data to local storage
+                localStorage.setItem('voxa_token', token);
+                localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
+
+                // Clean the URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+
+                // Force a reload so your router detects the user and switches to VoiceAssistant
+                window.location.reload();
+            } catch (error) {
+                console.error("Failed to parse OAuth data:", error);
+            }
+        }
+    }, []);
 
     // Scroll tracking tied specifically to the hero section's viewport presence
     const { scrollYProgress: heroScroll } = useScroll({ target: heroRef, offset: ["start start", "end start"] });
