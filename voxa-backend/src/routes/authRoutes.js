@@ -100,7 +100,6 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // 🚀 OAUTH ROUTES
 // ============================================================================
 
-// 🚀 UPDATED: Pointing to your permanent Vercel domain
 const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 
 // Helper to redirect to frontend with JWT
@@ -108,9 +107,14 @@ const handleOAuthCallback = (req, res) => {
     try {
         let clientUrl = CLIENT_URL;
 
-        // 🚀 FAILSAFE: Lock the fallback exactly to your permanent domain
+        // 🚀 FAILSAFE 1: If it accidentally points to Render, force it to Vercel
         if (clientUrl.includes("onrender.com")) {
             clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+        }
+
+        // 🚀 FAILSAFE 2: If the environment variable is missing "https://", add it automatically
+        if (!clientUrl.startsWith('http://') && !clientUrl.startsWith('https://')) {
+            clientUrl = 'https://' + clientUrl;
         }
 
         if (!req.user) throw new Error("OAuth returned an empty user object.");
@@ -118,8 +122,8 @@ const handleOAuthCallback = (req, res) => {
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 Redirecting to the /app route as requested
-        res.redirect(`${clientUrl}/app?token=${token}&user=${userData}`);
+        // 🚀 Redirecting back to the root (/) where your LandingPage catcher is waiting
+        res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
         res.status(500).send("Internal Server Error: Could not generate token.");
