@@ -17,7 +17,6 @@ import './index.css';
 
 export default function App() {
   const [user, setUser] = useState(null);
-  // 🚨 THIS IS THE KEY FIX: The app starts in a "Loading" state.
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
 
@@ -26,37 +25,33 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const token = params.get('token');
       const userStr = params.get('user');
+      const error = params.get('error');
 
-      // 1. If Google sent us back with a token
+      // 🚨 IF RENDER REJECTS US, SHOW AN ALERT SO WE KNOW WHY
+      if (error) {
+        alert(`Authentication Error from Server: ${error}`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+
       if (token && userStr) {
         try {
-          // URLSearchParams automatically decodes the string, so we just parse it
           const parsedUser = JSON.parse(userStr);
-
           localStorage.setItem('voxa_token', token);
           localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
-
           setUser(parsedUser);
-
-          // Clean the ugly token out of the URL bar
           window.history.replaceState({}, document.title, window.location.pathname);
         } catch (error) {
           console.error("Failed to parse Google Login data:", error);
         }
-      }
-      // 2. Or, if they visited normally, check if they are already logged in
-      else {
+      } else {
         const savedUser = localStorage.getItem('voxa_user');
         if (savedUser) {
           try {
             setUser(JSON.parse(savedUser));
-          } catch (e) {
-            console.error("Failed to parse saved user data");
-          }
+          } catch (e) { }
         }
       }
 
-      // 3. We are done checking. Unlock the app.
       setIsCheckingAuth(false);
     };
 
@@ -70,9 +65,6 @@ export default function App() {
     setShowAuth(false);
   };
 
-  // 🚦 ROUTING LOGIC
-
-  // 1. If we are still checking the URL, show a loading screen so the Landing Page doesn't flash.
   if (isCheckingAuth) {
     return (
       <div style={{ height: '100dvh', width: '100vw', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -82,17 +74,8 @@ export default function App() {
     );
   }
 
-  // 2. If we successfully found the user, show the Voice Assistant.
-  if (user) {
-    return <VoiceAssistant user={user} onLogout={handleLogout} />;
-  }
-
-  // 3. If they clicked 'Log In', show the Auth form.
-  if (showAuth) {
-    return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
-  }
-
-  // 4. Default: Show the Landing Page
+  if (user) return <VoiceAssistant user={user} onLogout={handleLogout} />;
+  if (showAuth) return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
   return <LandingPage onLaunch={() => setShowAuth(true)} />;
 }
 

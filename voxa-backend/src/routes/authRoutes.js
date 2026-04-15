@@ -17,6 +17,7 @@ const generateToken = (id) => {
 // ============================================================================
 // 🧠 PASSPORT CONFIGURATION
 // ============================================================================
+// We keep these for safety, but we are disabling sessions in the routes below
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => done(null, await User.findById(id)));
 
@@ -25,7 +26,7 @@ if (process.env.GOOGLE_CLIENT_ID) {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
         callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback",
-        proxy: true
+        proxy: true // 🚀 Crucial for Render
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             let user = await User.findOne({ email: profile.emails[0].value });
@@ -81,35 +82,59 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 }
 
 // ============================================================================
-// 🚀 OAUTH REDIRECT (DROPS AT EXACT ROOT `/`)
+// 🚀 OAUTH REDIRECT HANDLER
 // ============================================================================
 const handleOAuthCallback = (req, res) => {
     try {
-        let clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
-        // 🚀 STRIP TRAILING SLASHES: Prevents the "//?token=" bug
-        clientUrl = clientUrl.replace(/\/+$/, '');
-
+        const clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
         if (!req.user) throw new Error("OAuth returned an empty user object.");
 
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 Safely redirect to root
+        // Send tokens back to Vercel
         res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
-        res.status(500).send("Internal Server Error: Could not generate token.");
+        res.redirect(`https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=token_generation_failed`);
     }
 };
 
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'], accessType: 'offline', prompt: 'consent' }));
-router.get('/google/callback', passport.authenticate('google', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
+// ============================================================================
+// 🛑 THE FIX: session: false disables the broken cross-domain cookies
+// ============================================================================
 
-router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
-router.get('/github/callback', passport.authenticate('github', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
+// Google
+router.get('/google', passport.authenticate('google', {
+    scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'],
+    accessType: 'offline',
+    prompt: 'consent',
+    session: false // 🚀 FIX
+}));
+router.get('/google/callback', passport.authenticate('google', {
+    failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=google_auth_failed`,
+    session: false // 🚀 FIX
+}), handleOAuthCallback);
 
-router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }));
-router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
+// GitHub
+router.get('/github', passport.authenticate('github', {
+    scope: ['user:email'],
+    session: false // 🚀 FIX 
+}));
+router.get('/github/callback', passport.authenticate('github', {
+    failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=github_auth_failed`,
+    session: false // 🚀 FIX
+}), handleOAuthCallback);
+
+// Facebook
+router.get('/facebook', passport.authenticate('facebook', {
+    scope: ['email'],
+    session: false // 🚀 FIX
+}));
+router.get('/facebook/callback', passport.authenticate('facebook', {
+    failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=facebook_auth_failed`,
+    session: false // 🚀 FIX
+}), handleOAuthCallback);
 
 // ============================================================================
 // 🔒 STANDARD EMAIL/PASSWORD ROUTES
