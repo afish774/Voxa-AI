@@ -10,7 +10,6 @@ import dotenv from 'dotenv';
 dotenv.config();
 const router = express.Router();
 
-// Generate JWT Token for your React Frontend
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '30d' });
 };
@@ -21,7 +20,6 @@ const generateToken = (id) => {
 passport.serializeUser((user, done) => done(null, user.id));
 passport.deserializeUser(async (id, done) => done(null, await User.findById(id)));
 
-// 🌐 1. GOOGLE STRATEGY
 if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
@@ -32,25 +30,15 @@ if (process.env.GOOGLE_CLIENT_ID) {
         try {
             let user = await User.findOne({ email: profile.emails[0].value });
             if (!user) {
-                user = await User.create({
-                    name: profile.displayName,
-                    email: profile.emails[0].value,
-                    googleId: profile.id,
-                    gmailAccessToken: accessToken,
-                    gmailRefreshToken: refreshToken
-                });
+                user = await User.create({ name: profile.displayName, email: profile.emails[0].value, googleId: profile.id, gmailAccessToken: accessToken, gmailRefreshToken: refreshToken });
             } else {
-                user.googleId = profile.id;
-                user.gmailAccessToken = accessToken;
-                if (refreshToken) user.gmailRefreshToken = refreshToken;
-                await user.save();
+                user.googleId = profile.id; user.gmailAccessToken = accessToken; if (refreshToken) user.gmailRefreshToken = refreshToken; await user.save();
             }
             return done(null, user);
         } catch (error) { return done(error, null); }
     }));
 }
 
-// 🐙 2. GITHUB STRATEGY
 if (process.env.GITHUB_CLIENT_ID) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
@@ -64,15 +52,13 @@ if (process.env.GITHUB_CLIENT_ID) {
             if (!user) {
                 user = await User.create({ name: profile.displayName || profile.username, email, githubId: profile.id });
             } else {
-                user.githubId = profile.id;
-                await user.save();
+                user.githubId = profile.id; await user.save();
             }
             return done(null, user);
         } catch (error) { return done(error, null); }
     }));
 }
 
-// 📘 3. FACEBOOK STRATEGY
 if (process.env.FACEBOOK_CLIENT_ID) {
     passport.use(new FacebookStrategy({
         clientID: process.env.FACEBOOK_CLIENT_ID,
@@ -87,8 +73,7 @@ if (process.env.FACEBOOK_CLIENT_ID) {
             if (!user) {
                 user = await User.create({ name: profile.displayName, email, facebookId: profile.id });
             } else {
-                user.facebookId = profile.id;
-                await user.save();
+                user.facebookId = profile.id; await user.save();
             }
             return done(null, user);
         } catch (error) { return done(error, null); }
@@ -96,46 +81,36 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 }
 
 // ============================================================================
-// 🚀 OAUTH ROUTES (PERFECT REDIRECT TO /app)
+// 🚀 OAUTH REDIRECT (DROPS AT EXACT ROOT `/`)
 // ============================================================================
-
-// Failsafe Permanent Domain
-const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
-
 const handleOAuthCallback = (req, res) => {
     try {
+        const clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
         if (!req.user) throw new Error("OAuth returned an empty user object.");
 
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 DIRECT ESCORT: Sends them instantly to /app with keys in hand
-        res.redirect(`${CLIENT_URL}/app?token=${token}&user=${userData}`);
+        // 🚀 Redirects to the root URL (/) so the App.jsx Interceptor instantly catches it
+        res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
         res.status(500).send("Internal Server Error: Could not generate token.");
     }
 };
 
-// Google
-router.get('/google', passport.authenticate('google', {
-    scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'],
-    accessType: 'offline', prompt: 'consent'
-}));
-router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+router.get('/google', passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'], accessType: 'offline', prompt: 'consent' }));
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
 
-// GitHub
 router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
-router.get('/github/callback', passport.authenticate('github', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+router.get('/github/callback', passport.authenticate('github', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
 
-// Facebook
 router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }));
-router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: `https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app/?error=failed` }), handleOAuthCallback);
 
 // ============================================================================
 // 🔒 STANDARD EMAIL/PASSWORD ROUTES
 // ============================================================================
-
 router.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;

@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
-// ─────────────────────────────────────────────
-// THEME
-// ─────────────────────────────────────────────
-const themeColors = {
-    primary: "#7c3aed",
-    secondary: "#db2777",
-    gradient: "linear-gradient(135deg, #7c3aed, #db2777)",
-    bgDark: "#05050a"
-};
+const themeColors = { primary: "#7c3aed", secondary: "#db2777", gradient: "linear-gradient(135deg, #7c3aed, #db2777)", bgDark: "#05050a" };
 const customEase = [0.16, 1, 0.3, 1];
 
 const SLIDES = [
@@ -26,8 +18,7 @@ const VoxaLogo = ({ size = 32, isDark = false }) => (
         {isDark && (
             <defs>
                 <linearGradient id="logo_grad_auth" x1="0" y1="0" x2="24" y2="24" gradientUnits="userSpaceOnUse">
-                    <stop stopColor={themeColors.primary} />
-                    <stop offset="1" stopColor={themeColors.secondary} />
+                    <stop stopColor={themeColors.primary} /><stop offset="1" stopColor={themeColors.secondary} />
                 </linearGradient>
             </defs>
         )}
@@ -49,8 +40,6 @@ function AmbientOrbs() {
             <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1], x: [0, 30, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", top: "-10%", left: "-10%", width: "60%", height: "60%", background: themeColors.primary, borderRadius: "50%", filter: "blur(120px)", opacity: 0.3 }} />
             <motion.div animate={{ rotate: -360, scale: [1, 1.2, 1], y: [0, -40, 0] }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", bottom: "-10%", right: "-10%", width: "70%", height: "70%", background: themeColors.secondary, borderRadius: "50%", filter: "blur(140px)", opacity: 0.25 }} />
             <motion.div animate={{ scale: [0.8, 1.2, 0.8], x: [0, -50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "30%", right: "10%", width: "40%", height: "40%", background: themeColors.primary, borderRadius: "50%", filter: "blur(100px)", opacity: 0.2 }} />
-            <motion.div animate={{ rotate: 180, scale: [1, 1.15, 1], y: [0, 50, 0] }} transition={{ duration: 35, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", bottom: "10%", left: "-5%", width: "50%", height: "50%", background: themeColors.secondary, borderRadius: "50%", filter: "blur(130px)", opacity: 0.2 }} />
-            <motion.div animate={{ scale: [1, 1.3, 1], opacity: [0.1, 0.25, 0.1] }} transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "40%", left: "40%", width: "30%", height: "30%", background: themeColors.primary, borderRadius: "50%", filter: "blur(90px)" }} />
         </div>
     );
 }
@@ -101,16 +90,19 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
-                // 🚀 ESCORT DIRECTLY TO APP
-                localStorage.setItem('voxa_token', data.token);
-                localStorage.setItem('voxa_user', JSON.stringify({ _id: data._id, name: data.name, email: data.email }));
-                window.location.href = "/app";
+                // 🚀 Instantly update state in App.jsx. No URL refresh needed!
+                const userObj = { _id: data._id, name: data.name, email: data.email };
+                try {
+                    localStorage.setItem('voxa_token', data.token);
+                    localStorage.setItem('voxa_user', JSON.stringify(userObj));
+                } catch (e) { }
+                onAuthSuccess(userObj);
             } else {
                 alert(data.message || "Authentication failed.");
             }
         } catch (error) {
             console.error("Auth error:", error);
-            alert("Could not connect to the backend server. It may be waking up, please try again in 30 seconds.");
+            alert("Could not connect to the backend server. Please try again in 30 seconds.");
         } finally {
             setIsLoading(false);
         }

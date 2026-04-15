@@ -1,15 +1,38 @@
-// 🚀 SYNCHRONOUS OAUTH INTERCEPTOR (Runs BEFORE React mounts)
+// 🚀 1. THE TITANIUM PRE-BOOT INTERCEPTOR
+// Runs globally before React even initializes. 100% immune to Race Conditions.
+let preloadedUser = null;
+
 if (typeof window !== 'undefined') {
-  const urlParams = new URLSearchParams(window.location.search);
-  const token = urlParams.get('token');
-  const userData = urlParams.get('user');
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token');
+    const userStr = params.get('user');
 
-  if (token && userData) {
-    localStorage.setItem('voxa_token', token);
-    // urlParams.get automatically decodes URL characters
-    localStorage.setItem('voxa_user', userData);
+    if (token && userStr) {
+      // URLSearchParams auto-decodes, so JSON.parse is all we need.
+      preloadedUser = JSON.parse(userStr);
 
-    // Wipe the tokens from the URL bar cleanly so users don't see it
+      // Attempt to save to LocalStorage (Wrapped to survive Private Browsing)
+      try {
+        localStorage.setItem('voxa_token', token);
+        localStorage.setItem('voxa_user', JSON.stringify(preloadedUser));
+      } catch (storageErr) {
+        console.warn("⚠️ LocalStorage blocked. Using Memory-Only Auth.");
+      }
+
+      // Invisibly wipe the URL so React Strict Mode can't double-trigger
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // Normal visit: Check LocalStorage safely
+      try {
+        const storedUser = localStorage.getItem('voxa_user');
+        if (storedUser) {
+          preloadedUser = JSON.parse(storedUser);
+        }
+      } catch (storageErr) { }
+    }
+  } catch (criticalError) {
+    console.error("🚨 Auth Parse Error. Resetting.", criticalError);
     window.history.replaceState({}, document.title, window.location.pathname);
   }
 }
@@ -27,9 +50,47 @@ import ChatDisplay from "./components/layout/ChatDisplay";
 import ActionDock from "./components/layout/ActionDock";
 import ModalManager from "./components/modals/ModalManager";
 
+// Make sure these paths point to your actual files
+import LandingPage from "./LandingPage";
+import AuthPage from "./AuthPage";
+
 import './index.css';
 
-export default function VoiceAssistant({ user, onLogout }) {
+// ─────────────────────────────────────────────
+// MAIN APP ROUTER
+// ─────────────────────────────────────────────
+export default function App() {
+  // React boots up and INSTANTLY knows the user state. No delays, no flashes.
+  const [user, setUser] = useState(preloadedUser);
+  const [showAuth, setShowAuth] = useState(false);
+
+  const handleLogout = () => {
+    try {
+      localStorage.removeItem('voxa_token');
+      localStorage.removeItem('voxa_user');
+    } catch (e) { }
+    setUser(null);
+    setShowAuth(false);
+  };
+
+  // 🚦 ZERO-ROUTING CONDITIONAL RENDER
+  if (user) {
+    // If Google logged us in, we go straight to the Voice Assistant.
+    return <VoiceAssistant user={user} onLogout={handleLogout} />;
+  }
+
+  if (showAuth) {
+    return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
+  }
+
+  // Default: Show Landing Page
+  return <LandingPage onLaunch={() => setShowAuth(true)} />;
+}
+
+// ─────────────────────────────────────────────
+// VOICE ASSISTANT COMPONENT
+// ─────────────────────────────────────────────
+function VoiceAssistant({ user, onLogout }) {
   const [isDark, setIsDark] = useState(() => { try { return localStorage.getItem('voxa_theme') !== 'light'; } catch (e) { return true; } });
   const [userName, setUserName] = useState(() => { try { return user?.name || localStorage.getItem('voxa_username') || "Guest"; } catch (e) { return user?.name || "Guest"; } });
   const [selectedVoice, setSelectedVoice] = useState(() => { try { return localStorage.getItem('voxa_voice_preference') || "female"; } catch (e) { return "female"; } });
@@ -213,7 +274,6 @@ export default function VoiceAssistant({ user, onLogout }) {
 
   return (
     <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale" }}>
-
       <GlobalStyles />
       <audio ref={handleAudioRef} style={{ display: "none" }} onEnded={handleAudioEnd} />
 
