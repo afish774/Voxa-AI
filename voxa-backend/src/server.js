@@ -1,11 +1,13 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import session from 'express-session';
+import passport from 'passport';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
-import memoryRoutes from './routes/memoryRoutes.js'; // 🚀 IMPORTED NEW ROUTE
-import sportsRoutes from './routes/sportsRoutes.js'; // 🏀 IMPORTED SPORTS ROUTE
+import memoryRoutes from './routes/memoryRoutes.js';
+import sportsRoutes from './routes/sportsRoutes.js';
 
 dotenv.config();
 
@@ -24,19 +26,28 @@ app.use(cors({
     allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-// Body parser with increased limit to handle large Base64 image payloads
+// Body parser with increased limit
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// 🚀 INITIALIZE SESSIONS & PASSPORT
+app.use(session({
+    secret: process.env.JWT_SECRET || 'voxa_super_secret_key',
+    resave: false,
+    saveUninitialized: false,
+}));
+app.use(passport.initialize());
+app.use(passport.session());
 
 // 🛣️ API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
-app.use('/api/memory', memoryRoutes); // 🚀 WIRED UP THE MEMORY DASHBOARD
-app.use('/api/sports', sportsRoutes); // 🏀 WIRED UP SPORTS API
+app.use('/api/memory', memoryRoutes);
+app.use('/api/sports', sportsRoutes);
 
-// Basic health check route for Render
+// Basic health check route
 app.get('/', (req, res) => {
-    res.send('Voxa AI Backend is running securely.');
+    res.send('Voxa AI Backend is running securely with OAuth.');
 });
 
 const PORT = process.env.PORT || 5000;

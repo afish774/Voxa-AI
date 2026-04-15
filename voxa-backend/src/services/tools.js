@@ -1,13 +1,14 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import Reminder from "../models/Reminder.js";
+import User from "../models/User.js"; // 🚀 ADDED: To fetch the user's Gmail tokens
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 // ============================================================================
-// 🧠 ENTERPRISE INFRASTRUCTURE 
+// 🧠 ENTERPRISE INFRASTRUCTURE (Untouched)
 // ============================================================================
 
 const apiCache = new Map();
@@ -83,7 +84,7 @@ const normalizeVoiceInput = (query) => {
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS (Crypto & Weather locked and perfect)
+// 🛠️ STANDARD TOOLS
 // ============================================================================
 
 export const createReminderTool = (userId) => {
@@ -145,28 +146,55 @@ export const getCryptoPriceTool = tool(
     }
 );
 
-export const sendEmailTool = tool(
-    async ({ to, subject, body }) => {
-        try {
-            if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) return "SYSTEM_ERROR: Credentials missing.";
+// 🚀 UPGRADED: Now fetches the specific user's Gmail OAuth keys from the database!
+export const createSendEmailTool = (userId) => {
+    return tool(
+        async ({ to, subject, body }) => {
+            try {
+                if (!userId) return "SYSTEM_ERROR: User ID missing.";
 
-            const transporter = nodemailer.createTransport({
-                service: 'gmail',
-                auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-            });
+                const user = await User.findById(userId);
+                if (!user) return "SYSTEM_ERROR: User not found.";
 
-            await transporter.sendMail({ from: `"Voxa AI" <${process.env.EMAIL_USER}>`, to, subject, text: body });
-            return `Email sent successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
-        } catch (error) {
-            return `Email failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Network Error||`;
+                // Check if they actually logged in with Google
+                if (!user.gmailAccessToken) {
+                    return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Please link your Google Account.||`;
+                }
+
+                // Initialize Nodemailer with the user's OAuth credentials
+                const transporter = nodemailer.createTransport({
+                    service: 'gmail',
+                    auth: {
+                        type: 'OAuth2',
+                        user: user.email,
+                        clientId: process.env.GOOGLE_CLIENT_ID,
+                        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+                        refreshToken: user.gmailRefreshToken,
+                        accessToken: user.gmailAccessToken
+                    }
+                });
+
+                // Send the email directly from the user's outbox!
+                await transporter.sendMail({
+                    from: `"${user.name}" <${user.email}>`,
+                    to,
+                    subject,
+                    text: body
+                });
+
+                return `Email sent successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
+            } catch (error) {
+                console.error("[Email Error]:", error);
+                return `Email failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Token Expired or Network Error||`;
+            }
+        },
+        {
+            name: "send_email",
+            description: "Sends an email to a specified address.",
+            schema: z.object({ to: z.string(), subject: z.string(), body: z.string() })
         }
-    },
-    {
-        name: "send_email",
-        description: "Sends an email to a specified address.",
-        schema: z.object({ to: z.string(), subject: z.string(), body: z.string() })
-    }
-);
+    );
+};
 
 export const getWeatherTool = tool(
     async ({ location }) => {
@@ -201,7 +229,7 @@ export const getWeatherTool = tool(
 );
 
 // ============================================================================
-// 🌍 TOOL 4: The Global Sports Hub (Upgraded Omni-Router)
+// 🌍 TOOL 4: The Global Sports Hub (Untouched Omni-Router)
 // ============================================================================
 
 export const getSportsDataTool = tool(
@@ -210,7 +238,6 @@ export const getSportsDataTool = tool(
             const voiceNormalizedQuery = normalizeVoiceInput(query);
             const isUpcoming = requestType === "fixtures" || voiceNormalizedQuery.includes("upcoming") || voiceNormalizedQuery.includes("tomorrow") || voiceNormalizedQuery.includes("next");
 
-            // 🛡️ THE OMNI-ROUTER: Fuse parameters so LLM parsing errors don't break routing
             const fullContextCheck = `${sport} ${voiceNormalizedQuery}`.toLowerCase();
 
             const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of|the|for)/gi, '').trim();
@@ -327,7 +354,6 @@ export const getSportsDataTool = tool(
                 const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
 
-                // Fallback: If cleanQuery stripped everything away and t1 is empty, just grab the first live match
                 t1 = t1 || "match";
 
                 let targetMatch = null;
@@ -337,7 +363,6 @@ export const getSportsDataTool = tool(
                     targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1));
                 }
 
-                // If specific team isn't playing right now, or user just said "IPL score", grab the first active match
                 if (!targetMatch) {
                     targetMatch = matchData.data[0];
                 }

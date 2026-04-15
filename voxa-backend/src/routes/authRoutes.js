@@ -1,65 +1,151 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import passport from 'passport';
+import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
+import { Strategy as GitHubStrategy } from 'passport-github2';
+import { Strategy as FacebookStrategy } from 'passport-facebook';
 import User from '../models/User.js';
+import dotenv from 'dotenv';
 
+dotenv.config();
 const router = express.Router();
 
-// Generate JWT Token
+// Generate JWT Token for your React Frontend
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '30d' });
 };
 
-// @route   POST /api/auth/register
+// ============================================================================
+// 🧠 PASSPORT CONFIGURATION
+// ============================================================================
+passport.serializeUser((user, done) => done(null, user.id));
+passport.deserializeUser(async (id, done) => done(null, await User.findById(id)));
+
+// 🌐 1. GOOGLE STRATEGY (With Gmail Send Permissions)
+if (process.env.GOOGLE_CLIENT_ID) {
+    passport.use(new GoogleStrategy({
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: "/api/auth/google/callback"
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            let user = await User.findOne({ email: profile.emails[0].value });
+            if (!user) {
+                user = await User.create({
+                    name: profile.displayName,
+                    email: profile.emails[0].value,
+                    googleId: profile.id,
+                    gmailAccessToken: accessToken,
+                    gmailRefreshToken: refreshToken
+                });
+            } else {
+                // Update tokens if they log in again
+                user.googleId = profile.id;
+                user.gmailAccessToken = accessToken;
+                if (refreshToken) user.gmailRefreshToken = refreshToken;
+                await user.save();
+            }
+            return done(null, user);
+        } catch (error) { return done(error, null); }
+    }));
+}
+
+// 🐙 2. GITHUB STRATEGY
+if (process.env.GITHUB_CLIENT_ID) {
+    passport.use(new GitHubStrategy({
+        clientID: process.env.GITHUB_CLIENT_ID,
+        clientSecret: process.env.GITHUB_CLIENT_SECRET,
+        callbackURL: "/api/auth/github/callback",
+        scope: ['user:email']
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            const email = profile.emails ? profile.emails[0].value : `${profile.username}@github.com`;
+            let user = await User.findOne({ email });
+            if (!user) {
+                user = await User.create({ name: profile.displayName || profile.username, email, githubId: profile.id });
+            } else {
+                user.githubId = profile.id;
+                await user.save();
+            }
+            return done(null, user);
+        } catch (error) { return done(error, null); }
+    }));
+}
+
+// 📘 3. FACEBOOK STRATEGY
+if (process.env.FACEBOOK_CLIENT_ID) {
+    passport.use(new FacebookStrategy({
+        clientID: process.env.FACEBOOK_CLIENT_ID,
+        clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+        callbackURL: "/api/auth/facebook/callback",
+        profileFields: ['id', 'displayName', 'emails']
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            const email = profile.emails ? profile.emails[0].value : `${profile.id}@facebook.com`;
+            let user = await User.findOne({ email });
+            if (!user) {
+                user = await User.create({ name: profile.displayName, email, facebookId: profile.id });
+            } else {
+                user.facebookId = profile.id;
+                await user.save();
+            }
+            return done(null, user);
+        } catch (error) { return done(error, null); }
+    }));
+}
+
+// ============================================================================
+// 🚀 OAUTH ROUTES
+// ============================================================================
+
+const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173"; // Update for Render!
+
+// Helper to redirect to frontend with JWT
+const handleOAuthCallback = (req, res) => {
+    const token = generateToken(req.user._id);
+    const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
+    res.redirect(`${CLIENT_URL}/auth-success?token=${token}&user=${userData}`);
+};
+
+// Google
+router.get('/google', passport.authenticate('google', {
+    scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'],
+    accessType: 'offline', prompt: 'consent'
+}));
+router.get('/google/callback', passport.authenticate('google', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+
+// GitHub
+router.get('/github', passport.authenticate('github', { scope: ['user:email'] }));
+router.get('/github/callback', passport.authenticate('github', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+
+// Facebook
+router.get('/facebook', passport.authenticate('facebook', { scope: ['email'] }));
+router.get('/facebook/callback', passport.authenticate('facebook', { failureRedirect: `${CLIENT_URL}/auth?error=failed` }), handleOAuthCallback);
+
+
+// ============================================================================
+// 🔒 STANDARD EMAIL/PASSWORD ROUTES (Kept for fallback)
+// ============================================================================
+
 router.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
-
-        // Check if user exists
-        const userExists = await User.findOne({ email });
-        if (userExists) return res.status(400).json({ message: 'User already exists' });
-
-        // Create new user
+        if (await User.findOne({ email })) return res.status(400).json({ message: 'User already exists' });
         const user = await User.create({ name, email, password });
-
-        if (user) {
-            res.status(201).json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                token: generateToken(user._id)
-            });
-        } else {
-            res.status(400).json({ message: 'Invalid user data' });
-        }
-    } catch (error) {
-        console.error("Registration Error:", error);
-        res.status(500).json({ message: 'Server error during registration' });
-    }
+        res.status(201).json({ _id: user._id, name: user.name, email: user.email, token: generateToken(user._id) });
+    } catch (error) { res.status(500).json({ message: 'Server error' }); }
 });
 
-// @route   POST /api/auth/login
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-
-        // Find user by email
         const user = await User.findOne({ email });
-
-        // Check password
-        if (user && (await user.matchPassword(password))) {
-            res.json({
-                _id: user._id,
-                name: user.name,
-                email: user.email,
-                token: generateToken(user._id)
-            });
+        if (user && user.password && (await user.matchPassword(password))) {
+            res.json({ _id: user._id, name: user.name, email: user.email, token: generateToken(user._id) });
         } else {
             res.status(401).json({ message: 'Invalid email or password' });
         }
-    } catch (error) {
-        console.error("Login Error:", error);
-        res.status(500).json({ message: 'Server error during login' });
-    }
+    } catch (error) { res.status(500).json({ message: 'Server error' }); }
 });
 
 export default router;

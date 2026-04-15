@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js';
+import { createReminderTool, getCryptoPriceTool, createSendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js'; // 🚀 UPDATED IMPORT
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -80,8 +80,11 @@ RULES:
         } else {
             let messages = [new SystemMessage(systemInstruction), new HumanMessage(`${memoryContext}CURRENT USER MESSAGE: ${userPrompt}`)];
 
+            // 🚀 INITIALIZE TOOLS WITH USER ID
             const reminderTool = createReminderTool(userId);
-            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, sendEmailTool, getSportsDataTool, getWeatherTool];
+            const emailTool = createSendEmailTool(userId);
+
+            const activeTools = [searchTool, reminderTool, getCryptoPriceTool, emailTool, getSportsDataTool, getWeatherTool];
             const groqChatWithTools = groqChat.bindTools(activeTools);
 
             result = await groqChatWithTools.invoke(messages);
@@ -105,8 +108,8 @@ RULES:
                         else if (toolCall.name === "get_crypto_price") {
                             toolResultText = await getCryptoPriceTool.invoke(toolCall.args);
                         }
-                        else if (toolCall.name === "send_email") {
-                            toolResultText = await sendEmailTool.invoke(toolCall.args);
+                        else if (toolCall.name === "send_email") { // 🚀 EXECUTING THE NEW EMAIL TOOL
+                            toolResultText = await emailTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_sports_data") {
                             if (onStatusUpdate) onStatusUpdate("Fetching live sports data...");
