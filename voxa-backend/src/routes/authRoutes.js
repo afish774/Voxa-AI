@@ -100,17 +100,17 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 // 🚀 OAUTH ROUTES
 // ============================================================================
 
-// 🚀 UPDATED: Now pointing to your new Vercel deployment
-const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-icnxjm5j0-afishmv-7650s-projects.vercel.app";
+// 🚀 UPDATED: Pointing to your permanent Vercel domain
+const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 
 // Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
     try {
         let clientUrl = CLIENT_URL;
 
-        // 🚀 FAILSAFE: Update fallback to match your latest Vercel URL
+        // 🚀 FAILSAFE: Lock the fallback exactly to your permanent domain
         if (clientUrl.includes("onrender.com")) {
-            clientUrl = "https://voxa-icnxjm5j0-afishmv-7650s-projects.vercel.app";
+            clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
         }
 
         if (!req.user) throw new Error("OAuth returned an empty user object.");
@@ -118,7 +118,7 @@ const handleOAuthCallback = (req, res) => {
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 CRITICAL FIX: Redirect explicitly to the /app route!
+        // 🚀 Redirecting to the /app route as requested
         res.redirect(`${clientUrl}/app?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
