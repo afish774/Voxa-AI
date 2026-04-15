@@ -53,6 +53,31 @@ export default function VoiceAssistant({ user, onLogout }) {
 
   useEffect(() => { cameraModeRef.current = isCameraMode; }, [isCameraMode]);
 
+  // 🚀 NEW: The OAuth URL Catcher
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    const userDataString = urlParams.get('user');
+
+    if (token && userDataString) {
+      try {
+        const parsedUser = JSON.parse(decodeURIComponent(userDataString));
+
+        // Save auth data to local storage
+        localStorage.setItem('voxa_token', token);
+        localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
+
+        // Clean the URL to remove the sensitive tokens
+        window.history.replaceState({}, document.title, window.location.pathname);
+
+        // Force a quick reload so the parent component picks up the new user and mounts correctly
+        window.location.reload();
+      } catch (error) {
+        console.error("Failed to parse OAuth data:", error);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     const hour = new Date().getHours();
     setGreetingText(hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening");
@@ -166,11 +191,10 @@ export default function VoiceAssistant({ user, onLogout }) {
 
           let finalText = text;
 
-          // 🚀 FIX: Let the backend handle parsing! Just pass the raw JSON card to state.
           if (!finalText && card) finalText = "Here is the information you requested.";
 
           setCurrentResponse(finalText);
-          setCurrentCard(card); // Pass the raw JSON object, ChatDisplay will handle the rest!
+          setCurrentCard(card);
           setTyping(true);
         },
         onAudio: (audio) => {
