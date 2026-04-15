@@ -15,103 +15,84 @@ import AuthPage from "./AuthPage";
 
 import './index.css';
 
-// ─────────────────────────────────────────────
-// MAIN APP ROUTER (ENTERPRISE DETERMINISTIC LOCK)
-// ─────────────────────────────────────────────
 export default function App() {
-  // 1. DETERMINISTIC CHECK: Are there keys in the URL right now?
-  // This runs synchronously and cannot be fooled by React timing or bundlers.
-  const hasOAuthKeys = typeof window !== 'undefined' && window.location.search.includes('token=');
-
-  // 2. THE VAULT CHECK: Is there a saved user? (Only check if NOT processing OAuth)
-  const [user, setUser] = useState(() => {
-    if (typeof window !== 'undefined' && !hasOAuthKeys) {
-      try {
-        const saved = localStorage.getItem('voxa_user');
-        return saved ? JSON.parse(saved) : null;
-      } catch (e) { return null; }
-    }
-    return null;
-  });
-
-  // 3. THE IRON GATE: If keys are in the URL, start the app completely locked.
-  const [isLocked, setIsLocked] = useState(hasOAuthKeys);
+  const [user, setUser] = useState(null);
+  // 🚨 THIS IS THE KEY FIX: The app starts in a "Loading" state.
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [showAuth, setShowAuth] = useState(false);
 
-  // 4. THE SAFE PROCESSOR: Safely extract keys, unlock gate, load dashboard.
   useEffect(() => {
-    if (!hasOAuthKeys) return;
+    const checkAuthentication = () => {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const userStr = params.get('user');
 
-    const processGoogleLogin = () => {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const token = params.get('token');
-        const userStr = params.get('user');
+      // 1. If Google sent us back with a token
+      if (token && userStr) {
+        try {
+          // URLSearchParams automatically decodes the string, so we just parse it
+          const parsedUser = JSON.parse(userStr);
 
-        if (token && userStr) {
-          // Safely decode the user data
-          let parsedUser;
-          try {
-            parsedUser = JSON.parse(decodeURIComponent(userStr));
-          } catch (e) {
-            parsedUser = JSON.parse(userStr); // Fallback
-          }
+          localStorage.setItem('voxa_token', token);
+          localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
 
-          // Attempt to save to LocalStorage (Wrapped to survive Strict Private Browsing)
-          try {
-            localStorage.setItem('voxa_token', token);
-            localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
-          } catch (e) { console.warn("Private mode: Memory auth active"); }
-
-          // Apply the user to the app state
           setUser(parsedUser);
+
+          // Clean the ugly token out of the URL bar
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (error) {
+          console.error("Failed to parse Google Login data:", error);
         }
-      } catch (error) {
-        console.error("🚨 OAuth Parse Error:", error);
-      } finally {
-        // 1. Scrub the URL cleanly so it never triggers again
-        window.history.replaceState({}, document.title, window.location.pathname);
-        // 2. Unlock the app (Instantly renders Voice Assistant)
-        setIsLocked(false);
       }
+      // 2. Or, if they visited normally, check if they are already logged in
+      else {
+        const savedUser = localStorage.getItem('voxa_user');
+        if (savedUser) {
+          try {
+            setUser(JSON.parse(savedUser));
+          } catch (e) {
+            console.error("Failed to parse saved user data");
+          }
+        }
+      }
+
+      // 3. We are done checking. Unlock the app.
+      setIsCheckingAuth(false);
     };
 
-    processGoogleLogin();
-  }, [hasOAuthKeys]);
+    checkAuthentication();
+  }, []);
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('voxa_token');
-      localStorage.removeItem('voxa_user');
-    } catch (e) { }
+    localStorage.removeItem('voxa_token');
+    localStorage.removeItem('voxa_user');
     setUser(null);
     setShowAuth(false);
   };
 
-  // 🚦 ROUTING LOGIC (STRICT ORDER OF OPERATIONS)
+  // 🚦 ROUTING LOGIC
 
-  // STATE 1: If the app is locked (processing Google login), show a dark loading screen.
-  // It is MATHEMATICALLY IMPOSSIBLE to flash the Landing Page.
-  if (isLocked) {
+  // 1. If we are still checking the URL, show a loading screen so the Landing Page doesn't flash.
+  if (isCheckingAuth) {
     return (
-      <div style={{ width: '100vw', height: '100dvh', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 44, height: 44, border: '3px solid rgba(124, 58, 237, 0.2)', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+      <div style={{ height: '100dvh', width: '100vw', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ width: 40, height: 40, border: '3px solid rgba(124, 58, 237, 0.2)', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
         <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
       </div>
     );
   }
 
-  // STATE 2: If we have a user (from LocalStorage OR Google Login), show Dashboard.
+  // 2. If we successfully found the user, show the Voice Assistant.
   if (user) {
     return <VoiceAssistant user={user} onLogout={handleLogout} />;
   }
 
-  // STATE 3: If user clicked Login/Signup manually, show Auth Form.
+  // 3. If they clicked 'Log In', show the Auth form.
   if (showAuth) {
     return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
   }
 
-  // STATE 4: Truly no user, default to Landing Page.
+  // 4. Default: Show the Landing Page
   return <LandingPage onLaunch={() => setShowAuth(true)} />;
 }
 
