@@ -4,7 +4,7 @@ import { motion, AnimatePresence, useScroll, useTransform, useMotionTemplate, us
 // ─────────────────────────────────────────────
 // PREMIUM EASING & PHYSICS (Apple-like)
 // ─────────────────────────────────────────────
-const customEase = [0.16, 1, 0.3, 1]; // Smoother, deeper ease-out
+const customEase = [0.16, 1, 0.3, 1];
 const springConfig = { type: "spring", stiffness: 200, damping: 24, mass: 0.8 };
 
 // ─────────────────────────────────────────────
@@ -394,7 +394,8 @@ export default function LandingPage({ onLaunch }) {
 
         if (token && userDataString) {
             try {
-                const parsedUser = JSON.parse(decodeURIComponent(userDataString));
+                // 🚀 FIX: Removed decodeURIComponent! urlParams.get() already decodes it automatically.
+                const parsedUser = JSON.parse(userDataString);
 
                 // Save auth data to local storage
                 localStorage.setItem('voxa_token', token);

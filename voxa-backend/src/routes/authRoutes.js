@@ -40,7 +40,6 @@ if (process.env.GOOGLE_CLIENT_ID) {
                     gmailRefreshToken: refreshToken
                 });
             } else {
-                // Update tokens if they log in again
                 user.googleId = profile.id;
                 user.gmailAccessToken = accessToken;
                 if (refreshToken) user.gmailRefreshToken = refreshToken;
@@ -102,17 +101,15 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 
 const CLIENT_URL = process.env.CLIENT_URL || "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 
-// Helper to redirect to frontend with JWT
 const handleOAuthCallback = (req, res) => {
     try {
         let clientUrl = CLIENT_URL;
 
-        // 🚀 FAILSAFE 1: If it accidentally points to Render, force it to Vercel
+        // 🚀 FIX 1: Ensure failsafe is strictly the base domain, NO /app at the end!
         if (clientUrl.includes("onrender.com")) {
             clientUrl = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
         }
 
-        // 🚀 FAILSAFE 2: If the environment variable is missing "https://", add it automatically
         if (!clientUrl.startsWith('http://') && !clientUrl.startsWith('https://')) {
             clientUrl = 'https://' + clientUrl;
         }
@@ -122,7 +119,7 @@ const handleOAuthCallback = (req, res) => {
         const token = generateToken(req.user._id);
         const userData = encodeURIComponent(JSON.stringify({ _id: req.user._id, name: req.user.name, email: req.user.email }));
 
-        // 🚀 Redirecting back to the root (/) where your LandingPage catcher is waiting
+        // 🚀 FIX 2: Redirect securely to the root so the LandingPage can catch the token
         res.redirect(`${clientUrl}/?token=${token}&user=${userData}`);
     } catch (error) {
         console.error("🚨 REDIRECT CRASH:", error);
