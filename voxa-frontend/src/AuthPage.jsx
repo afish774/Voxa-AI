@@ -10,6 +10,8 @@ const SLIDES = [
     { title: "Absolute privacy.", desc: "Enjoy secure, end-to-end encrypted conversations. Your data remains entirely yours." }
 ];
 
+const API_BASE = "https://voxa-ai-zh5o.onrender.com/api/auth";
+
 const VoxaLogo = ({ size = 32, isDark = false }) => (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="3" y="8" width="3" height="8" rx="1.5" fill={isDark ? "url(#logo_grad_auth)" : "#09090b"} />
@@ -78,7 +80,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         setIsLoading(true);
 
         try {
-            const endpoint = isLogin ? "https://voxa-ai-zh5o.onrender.com/api/auth/login" : "https://voxa-ai-zh5o.onrender.com/api/auth/register";
+            const endpoint = isLogin ? `${API_BASE}/login` : `${API_BASE}/register`;
             const payload = isLogin ? { email, password } : { name, email, password };
 
             const response = await fetch(endpoint, {
@@ -90,12 +92,10 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
-                // Instantly update state in App.jsx. No URL refresh needed!
+                // Persist token and user to localStorage (with private-browsing failsafe)
                 const userObj = { _id: data._id, name: data.name, email: data.email };
-                try {
-                    localStorage.setItem('voxa_token', data.token);
-                    localStorage.setItem('voxa_user', JSON.stringify(userObj));
-                } catch (e) { }
+                try { localStorage.setItem('voxa_token', data.token); } catch (e) { /* Private mode */ }
+                try { localStorage.setItem('voxa_user', JSON.stringify(userObj)); } catch (e) { /* Private mode */ }
                 onAuthSuccess(userObj);
             } else {
                 alert(data.message || "Authentication failed.");
@@ -108,9 +108,13 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         }
     };
 
-    const handleGoogleLogin = () => { window.location.href = "https://voxa-ai-zh5o.onrender.com/api/auth/google"; };
-    const handleGitHubLogin = () => { window.location.href = "https://voxa-ai-zh5o.onrender.com/api/auth/github"; };
-    const handleFacebookLogin = () => { window.location.href = "https://voxa-ai-zh5o.onrender.com/api/auth/facebook"; };
+    // ─── OAuth handlers: Navigate to backend OAuth endpoints ───
+    // These are the ONLY acceptable hard navigations — they go to the BACKEND,
+    // not to frontend routes. The backend will redirect back with URL params
+    // which main.jsx's boot sequence will intercept synchronously.
+    const handleGoogleLogin = () => { window.location.href = `${API_BASE}/google`; };
+    const handleGitHubLogin = () => { window.location.href = `${API_BASE}/github`; };
+    const handleFacebookLogin = () => { window.location.href = `${API_BASE}/facebook`; };
 
     return (
         <div style={{ display: "flex", minHeight: "100dvh", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", backgroundColor: "#ffffff" }}>

@@ -15,89 +15,31 @@ import AuthPage from "./AuthPage";
 
 import './index.css';
 
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [showAuth, setShowAuth] = useState(false);
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🛡️ TITANIUM AUTH — App.jsx
+// ═══════════════════════════════════════════════════════════════════════════════
+// This component is NOW a pure view router. All auth interception and
+// initialization happens in main.jsx at module load time. App.jsx receives
+// its state as props and renders the correct view deterministically.
+// ═══════════════════════════════════════════════════════════════════════════════
 
-  useEffect(() => {
-    const checkAuthentication = () => {
-      const params = new URLSearchParams(window.location.search);
-      const token = params.get('token');
-      const userBase64 = params.get('user');
-      const authError = params.get('error');
+export default function App({ user, showAuth, onAuthSuccess, onLogout, onLaunch, onBack }) {
+  // ─── DETERMINISTIC CONDITIONAL ROUTING ───
+  // Priority: user → showAuth → LandingPage
+  // No window.location.href, no window.location.replace, no hard redirects.
 
-      // 🚨 IF THE BACKEND FAILED, ALERT THE USER
-      if (authError) {
-        alert(`Login Failed: ${authError.replace(/_/g, ' ')}. Please check the backend logs.`);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }
-
-      // 🚀 SUCCESSFUL LOGIN HANDLER (Using Base64)
-      if (token && userBase64) {
-        try {
-          // Decode Base64 safely into a string, then parse it
-          const jsonString = atob(userBase64);
-          const parsedUser = JSON.parse(jsonString);
-
-          localStorage.setItem('voxa_token', token);
-          localStorage.setItem('voxa_user', JSON.stringify(parsedUser));
-
-          setUser(parsedUser);
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (error) {
-          console.error("🚨 Failed to decode Base64 user data:", error);
-          alert("A fatal error occurred decoding the user profile.");
-        }
-      }
-      // STANDARD RETURNING USER
-      else {
-        const savedUser = localStorage.getItem('voxa_user');
-        if (savedUser) {
-          try {
-            setUser(JSON.parse(savedUser));
-          } catch (e) { }
-        }
-      }
-
-      // Release the loading screen
-      setIsCheckingAuth(false);
-    };
-
-    checkAuthentication();
-  }, []);
-
-  const handleLogout = () => {
-    localStorage.removeItem('voxa_token');
-    localStorage.removeItem('voxa_user');
-    setUser(null);
-    setShowAuth(false);
-  };
-
-  // 🚦 ROUTING LOGIC
-
-  // 1. Loader to prevent flashing
-  if (isCheckingAuth) {
-    return (
-      <div style={{ height: '100dvh', width: '100vw', backgroundColor: '#05050a', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ width: 40, height: 40, border: '3px solid rgba(124, 58, 237, 0.2)', borderTopColor: '#7c3aed', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
-        <style>{`@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
-
-  // 2. Logged In User
+  // 1. Authenticated user → VoiceAssistant
   if (user) {
-    return <VoiceAssistant user={user} onLogout={handleLogout} />;
+    return <VoiceAssistant user={user} onLogout={onLogout} />;
   }
 
-  // 3. Manual Login View
+  // 2. User clicked "Log in" → AuthPage
   if (showAuth) {
-    return <AuthPage onAuthSuccess={(data) => setUser(data)} onBack={() => setShowAuth(false)} />;
+    return <AuthPage onAuthSuccess={onAuthSuccess} onBack={onBack} />;
   }
 
-  // 4. Default Landing Page
-  return <LandingPage onLaunch={() => setShowAuth(true)} />;
+  // 3. Default → LandingPage
+  return <LandingPage onLaunch={onLaunch} />;
 }
 
 // ─────────────────────────────────────────────
@@ -242,8 +184,12 @@ function VoiceAssistant({ user, onLogout }) {
       } catch (err) { console.error("Image capture failed:", err); }
     }
 
+    // Retrieve token from localStorage with private-browsing failsafe
+    let currentToken = null;
+    try { currentToken = localStorage.getItem('voxa_token'); } catch (e) { /* Private mode */ }
+
     await streamChatResponse(
-      { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: user?.token },
+      { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: currentToken },
       {
         onStatus: (text) => {
           let cleanStream = text.replace("SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ", "");

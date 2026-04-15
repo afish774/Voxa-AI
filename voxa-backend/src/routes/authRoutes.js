@@ -10,18 +10,37 @@ import dotenv from 'dotenv';
 dotenv.config();
 const router = express.Router();
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// 🛡️ TITANIUM AUTH — Backend (authRoutes.js)
+// ═══════════════════════════════════════════════════════════════════════════════
+// This file handles:
+//   1. Passport strategy configuration (Google, GitHub, Facebook)
+//   2. OAuth callback processing with sessionless JWT flow
+//   3. Standard email/password register/login
+//
+// ALL Passport strategies use { session: false }.
+// ALL callbacks redirect to the frontend with token + Base64-encoded user
+// in URL query params. The frontend's module-level boot sequence (main.jsx)
+// intercepts these synchronously before React ever mounts.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
+const BACKEND_URL = "https://voxa-ai-zh5o.onrender.com";
+
 const generateToken = (id) => {
     return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '30d' });
 };
 
 // ============================================================================
-// 🧠 PASSPORT CONFIGURATION
+// 🧠 PASSPORT STRATEGY CONFIGURATION
 // ============================================================================
+
+// ── Google OAuth 2.0 ──
 if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback",
+        callbackURL: `${BACKEND_URL}/api/auth/google/callback`,
         proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
         try {
@@ -36,11 +55,12 @@ if (process.env.GOOGLE_CLIENT_ID) {
     }));
 }
 
+// ── GitHub OAuth ──
 if (process.env.GITHUB_CLIENT_ID) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/github/callback",
+        callbackURL: `${BACKEND_URL}/api/auth/github/callback`,
         proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
         try {
@@ -56,11 +76,12 @@ if (process.env.GITHUB_CLIENT_ID) {
     }));
 }
 
+// ── Facebook OAuth ──
 if (process.env.FACEBOOK_CLIENT_ID) {
     passport.use(new FacebookStrategy({
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
-        callbackURL: "https://voxa-ai-zh5o.onrender.com/api/auth/facebook/callback",
+        callbackURL: `${BACKEND_URL}/api/auth/facebook/callback`,
         profileFields: ['id', 'displayName', 'emails'],
         proxy: true
     }, async (accessToken, refreshToken, profile, done) => {
@@ -78,11 +99,25 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 }
 
 // ============================================================================
-// 🚀 THE MANUAL OAUTH REDIRECTS (FIXED FOR RENDER -> VERCEL)
+// 🚀 OAUTH CALLBACK HANDLER (Sessionless JWT → Redirect to Vercel SPA)
 // ============================================================================
-const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 
-// Helper function to manually process the user and send Base64 to Vercel
+/**
+ * processManualLogin — The core callback handler for all OAuth providers.
+ *
+ * Flow:
+ *   1. Passport authenticates the user with { session: false }
+ *   2. On success: generate a JWT, Base64-encode the user object,
+ *      URI-encode the Base64 string for URL safety, and redirect
+ *      to the Vercel frontend with token + user in query params.
+ *   3. On failure: redirect with an error query param.
+ *
+ * The frontend's module-level boot sequence in main.jsx will:
+ *   - Read the URL params synchronously (before any component mounts)
+ *   - Decode: Base64 → decodeURIComponent → JSON.parse
+ *   - Set the initial React state from the parsed user
+ *   - Scrub the URL to remove tokens from the address bar
+ */
 const processManualLogin = (req, res, next, provider) => {
     passport.authenticate(provider, { session: false }, (err, user, info) => {
         if (err) {
@@ -94,33 +129,43 @@ const processManualLogin = (req, res, next, provider) => {
             return res.redirect(`${CLIENT_URL}/?error=user_not_found_or_rejected`);
         }
 
-        // 1. Generate Token
+        // 1. Generate a sessionless JWT
         const token = generateToken(user._id);
 
-        // 2. Convert user to Base64 (Prevents URL encoding crashes entirely)
+        // 2. Build the user payload (minimal, safe subset)
         const userObj = { _id: user._id, name: user.name, email: user.email };
-        const userBase64 = Buffer.from(JSON.stringify(userObj)).toString('base64');
 
-        // 3. Manually push back to Vercel
-        return res.redirect(`${CLIENT_URL}/?token=${token}&user=${userBase64}`);
+        // 3. Encode: JSON → Base64 → encodeURIComponent (belt-and-suspenders)
+        //    encodeURIComponent ensures +, /, = in Base64 don't corrupt the URL
+        const userBase64 = Buffer.from(JSON.stringify(userObj)).toString('base64');
+        const userEncoded = encodeURIComponent(userBase64);
+
+        // 4. Redirect to the Vercel SPA root with params
+        //    main.jsx will intercept these at module load time
+        return res.redirect(`${CLIENT_URL}/?token=${token}&user=${userEncoded}`);
     })(req, res, next);
 };
 
-// Google
+// ============================================================================
+// 🔗 OAUTH ROUTE DEFINITIONS
+// ============================================================================
+
+// ── Google ──
 router.get('/google', passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'], accessType: 'offline', prompt: 'consent', session: false }));
 router.get('/google/callback', (req, res, next) => processManualLogin(req, res, next, 'google'));
 
-// GitHub
+// ── GitHub ──
 router.get('/github', passport.authenticate('github', { scope: ['user:email'], session: false }));
 router.get('/github/callback', (req, res, next) => processManualLogin(req, res, next, 'github'));
 
-// Facebook
+// ── Facebook ──
 router.get('/facebook', passport.authenticate('facebook', { scope: ['email'], session: false }));
 router.get('/facebook/callback', (req, res, next) => processManualLogin(req, res, next, 'facebook'));
 
 // ============================================================================
 // 🔒 STANDARD EMAIL/PASSWORD ROUTES
 // ============================================================================
+
 router.post('/register', async (req, res) => {
     try {
         const { name, email, password } = req.body;
