@@ -4,5 +4,6 @@ python-multipart
 opencv-python-headless
 deepface
 librosa
-numpy
-tf-keras
+transformers
+torch
+Pillow

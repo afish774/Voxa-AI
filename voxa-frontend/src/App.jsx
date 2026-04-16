@@ -18,27 +18,14 @@ import './index.css';
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🛡️ TITANIUM AUTH — App.jsx
 // ═══════════════════════════════════════════════════════════════════════════════
-// This component is NOW a pure view router. All auth interception and
-// initialization happens in main.jsx at module load time. App.jsx receives
-// its state as props and renders the correct view deterministically.
-// ═══════════════════════════════════════════════════════════════════════════════
 
 export default function App({ user, showAuth, onAuthSuccess, onLogout, onLaunch, onBack }) {
-  // ─── DETERMINISTIC CONDITIONAL ROUTING ───
-  // Priority: user → showAuth → LandingPage
-  // No window.location.href, no window.location.replace, no hard redirects.
-
-  // 1. Authenticated user → VoiceAssistant
   if (user) {
     return <VoiceAssistant user={user} onLogout={onLogout} />;
   }
-
-  // 2. User clicked "Log in" → AuthPage
   if (showAuth) {
     return <AuthPage onAuthSuccess={onAuthSuccess} onBack={onBack} />;
   }
-
-  // 3. Default → LandingPage
   return <LandingPage onLaunch={onLaunch} />;
 }
 
@@ -168,6 +155,7 @@ function VoiceAssistant({ user, onLogout }) {
 
     let finalImage = uploadedImage;
 
+    // Capture from Webcam if Spatial mode is open
     if (cameraModeRef.current) {
       try {
         const videoElement = document.getElementById("voxa-camera-feed");
@@ -184,10 +172,10 @@ function VoiceAssistant({ user, onLogout }) {
       } catch (err) { console.error("Image capture failed:", err); }
     }
 
-    // Retrieve token from localStorage with private-browsing failsafe
     let currentToken = null;
     try { currentToken = localStorage.getItem('voxa_token'); } catch (e) { /* Private mode */ }
 
+    // 🚀 INJECTING MOOD & IMAGE TO BACKEND API STREAM
     await streamChatResponse(
       { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: currentToken },
       {
@@ -236,6 +224,7 @@ function VoiceAssistant({ user, onLogout }) {
       <GlobalStyles />
       <audio ref={handleAudioRef} style={{ display: "none" }} onEnded={handleAudioEnd} />
 
+      {/* 🚀 PYTHON EMOTION AI INJECTION! */}
       <SpatialCameraWindow isActive={isCameraMode} onClose={() => setIsCameraMode(false)} videoRef={videoRef} onEmotionDetected={setUserMood} onDocumentScanned={(b64) => { setUploadedImage(b64); setIsCameraMode(false); setShowInput(true); }} />
 
       <ModalManager activeModal={activeModal} setActiveModal={setActiveModal} isDark={isDark} theme={theme} user={user} userName={userName} setUserName={setUserName} selectedVoice={selectedVoice} setSelectedVoice={setSelectedVoice} />
@@ -245,6 +234,7 @@ function VoiceAssistant({ user, onLogout }) {
         <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 1, background: `radial-gradient(ellipse 80% 60% at 50% 70%, ${theme.radialGlow} 0%, transparent 72%)`, transition: "background 0.7s" }} />
 
         <WaveCanvas phase={phase} ribbonSplit={effectiveSplit} isAppMuted={isAppMuted} />
+
         <Navbar theme={theme} isDark={isDark} onToggleTheme={handleToggleTheme} ribbonSplit={effectiveSplit} isAppMuted={isAppMuted} isCameraMode={isCameraMode} onOpenModal={setActiveModal} activeModal={activeModal} onLogout={onLogout} />
 
         <ChatDisplay theme={theme} showGreeting={showGreeting} isCameraMode={isCameraMode} greetingText={greetingText} userName={userName} handleRandomQuerySelect={handleRandomQuerySelect} showQuery={showQuery} effectiveSplit={effectiveSplit} currentPrompt={currentPrompt} currentResponse={currentResponse} phase={phase} typing={typing} handleTypingDone={handleTypingDone} currentCard={currentCard} />

@@ -67,7 +67,7 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
                     const formData = new FormData();
                     formData.append("image_b64", base64Frame);
 
-                    const response = await fetch("http://localhost:8000/analyze/vision", {
+                    const response = await fetch("https://huggingface.co/spaces/afishskibidisigma/voxa-emotion-engine.hf.space/analyze/vision", {
                         method: "POST",
                         body: formData
                     });

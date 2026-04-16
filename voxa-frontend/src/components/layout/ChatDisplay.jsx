@@ -4,7 +4,7 @@ import { PHASES } from "../../config/constants";
 import { QuerySlider, TypingText } from "./QueryElements";
 import WeatherCard from "../visuals/WeatherCard";
 import SportsCard from "../cards/SportsCard";
-import CryptoCard from "../cards/CryptoCard"; // 🚀 IMPORTED THE CRYPTO CARD
+import CryptoCard from "../cards/CryptoCard";
 
 export default function ChatDisplay({
     theme, showGreeting, isCameraMode, greetingText, userName, handleRandomQuerySelect,
@@ -34,10 +34,20 @@ export default function ChatDisplay({
                                     <p style={{ margin: 0, fontSize: "clamp(16px, 2.2vw, 22px)", color: theme.textMuted, fontWeight: 400, lineHeight: 1.4, letterSpacing: "-0.01em", maxWidth: "min(720px, 75vw)" }}>{typing && phase === PHASES.RESPONDING ? <TypingText text={currentResponse} speed={36} onDone={handleTypingDone} /> : currentResponse}</p>
 
                                     <AnimatePresence>
-                                        {/* 🚀 ALL CARDS NOW RENDER BASED ON THE RAW JSON OBJECT */}
+                                        {/* 🚀 JSON CARD WIDGET ROUTER */}
                                         {currentCard && currentCard.type === 'weather' && phase === PHASES.RESPONDING && <WeatherCard key="weather-card" data={currentCard} theme={theme} />}
                                         {currentCard && currentCard.type === 'sports' && phase === PHASES.RESPONDING && <SportsCard key="sports-card" data={currentCard} theme={theme} />}
                                         {currentCard && currentCard.type === 'crypto' && phase === PHASES.RESPONDING && <CryptoCard key="crypto-card" coin={currentCard.coin} price={currentCard.price} change={currentCard.change} theme={theme} />}
+
+                                        {/* 📩 NEW RECEIPT CARD WIDGET (Reminders & Emails) */}
+                                        {currentCard && currentCard.type === 'receipt' && phase === PHASES.RESPONDING && (
+                                            <motion.div key="receipt-card" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ padding: "16px 24px", borderRadius: 16, background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: 12, marginTop: 16, backdropFilter: "blur(10px)" }}>
+                                                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981", fontWeight: "bold", flexShrink: 0 }}>✓</div>
+                                                <span style={{ color: theme.text, fontSize: 15, fontWeight: 500, letterSpacing: "-0.01em" }}>
+                                                    {currentCard.message.replace(/^RECEIPT:/i, '').split(':').slice(1).join(':').trim() || currentCard.message}
+                                                </span>
+                                            </motion.div>
+                                        )}
                                     </AnimatePresence>
 
                                 </motion.div>
