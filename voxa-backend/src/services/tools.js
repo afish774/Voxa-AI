@@ -149,6 +149,14 @@ export const createSendEmailTool = (userId) => {
                     return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Please link your Google Account.||`;
                 }
 
+                console.log("🔍 GMAIL AUTH DEBUG:", {
+                    email: user.email,
+                    hasAccessToken: !!user.gmailAccessToken,
+                    hasRefreshToken: !!user.gmailRefreshToken,
+                    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
+                    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET
+                });
+
                 // Nodemailer automatically handles token refresh using the refreshToken!
                 const transporter = nodemailer.createTransport({
                     service: 'gmail',
