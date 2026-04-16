@@ -2,14 +2,15 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import Reminder from "../models/Reminder.js";
 import User from "../models/User.js";
-import nodemailer from "nodemailer";
+import { google } from "googleapis"; // 🚀 Replaced nodemailer with official Google API
 import dotenv from "dotenv";
 
 dotenv.config();
 
 // ============================================================================
-// 🧠 ENTERPRISE INFRASTRUCTURE
+// 🧠 ENTERPRISE INFRASTRUCTURE (Untouched)
 // ============================================================================
+
 const apiCache = new Map();
 
 const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries = 2, timeoutMs = 8000) => {
@@ -62,12 +63,18 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
 const normalizeVoiceInput = (query) => {
     let clean = query.toLowerCase();
     const map = {
-        "man city": "manchester city", "man utd": "manchester united",
-        "spurs": "tottenham", "rcb": "royal challengers",
-        "csk": "chennai super kings", "mi": "mumbai indians",
-        "srh": "sunrisers", "kkr": "kolkata knight",
-        "pbks": "punjab kings", "dc": "delhi capitals",
-        "rr": "rajasthan royals", "lsg": "lucknow super",
+        "man city": "manchester city",
+        "man utd": "manchester united",
+        "spurs": "tottenham",
+        "rcb": "royal challengers",
+        "csk": "chennai super kings",
+        "mi": "mumbai indians",
+        "srh": "sunrisers",
+        "kkr": "kolkata knight",
+        "pbks": "punjab kings",
+        "dc": "delhi capitals",
+        "rr": "rajasthan royals",
+        "lsg": "lucknow super",
         "gt": "gujarat titans"
     };
     for (const [slang, strict] of Object.entries(map)) {
@@ -79,6 +86,7 @@ const normalizeVoiceInput = (query) => {
 // ============================================================================
 // 🛠️ STANDARD TOOLS
 // ============================================================================
+
 export const createReminderTool = (userId) => {
     return tool(
         async ({ task }) => {
@@ -102,6 +110,7 @@ export const getCryptoPriceTool = tool(
     async ({ coinId }) => {
         try {
             const normalizedCoin = coinId.toLowerCase().trim();
+
             const symbols = {
                 "bitcoin": "btc-bitcoin", "btc": "btc-bitcoin",
                 "ethereum": "eth-ethereum", "eth": "eth-ethereum",
@@ -121,6 +130,7 @@ export const getCryptoPriceTool = tool(
             if (data && data.quotes && data.quotes.USD) {
                 const price = parseFloat(data.quotes.USD.price).toFixed(2);
                 const change = parseFloat(data.quotes.USD.percent_change_24h).toFixed(2);
+
                 return `The price was fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
             }
             return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
@@ -136,6 +146,7 @@ export const getCryptoPriceTool = tool(
     }
 );
 
+// 🚀 UPGRADED: Swapped Nodemailer for the official Google API REST client
 export const createSendEmailTool = (userId) => {
     return tool(
         async ({ to, subject, body }) => {
@@ -145,36 +156,49 @@ export const createSendEmailTool = (userId) => {
                 const user = await User.findById(userId);
                 if (!user) return "SYSTEM_ERROR: User not found.";
 
-                if (!user.gmailAccessToken && !user.gmailRefreshToken) {
+                // Check if they actually logged in with Google
+                if (!user.gmailAccessToken || !user.gmailRefreshToken) {
                     return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Please link your Google Account.||`;
                 }
 
-                console.log("🔍 GMAIL AUTH DEBUG:", {
-                    email: user.email,
-                    hasAccessToken: !!user.gmailAccessToken,
-                    hasRefreshToken: !!user.gmailRefreshToken,
-                    hasClientId: !!process.env.GOOGLE_CLIENT_ID,
-                    hasClientSecret: !!process.env.GOOGLE_CLIENT_SECRET
+                // 1. Initialize the Google OAuth2 Client
+                const oAuth2Client = new google.auth.OAuth2(
+                    process.env.GOOGLE_CLIENT_ID,
+                    process.env.GOOGLE_CLIENT_SECRET,
+                    "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback"
+                );
+
+                // 2. Apply the user's specific tokens (Google automatically handles refreshing!)
+                oAuth2Client.setCredentials({
+                    access_token: user.gmailAccessToken,
+                    refresh_token: user.gmailRefreshToken,
                 });
 
-                // Nodemailer automatically handles token refresh using the refreshToken!
-                const transporter = nodemailer.createTransport({
-                    service: 'gmail',
-                    auth: {
-                        type: 'OAuth2',
-                        user: user.email,
-                        clientId: process.env.GOOGLE_CLIENT_ID,
-                        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-                        refreshToken: user.gmailRefreshToken,
-                        accessToken: user.gmailAccessToken
-                    }
-                });
+                const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
 
-                await transporter.sendMail({
-                    from: `"${user.name}" <${user.email}>`,
-                    to,
-                    subject,
-                    text: body
+                // 3. Format the email into RFC 2822 MIME format securely
+                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+                const messageParts = [
+                    `To: ${to}`,
+                    `Subject: ${utf8Subject}`,
+                    `Content-Type: text/plain; charset=utf-8`,
+                    `MIME-Version: 1.0`,
+                    ``, // Empty line separates headers from body
+                    body
+                ];
+                const message = messageParts.join('\n');
+
+                // 4. Gmail API requires strict "Base64URL" encoding
+                const encodedMessage = Buffer.from(message)
+                    .toString('base64')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
+
+                // 5. Send via the secure REST API
+                await gmail.users.messages.send({
+                    userId: 'me', // Translates to the authenticated token's email
+                    requestBody: { raw: encodedMessage },
                 });
 
                 return `Email sent successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
@@ -185,7 +209,7 @@ export const createSendEmailTool = (userId) => {
         },
         {
             name: "send_email",
-            description: "Sends an email from the user's Gmail account to a specified recipient address.",
+            description: "Sends an email to a specified address.",
             schema: z.object({ to: z.string(), subject: z.string(), body: z.string() })
         }
     );
@@ -196,6 +220,7 @@ export const getWeatherTool = tool(
         try {
             const safeLoc = encodeURIComponent(location.trim());
             const url = `https://wttr.in/${safeLoc}?format=j1`;
+
             const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
             if (data && data.current_condition && data.current_condition[0]) {
@@ -223,14 +248,17 @@ export const getWeatherTool = tool(
 );
 
 // ============================================================================
-// 🌍 TOOL 4: The Global Sports Hub
+// 🌍 TOOL 4: The Global Sports Hub (Untouched Omni-Router)
 // ============================================================================
+
 export const getSportsDataTool = tool(
     async ({ requestType, sport, query }) => {
         try {
             const voiceNormalizedQuery = normalizeVoiceInput(query);
             const isUpcoming = requestType === "fixtures" || voiceNormalizedQuery.includes("upcoming") || voiceNormalizedQuery.includes("tomorrow") || voiceNormalizedQuery.includes("next");
+
             const fullContextCheck = `${sport} ${voiceNormalizedQuery}`.toLowerCase();
+
             const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of|the|for)/gi, '').trim();
 
             let t1 = cleanQuery;
@@ -241,10 +269,14 @@ export const getSportsDataTool = tool(
                 t2 = parts[1].trim();
             }
 
-            // ⚽ FOOTBALL
+            // ==========================================
+            // ⚽ ROUTE 1: FOOTBALL (Football-Data.org)
+            // ==========================================
             if (fullContextCheck.includes("football") || fullContextCheck.includes("soccer") || fullContextCheck.includes("epl") || fullContextCheck.includes("ucl") || fullContextCheck.includes("madrid") || fullContextCheck.includes("city") || fullContextCheck.includes("united") || fullContextCheck.includes("arsenal") || fullContextCheck.includes("chelsea") || fullContextCheck.includes("liverpool")) {
+
                 const apiKey = process.env.FOOTBALL_DATA_TOKEN;
                 if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing");
+                const headers = { 'X-Auth-Token': apiKey };
 
                 const POPULAR_TEAMS = {
                     "arsenal": 57, "aston villa": 58, "chelsea": 61, "everton": 62,
@@ -258,7 +290,7 @@ export const getSportsDataTool = tool(
                 let teamId = POPULAR_TEAMS[t1];
                 if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB");
 
-                const fixData = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/teams/${teamId}/matches`, { headers: { 'X-Auth-Token': apiKey } }, 30000);
+                const fixData = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/teams/${teamId}/matches`, { headers }, 30000);
                 const allMatches = fixData.matches || [];
                 if (allMatches.length === 0) throw new Error("No fixtures found.");
 
@@ -293,7 +325,9 @@ export const getSportsDataTool = tool(
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
-            // 🏀 BASKETBALL
+            // ==========================================
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
+            // ==========================================
             else if (fullContextCheck.includes("basketball") || fullContextCheck.includes("nba") || fullContextCheck.includes("lakers") || fullContextCheck.includes("warriors")) {
                 let match = null;
                 if (t2) {
@@ -314,7 +348,8 @@ export const getSportsDataTool = tool(
                     const teamId = teamData.teams[0].idTeam;
                     let fetchUrl = isUpcoming ? `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}` : `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
                     const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
-                    match = isUpcoming ? fixData.events?.[0] : fixData.results?.[0];
+                    const eventsArray = isUpcoming ? fixData.events : fixData.results;
+                    match = eventsArray?.[0];
                 }
 
                 if (!match) throw new Error("No matches found.");
@@ -328,7 +363,9 @@ export const getSportsDataTool = tool(
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
-            // 🏏 CRICKET
+            // ==========================================
+            // 🏏 ROUTE 3: CRICKET (CRICAPI)
+            // ==========================================
             else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
@@ -337,15 +374,18 @@ export const getSportsDataTool = tool(
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
 
                 t1 = t1 || "match";
-                let targetMatch = null;
 
+                let targetMatch = null;
                 if (t2) {
                     targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2));
                 } else if (t1 !== "match") {
                     targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1));
                 }
 
-                if (!targetMatch) targetMatch = matchData.data[0];
+                if (!targetMatch) {
+                    targetMatch = matchData.data[0];
+                }
+
                 if (!targetMatch) throw new Error("No active cricket matches found.");
 
                 const teamAName = targetMatch.teams?.[0] || "Team A";
@@ -361,7 +401,7 @@ export const getSportsDataTool = tool(
                         const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6);
                         if (oMath > 0) crr = (sA.r / oMath).toFixed(2);
                     }
-                    if (sB) scoreB = `${sB.r}/${sB.w}`;
+                    if (sB) { scoreB = `${sB.r}/${sB.w}`; }
                 }
                 const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
 
@@ -374,11 +414,14 @@ export const getSportsDataTool = tool(
             }
 
             throw new Error("Route not found");
+
         } catch (error) {
             console.error("[Sports Data Error]:", error.message);
             const errorData = JSON.stringify({
-                league: "Sports Data", isLive: false,
-                teamA: { name: "System", score: "-" }, teamB: { name: "Error", score: "-" },
+                league: "Sports Data",
+                isLive: false,
+                teamA: { name: "System", score: "-" },
+                teamB: { name: "Error", score: "-" },
                 status: error.message.includes("CRICKET_API_KEY missing") ? "API Key Missing" : "Data temporarily unavailable"
             });
             return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
