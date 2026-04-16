@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import session from 'express-session';
 import passport from 'passport';
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
@@ -30,14 +29,8 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// 🚀 INITIALIZE SESSIONS & PASSPORT
-app.use(session({
-    secret: process.env.JWT_SECRET || 'voxa_super_secret_key',
-    resave: false,
-    saveUninitialized: false,
-}));
+// 🚀 INITIALIZE PASSPORT (Sessions Completely Removed!)
 app.use(passport.initialize());
-app.use(passport.session());
 
 // 🛣️ API Routes
 app.use('/api/auth', authRoutes);
@@ -47,7 +40,7 @@ app.use('/api/sports', sportsRoutes);
 
 // Basic health check route
 app.get('/', (req, res) => {
-    res.send('Voxa AI Backend is running securely with OAuth.');
+    res.send('Voxa AI Backend is running securely with sessionless OAuth.');
 });
 
 const PORT = process.env.PORT || 5000;

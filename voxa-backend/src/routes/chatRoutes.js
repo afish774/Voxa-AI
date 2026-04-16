@@ -16,22 +16,19 @@ router.get('/history', protect, async (req, res) => {
     }
 });
 
-// 🚀 UPGRADED: Server-Sent Events (SSE) Streaming Route
+// 🚀 Server-Sent Events (SSE) Streaming Route
 router.post('/', protect, async (req, res) => {
-    // 1. Establish the Real-Time Pipeline Headers
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
     });
 
-    // Helper function to push chunks of data down the pipe
     const sendStreamEvent = (type, payload) => {
         res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
     };
 
     try {
-        // 🚀 NEW: Extract 'mood' from the incoming React request
         const { prompt, image, voice, mood } = req.body;
 
         if (!prompt) {
@@ -51,12 +48,10 @@ router.post('/', protect, async (req, res) => {
             return res.end();
         }
 
-        // 2. Start the AI Pipeline and pass in a real-time status callback
         sendStreamEvent('status', { text: 'Thinking...' });
 
-        // 🚀 NEW: Pass the 'mood' variable into the LLM engine
+        // 🚀 Execution matches LLM signature exactly
         const aiResponse = await generateAIResponse(prompt, image, req.user._id, (statusMessage) => {
-            // This fires dynamically if the AI decides to use the Tavily Search Tool!
             sendStreamEvent('status', { text: statusMessage });
         }, mood);
 
@@ -65,16 +60,14 @@ router.post('/', protect, async (req, res) => {
             return res.end();
         }
 
-        // 3. ⚡ INSTANT TEXT DELIVERY ⚡
-        // The UI will update with text and widgets immediately!
-        console.log(`🤖 Voxa thought: "${aiResponse.text}"`);
+        // ⚡ INSTANT TEXT DELIVERY
         sendStreamEvent('text', { text: aiResponse.text, card: aiResponse.card });
         await Message.create({ user: req.user._id, role: 'ai', text: aiResponse.text });
 
-        // 4. GENERATE AUDIO IN BACKGROUND
+        // GENERATE AUDIO IN BACKGROUND
         const base64Audio = await generateSpeech(aiResponse.text, voice || 'female');
 
-        // 5. SEND AUDIO AND CLOSE CONNECTION
+        // SEND AUDIO AND CLOSE CONNECTION
         sendStreamEvent('audio', { audio: base64Audio });
         res.end();
 

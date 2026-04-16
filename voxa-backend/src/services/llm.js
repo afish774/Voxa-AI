@@ -2,7 +2,7 @@ import { ChatGroq } from "@langchain/groq";
 import { HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { TavilySearch } from "@langchain/tavily";
 import { getChatHistory, getRelevantFacts, saveFact } from './memory.js';
-import { createReminderTool, getCryptoPriceTool, createSendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js'; // 🚀 UPDATED IMPORT
+import { createReminderTool, getCryptoPriceTool, createSendEmailTool, getSportsDataTool, getWeatherTool } from './tools.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -51,7 +51,6 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         history.forEach(msg => { memoryContext += `${msg.role === 'user' ? 'USER' : 'VOXA'}: ${msg.text}\n`; });
         memoryContext += "--- END MEMORY ---\n\n";
 
-        // 🚀 THE UPGRADED, IRONCLAD SYSTEM PROMPT
         const systemInstruction = `You are Voxa, an intelligent AI voice assistant. 
 RULES:
 1. Speak in natural, complete sentences (under 40 words).
@@ -108,7 +107,7 @@ RULES:
                         else if (toolCall.name === "get_crypto_price") {
                             toolResultText = await getCryptoPriceTool.invoke(toolCall.args);
                         }
-                        else if (toolCall.name === "send_email") { // 🚀 EXECUTING THE NEW EMAIL TOOL
+                        else if (toolCall.name === "send_email") {
                             toolResultText = await emailTool.invoke(toolCall.args);
                         }
                         else if (toolCall.name === "get_sports_data") {
@@ -150,7 +149,7 @@ RULES:
 
         let cardData = null;
 
-        // 🚀 THE ULTIMATE PARSER (Extracts UI tags and removes them from speech)
+        // 🚀 THE ULTIMATE PARSER
         const cardRegex = /\|\|\s*CARD\s*:\s*(.*?)\s*\|\|/is;
         const match = responseText.match(cardRegex);
 
@@ -183,7 +182,7 @@ RULES:
         }
 
         console.log("🤖 LLAMA RAW TEXT:", result.content);
-        console.log("🃏 EXTRACTED CARD:", cardData);
+        if (cardData) console.log("🃏 EXTRACTED CARD:", cardData.type);
 
         extractBackgroundFacts(userId, userPrompt);
         return { text: responseText, card: cardData };
