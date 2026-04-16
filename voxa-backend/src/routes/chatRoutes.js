@@ -31,21 +31,27 @@ router.post('/', protect, async (req, res) => {
     try {
         const { prompt, image, voice, mood } = req.body;
 
-        if (!prompt) {
-            sendStreamEvent('error', { text: "Prompt is required" });
+        // 🚀 FIXED: Allow processing if either a prompt OR an image is provided
+        if (!prompt && !image) {
+            sendStreamEvent('error', { text: "Prompt or image is required" });
             return res.end();
         }
 
-        console.log(`🗣️ User [${req.user.name}] said: "${prompt}" (Mood: ${mood || 'neutral'})`);
-        await Message.create({ user: req.user._id, role: 'user', text: prompt });
+        const logPrompt = prompt || "[Image Uploaded]";
+        console.log(`🗣️ User [${req.user.name}] said: "${logPrompt}" (Mood: ${mood || 'neutral'})`);
 
-        const commandResponse = executeCommand(prompt);
-        if (commandResponse) {
-            sendStreamEvent('text', { text: commandResponse });
-            const audio = await generateSpeech(commandResponse, voice || 'female');
-            sendStreamEvent('audio', { audio });
-            await Message.create({ user: req.user._id, role: 'ai', text: commandResponse });
-            return res.end();
+        // 🚀 FIXED: Save the interaction to the database properly
+        await Message.create({ user: req.user._id, role: 'user', text: logPrompt });
+
+        if (prompt) {
+            const commandResponse = executeCommand(prompt);
+            if (commandResponse) {
+                sendStreamEvent('text', { text: commandResponse });
+                const audio = await generateSpeech(commandResponse, voice || 'female');
+                sendStreamEvent('audio', { audio });
+                await Message.create({ user: req.user._id, role: 'ai', text: commandResponse });
+                return res.end();
+            }
         }
 
         sendStreamEvent('status', { text: 'Thinking...' });

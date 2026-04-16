@@ -11,13 +11,13 @@ dotenv.config();
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
     model: "llama-3.3-70b-versatile",
-    temperature: 0,
+    temperature: 0.1, // Slightly higher than 0 prevents repeating logic loops
 });
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "meta-llama/llama-4-scout-17b-16e-instruct",
-    temperature: 0.7,
+    model: "llama-3.2-11b-vision-preview", // 🚀 FIXED: Correctly configured Groq Vision Model
+    temperature: 0.5,
     maxRetries: 1
 });
 
@@ -29,6 +29,7 @@ const searchTool = new TavilySearch({
 
 // 🧠 3. Background Fact Extractor
 const extractBackgroundFacts = async (userId, userText) => {
+    if (!userText) return;
     try {
         const extractorPrompt = `Analyze this text. Extract any concrete, long-term facts about the user. Write the fact in a single sentence. If no facts exist, reply NONE.\nUSER TEXT: "${userText}"\nFACT:`;
         const result = await groqChat.invoke([new HumanMessage(extractorPrompt)]);
@@ -43,7 +44,7 @@ export const generateAIResponse = async (userPrompt, base64Image = null, userId,
         if (!userId) throw new Error("userId is missing!");
 
         const history = await getChatHistory(userId);
-        const facts = await getRelevantFacts(userId, userPrompt);
+        const facts = await getRelevantFacts(userId, userPrompt || "");
 
         let memoryContext = "--- RAG KNOWLEDGE BASE ---\n";
         facts.forEach(fact => { memoryContext += `- ${fact}\n`; });
@@ -64,15 +65,13 @@ CURRENT CONTEXT:
 
 RULES:
 1. Speak in natural, complete sentences (under 40 words).
-2. Do NOT use markdown formatting.
-3. IDENTITY & CREATOR: If asked who created, built, or made you, state clearly that you were built by Afish Abdulkader, a Full Stack Developer and BCA student specializing in AI, ML, and Robotics at Yenepoya University.
-4. MODEL INFO: If asked about your underlying AI model or what powers you, state strictly that you are powered by the "voxa.voice.1.0 model".
-5. TIME & DATE: If the user asks for the current time or date, answer naturally using the CURRENT CONTEXT block above.
-6. WIDGET PROTOCOL (CRITICAL): If you use a tool (Weather, Crypto, Sports, Reminder, Email), the tool will return a string formatted as ||CARD:TYPE:DATA||. You MUST append this EXACT string to the very end of your response without changing a single character. Do not paraphrase or translate it.
-7. VISION OVERRIDE: If an image is provided, describe what you see accurately.
-8. FULL AUTHORITY: You have full permission to interact with the real world.
-9. EMOTIONAL AWARENESS: The user's current detected mood is: ${mood}.
-10. DIRECT KNOWLEDGE BYPASS: If the user asks a general knowledge question, factual trivia, philosophy, or engages in normal conversational chat, DO NOT trigger the web search tool or any other tools. Answer instantly and directly from your own internal memory.`;
+2. Do NOT use markdown formatting like ** or ##.
+3. IDENTITY: State clearly that you were built by Afish Abdulkader, a Full Stack Developer and BCA student specializing in AI, ML, and Robotics at Yenepoya University.
+4. MODEL: You are powered by the "voxa.voice.1.0 model".
+5. WIDGET PROTOCOL (CRITICAL): If you use a tool (Weather, Crypto, Sports, Reminder, Email), the tool will return a string formatted as ||CARD:TYPE:DATA||. You MUST append this EXACT string to the very end of your response.
+6. VISION OVERRIDE: If an image is provided, describe what you see accurately.
+7. EMOTION: The user's current detected mood is: ${mood}.
+8. Respond instantly to general knowledge or chat without tools.`;
 
         let result;
 
@@ -81,7 +80,7 @@ RULES:
             const visionMessages = [
                 new HumanMessage({
                     content: [
-                        { type: "text", text: `[SYSTEM CONTEXT]\n${systemInstruction}\n\n${memoryContext}\n\nCURRENT USER MESSAGE: ${userPrompt}` },
+                        { type: "text", text: `[SYSTEM CONTEXT]\n${systemInstruction}\n\n${memoryContext}\n\nCURRENT USER MESSAGE: ${userPrompt || "Describe this image."}` },
                         { type: "image_url", image_url: { url: `data:image/jpeg;base64,${cleanBase64}` } }
                     ]
                 })
@@ -100,8 +99,9 @@ RULES:
             result = await groqChatWithTools.invoke(messages);
             let loopCount = 0;
 
+            // 🚀 ROBUST TOOL EXECUTION LOOP
             while (result.tool_calls && result.tool_calls.length > 0 && loopCount < 3) {
-                messages.push(result);
+                messages.push(result); // Push the AI's tool request to history
 
                 for (const toolCall of result.tool_calls) {
                     try {
@@ -129,6 +129,7 @@ RULES:
                             toolResultText = await getWeatherTool.invoke(toolCall.args);
                         }
 
+                        // Push the tool result back to the LLM
                         messages.push(new ToolMessage({
                             content: toolResultText,
                             tool_call_id: toolCall.id,
@@ -139,8 +140,9 @@ RULES:
                     }
                 }
 
+                // Call the LLM again with the tool results so it can synthesize a final answer
                 if (loopCount === 2) {
-                    result = await groqChat.invoke(messages);
+                    result = await groqChat.invoke(messages); // Force standard text generation on last loop
                 } else {
                     result = await groqChatWithTools.invoke(messages);
                 }
@@ -150,6 +152,7 @@ RULES:
 
         let responseText = result.content;
 
+        // Clean up markdown artifacts from tool generation
         if (responseText) {
             responseText = responseText.replace(/<function[^>]*>.*?<\/function>/gi, '').trim();
         }

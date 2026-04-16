@@ -54,3 +54,27 @@ export const streamChatResponse = async (payload, callbacks) => {
         onError("Network connection dropped. Check the console.");
     }
 };
+
+// 🚀 ADDED: The missing fetch function required by the History UI Tab!
+export const fetchChatHistory = async (token) => {
+    try {
+        const response = await fetch("https://voxa-ai-zh5o.onrender.com/api/chat/history", {
+            method: "GET",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${token}`
+            }
+        });
+
+        if (!response.ok) {
+            console.error("History fetch rejected by server.");
+            return [];
+        }
+
+        const data = await response.json();
+        return data.filter(msg => msg && msg.text);
+    } catch (err) {
+        console.error("🚨 FETCH HISTORY FAILED:", err);
+        return [];
+    }
+};
