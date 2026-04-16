@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Human } from "@vladmandic/human";
 
 const EMOTION_AURA = {
     neutral: "rgba(255, 255, 255, 0.15)",
@@ -13,16 +12,10 @@ const EMOTION_AURA = {
 };
 
 export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmotionDetected }) {
-    const humanRef = useRef(null);
-    const requestRef = useRef(null);
-
-    const [isAiReady, setIsAiReady] = useState(false);
     const [currentMood, setCurrentMood] = useState("neutral");
     const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
     const [facingMode, setFacingMode] = useState("user");
-
-    const moodBufferRef = useRef({ emotion: "neutral", count: 0 });
-    const lastEmittedMoodRef = useRef("neutral");
+    const scanIntervalRef = useRef(null);
 
     // Helper function to check devices
     const checkHardwareDevices = async () => {
@@ -33,24 +26,8 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
         } catch (err) { }
     };
 
-    // Initial check (often blocked by mobile browsers until permission is granted)
     useEffect(() => {
         checkHardwareDevices();
-    }, []);
-
-    useEffect(() => {
-        const initHuman = async () => {
-            try {
-                humanRef.current = new Human({
-                    modelBasePath: 'https://cdn.jsdelivr.net/npm/@vladmandic/human/models/',
-                    face: { enabled: true, emotion: { enabled: true } },
-                    body: { enabled: false }, hand: { enabled: false }, object: { enabled: false }, gesture: { enabled: false }
-                });
-                await humanRef.current.load();
-                setIsAiReady(true);
-            } catch (err) { }
-        };
-        initHuman();
     }, []);
 
     useEffect(() => {
@@ -60,62 +37,58 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
                 .then((s) => {
                     stream = s;
                     if (videoRef.current) videoRef.current.srcObject = s;
-
-                    // 🚀 THE FIX: Re-check devices AFTER the user clicks "Allow"!
                     checkHardwareDevices();
                 })
                 .catch((err) => console.error("Webcam error:", err));
         }
         return () => {
             if (stream) stream.getTracks().forEach(track => track.stop());
-            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+            if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
         };
     }, [isActive, facingMode, videoRef]);
 
-    const detectFrame = async () => {
-        if (!videoRef.current || !humanRef.current || !isAiReady) return;
-
-        if (videoRef.current.readyState >= 2) {
-            try {
-                const result = await humanRef.current.detect(videoRef.current);
-
-                if (result.face && result.face.length > 0) {
-                    const emotions = result.face[0].emotion;
-                    if (emotions && emotions.length > 0) {
-                        const topEmotion = emotions[0];
-
-                        let detectedEmotion = "neutral";
-                        if (topEmotion.score > 0.4) detectedEmotion = topEmotion.emotion;
-
-                        if (moodBufferRef.current.emotion === detectedEmotion) {
-                            moodBufferRef.current.count += 1;
-                        } else {
-                            moodBufferRef.current = { emotion: detectedEmotion, count: 1 };
-                        }
-
-                        if (moodBufferRef.current.count >= 4 && lastEmittedMoodRef.current !== detectedEmotion) {
-                            lastEmittedMoodRef.current = detectedEmotion;
-                            setCurrentMood(detectedEmotion);
-                            if (onEmotionDetected) onEmotionDetected(detectedEmotion);
-                        }
-                    }
-                }
-            } catch (err) { }
-        }
-
-        // Throttle the AI so it doesn't kill the microphone
-        setTimeout(() => {
-            requestRef.current = requestAnimationFrame(detectFrame);
-        }, 250);
-    };
-
-    const handleVideoPlay = () => { if (isAiReady) detectFrame(); };
-
+    // 🚀 THE NEW PYTHON AI SCANNER
     useEffect(() => {
-        if (isAiReady && videoRef.current && !videoRef.current.paused) {
-            detectFrame();
+        if (isActive) {
+            scanIntervalRef.current = setInterval(async () => {
+                if (!videoRef.current || videoRef.current.readyState < 2) return;
+
+                // Create a temporary canvas to snap the frame
+                const canvas = document.createElement("canvas");
+                canvas.width = 400; // Resize to save bandwidth
+                canvas.height = 300;
+                const ctx = canvas.getContext("2d");
+                ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+
+                const base64Frame = canvas.toDataURL("image/jpeg", 0.5);
+
+                try {
+                    // Send to our new Python Microservice!
+                    const formData = new FormData();
+                    formData.append("image_b64", base64Frame);
+
+                    const response = await fetch("http://localhost:8000/analyze/vision", {
+                        method: "POST",
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success && data.dominant_emotion) {
+                        setCurrentMood(data.dominant_emotion);
+                        // Send the emotion up to App.jsx so Llama knows!
+                        if (onEmotionDetected) onEmotionDetected(data.dominant_emotion);
+                    }
+                } catch (error) {
+                    console.error("Failed to reach Python Emotion Engine:", error);
+                }
+            }, 3000); // Scans every 3 seconds
         }
-    }, [isAiReady]);
+
+        return () => {
+            if (scanIntervalRef.current) clearInterval(scanIntervalRef.current);
+        };
+    }, [isActive, onEmotionDetected, videoRef]);
 
     const toggleCamera = () => setFacingMode(prev => prev === "user" ? "environment" : "user");
 
@@ -130,7 +103,7 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
                         transition={{ type: "spring", stiffness: 350, damping: 30, boxShadow: { duration: 1.5 } }}
                         style={{ pointerEvents: "auto", width: "min(92vw, 420px)", height: "min(80dvh, 600px)", borderRadius: "clamp(24px, 5vw, 40px)", border: `1px solid ${EMOTION_AURA[currentMood] || "rgba(255,255,255,0.15)"}`, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "clamp(12px, 4vw, 24px)", background: "#000" }}
                     >
-                        <video id="voxa-camera-feed" ref={videoRef} onPlay={handleVideoPlay} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0, transform: facingMode === "user" ? "scaleX(-1)" : "none", transition: "transform 0.3s" }} />
+                        <video id="voxa-camera-feed" ref={videoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0, transform: facingMode === "user" ? "scaleX(-1)" : "none", transition: "transform 0.3s" }} />
 
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
                             {hasMultipleCameras ? (
