@@ -65,10 +65,14 @@ export function HistoryScreen({ theme, user, onClose }) {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
+                // 🚀 FIXED: Fallback to localStorage token specifically for OAuth users
+                const token = user?.token || localStorage.getItem('voxa_token');
+
                 const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/chat/history', {
-                    headers: { "Authorization": `Bearer ${user?.token}` }
+                    headers: { "Authorization": `Bearer ${token}` }
                 });
                 const data = await response.json();
+
                 if (Array.isArray(data)) {
                     const formatted = data.map(msg => {
                         const date = new Date(msg.timestamp);
@@ -102,15 +106,18 @@ export function MemoryScreen({ theme, user }) {
 
     const fetchMemories = async () => {
         try {
-            const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/memory', { headers: { 'Authorization': `Bearer ${user?.token}` } });
+            // 🚀 FIXED: Added localStorage OAuth fallback here too
+            const token = user?.token || localStorage.getItem('voxa_token');
+            const response = await fetch('https://voxa-ai-zh5o.onrender.com/api/memory', { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await response.json();
             if (Array.isArray(data)) setMemories(data);
         } catch (error) { console.error("Failed to load memories", error); } finally { setLoading(false); }
     };
 
     const deleteMemory = async (id) => {
+        const token = user?.token || localStorage.getItem('voxa_token');
         setMemories(memories.filter(m => m._id !== id));
-        try { await fetch(`https://voxa-ai-zh5o.onrender.com/api/memory/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${user?.token}` } }); }
+        try { await fetch(`https://voxa-ai-zh5o.onrender.com/api/memory/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }); }
         catch (error) { fetchMemories(); }
     };
 
