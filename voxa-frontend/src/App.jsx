@@ -109,16 +109,28 @@ function VoiceAssistant({ user, onLogout }) {
     loopRef.current.isBotSpeaking = false;
     if (loopRef.current.pendingHangup) { endCall(); } else if (loopRef.current.isVoiceCall) {
       setPhase(PHASES.LISTENING); setCurrentPrompt("Listening..."); setCurrentResponse("");
-      if (micRef.current) { try { micRef.current.start(); } catch (e) { } }
+      if (micRef.current) {
+        // 🚀 FIXED: Catch and log mic restart errors instead of ignoring them
+        try {
+          micRef.current.start();
+        } catch (e) {
+          console.error("❌ Failed to restart microphone after TTS:", e);
+        }
+      }
       startSilenceTimer();
     }
   }, [endCall, startSilenceTimer]);
 
   useEffect(() => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) return;
+    if (!SR) {
+      console.error("🚨 Speech Recognition is NOT supported in this browser!");
+      return;
+    }
     const rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US';
+
     rec.onstart = () => { if (loopRef.current.isVoiceCall && !loopRef.current.isBotSpeaking) { setPhase(PHASES.LISTENING); setCurrentPrompt("Listening..."); startSilenceTimer(); } };
+
     rec.onresult = (e) => {
       const transcript = e.results[e.results.length - 1][0].transcript.trim();
       if (!transcript) return;
@@ -126,18 +138,41 @@ function VoiceAssistant({ user, onLogout }) {
       if (loopRef.current.isBotSpeaking) return;
       if (window.activeRunQuery) window.activeRunQuery(transcript);
     };
-    rec.onend = () => { if (loopRef.current.isVoiceCall && !loopRef.current.isBotSpeaking) { setTimeout(() => { try { rec.start(); } catch (e) { } }, 200); } };
+
+    // 🚀 FIXED: Added error handler to reveal browser/permission blocks
+    rec.onerror = (event) => {
+      console.error("🎤 Microphone Error:", event.error);
+      if (event.error === 'not-allowed') {
+        alert("Microphone access denied! Please click the lock icon in your URL bar and allow microphone access.");
+      }
+    };
+
+    rec.onend = () => { if (loopRef.current.isVoiceCall && !loopRef.current.isBotSpeaking) { setTimeout(() => { try { rec.start(); } catch (e) { console.error("Mic restart error:", e); } }, 200); } };
     micRef.current = rec;
   }, [startSilenceTimer]);
 
   const handleOrbTap = () => {
     if (loopRef.current.isBotSpeaking) return;
     if (loopRef.current.isVoiceCall) { endCall(); } else {
+
+      // 🚀 FIXED: Prevent crash if browser blocks Speech API entirely
+      if (!micRef.current) {
+        alert("Your browser does not support Voice AI. Please use Google Chrome or Microsoft Edge.");
+        return;
+      }
+
       loopRef.current.isVoiceCall = true; loopRef.current.isBotSpeaking = false; loopRef.current.pendingHangup = false;
       setPhase(PHASES.LISTENING); setShowGreeting(false); setRibbonSplit(true); setShowQuery(true); setCurrentPrompt("Listening..."); setCurrentResponse(""); setCurrentCard(null);
       if ('speechSynthesis' in window) window.speechSynthesis.cancel();
       if (loopRef.current.audioPlayer) { try { loopRef.current.audioPlayer.pause(); loopRef.current.audioPlayer.currentTime = 0; } catch (e) { } }
-      try { micRef.current.start(); } catch (e) { }
+
+      // 🚀 FIXED: Catch specific mic initialization failures
+      try {
+        micRef.current.start();
+        console.log("🎙️ Microphone successfully opened!");
+      } catch (e) {
+        console.error("❌ Failed to start microphone:", e);
+      }
     }
   };
 
