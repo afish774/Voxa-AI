@@ -25,9 +25,9 @@ const IconArrowRight = () => <svg width="18" height="18" viewBox="0 0 24 24" fil
 
 function AmbientMeshBackground() {
     return (
-        <div style={{ position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 0, backgroundColor: "#fdfdfd" }}>
-            <motion.div animate={{ x: ["0%", "5%", "0%"], y: ["0%", "8%", "0%"], scale: [1, 1.05, 1] }} transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "-10%", left: "5%", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(124, 58, 237, 0.08) 0%, rgba(255,255,255,0) 70%)", filter: "blur(90px)", borderRadius: "50%", willChange: "transform" }} />
-            <motion.div animate={{ x: ["0%", "-5%", "0%"], y: ["0%", "-10%", "0%"], scale: [1, 1.1, 1] }} transition={{ duration: 22, repeat: Infinity, ease: "easeInOut", delay: 2 }} style={{ position: "absolute", bottom: "10%", right: "-5%", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(219, 39, 119, 0.06) 0%, rgba(255,255,255,0) 70%)", filter: "blur(100px)", borderRadius: "50%", willChange: "transform" }} />
+        <div style={{ position: "fixed", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 0, backgroundColor: "#fcfcfc" }}>
+            <motion.div animate={{ x: ["0%", "5%", "0%"], y: ["0%", "8%", "0%"], scale: [1, 1.05, 1] }} transition={{ duration: 18, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "-10%", left: "5%", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(124, 58, 237, 0.06) 0%, rgba(255,255,255,0) 70%)", filter: "blur(90px)", borderRadius: "50%", willChange: "transform" }} />
+            <motion.div animate={{ x: ["0%", "-5%", "0%"], y: ["0%", "-10%", "0%"], scale: [1, 1.1, 1] }} transition={{ duration: 22, repeat: Infinity, ease: "easeInOut", delay: 2 }} style={{ position: "absolute", bottom: "10%", right: "-5%", width: "60vw", height: "60vw", background: "radial-gradient(circle, rgba(219, 39, 119, 0.05) 0%, rgba(255,255,255,0) 70%)", filter: "blur(100px)", borderRadius: "50%", willChange: "transform" }} />
         </div>
     );
 }
@@ -90,8 +90,8 @@ function StickyTimeline() {
                 <div className="timeline-wrapper">
                     <div className="timeline-text" style={{ position: "relative" }}>
                         <div className="timeline-header">
-                            <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.05em", margin: "0 0 12px 0" }}>How it works.</h2>
-                            <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, margin: 0, letterSpacing: "-0.01em" }}>Three simple steps to absolute productivity.</p>
+                            <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>How it works.</h2>
+                            <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, margin: 0, letterSpacing: "-0.01em", fontWeight: 400 }}>Three simple steps to absolute productivity.</p>
                         </div>
                         <div style={{ position: "relative", paddingLeft: "clamp(32px, 6vw, 48px)", display: "flex", flexDirection: "column", gap: "clamp(24px, 4vw, 40px)" }}>
                             <div style={{ position: "absolute", left: 14, top: 0, bottom: 0, width: 2, background: themeColors.border, borderRadius: 4 }}>
@@ -104,7 +104,7 @@ function StickyTimeline() {
                                     <AnimatePresence initial={false}>
                                         {activeStep === i && (
                                             <motion.div initial={{ height: 0, opacity: 0, filter: "blur(4px)" }} animate={{ height: "auto", opacity: 1, filter: "blur(0px)" }} exit={{ height: 0, opacity: 0, filter: "blur(4px)" }} transition={springConfig} style={{ overflow: "hidden" }}>
-                                                <p style={{ fontSize: "clamp(16px, 3.5vw, 18px)", color: themeColors.textMuted, lineHeight: 1.6, margin: 0, paddingBottom: 16 }}>
+                                                <p style={{ fontSize: "clamp(16px, 3.5vw, 18px)", color: themeColors.textMuted, lineHeight: 1.6, margin: 0, paddingBottom: 16, fontWeight: 400 }}>
                                                     {i === 0 && "Create an account or log in to your Voxa dashboard. Your conversations are securely synced across all devices."}
                                                     {i === 1 && "No typing required. Just speak naturally, and Voxa will listen, parse, and respond in real time with stunning speed."}
                                                     {i === 2 && "Voxa generates dynamic widgets, beautiful data visualizations, and clear answers instantly on your screen."}
@@ -116,6 +116,7 @@ function StickyTimeline() {
                             ))}
                         </div>
                     </div>
+                    {/* This div gets hidden on mobile devices via the injected CSS */}
                     <div className="timeline-visual" style={{ display: "flex", justifyContent: "center" }}>
                         <motion.div style={{ width: "100%", aspectRatio: "3/4", background: "linear-gradient(180deg, #ffffff 0%, #f4f4f5 100%)", borderRadius: 36, padding: "clamp(10px, 2vw, 16px)", boxShadow: "0 40px 80px -20px rgba(0,0,0,0.1), inset 0 1px 1px rgba(255,255,255,1), 0 0 0 1px rgba(0,0,0,0.05)", position: "relative" }}>
                             <div style={{ position: "absolute", top: 6, left: "50%", transform: "translateX(-50%)", width: "25%", height: 4, background: "rgba(0,0,0,0.05)", borderRadius: 4 }} />
@@ -158,8 +159,8 @@ function FeaturesSection() {
         <section id="features" style={{ padding: "clamp(80px, 10vh, 160px) max(5%, 20px)", background: "transparent", position: "relative", zIndex: 10 }}>
             <div style={{ maxWidth: 1200, margin: "0 auto" }}>
                 <div style={{ textAlign: "center", marginBottom: "clamp(40px, 6vw, 80px)" }}>
-                    <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.05em", margin: "0 0 12px 0" }}>Beyond a text box.</h2>
-                    <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, lineHeight: 1.5, letterSpacing: "-0.01em" }}>Designed with frontend precision and AI power.</p>
+                    <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>Beyond a text box.</h2>
+                    <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, lineHeight: 1.5, letterSpacing: "-0.01em", fontWeight: 400 }}>Designed with frontend precision and AI power.</p>
                 </div>
                 <div className="bento-grid">
                     <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.7, ease: customEase }} className="col-span-2" style={{ willChange: "transform, opacity" }}>
@@ -168,7 +169,7 @@ function FeaturesSection() {
                                 <div style={{ flex: "1 1 300px" }}>
                                     <div style={{ color: "#fff", marginBottom: 32, background: themeColors.primary, width: "clamp(48px, 10vw, 64px)", height: "clamp(48px, 10vw, 64px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "18px", boxShadow: "0 10px 20px -5px rgba(124, 58, 237, 0.3), inset 0 2px 4px rgba(255,255,255,0.2)" }}><IconBrain /></div>
                                     <h3 style={{ fontSize: "clamp(26px, 6vw, 40px)", fontWeight: 700, color: themeColors.textMain, marginBottom: 16, letterSpacing: "-0.04em" }}>AI Models, Unified</h3>
-                                    <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 4vw, 18px)", lineHeight: 1.6 }}>Voxa acts as an orchestration layer. It seamlessly connects to Gemini, Claude, and GPT models, dynamically routing your query to the engine best suited to answer it.</p>
+                                    <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 4vw, 18px)", lineHeight: 1.6, fontWeight: 400 }}>Voxa acts as an orchestration layer. It seamlessly connects to Gemini, Claude, and GPT models, dynamically routing your query to the engine best suited to answer it.</p>
                                 </div>
                                 <UnifiedModelsVisualizer />
                             </div>
@@ -178,14 +179,14 @@ function FeaturesSection() {
                         <SpotlightCard style={{ minHeight: "auto" }}>
                             <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.08)", border: "1px solid rgba(124, 58, 237, 0.15)", width: "clamp(48px, 10vw, 56px)", height: "clamp(48px, 10vw, 56px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "16px" }}><IconMic /></div>
                             <h3 style={{ fontSize: "clamp(22px, 5vw, 26px)", fontWeight: 700, color: themeColors.textMain, marginBottom: 12, letterSpacing: "-0.03em" }}>Never Miss a Word</h3>
-                            <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 3.5vw, 17px)", lineHeight: 1.6 }}>Voxa captures every word as you speak—instantly transcribing notes and conversations with near-perfect accuracy.</p>
+                            <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 3.5vw, 17px)", lineHeight: 1.6, fontWeight: 400 }}>Voxa captures every word as you speak—instantly transcribing notes and conversations with near-perfect accuracy.</p>
                         </SpotlightCard>
                     </motion.div>
                     <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.1 }} transition={{ duration: 0.7, delay: 0.2, ease: customEase }} style={{ willChange: "transform, opacity" }}>
                         <SpotlightCard style={{ minHeight: "auto" }}>
                             <div style={{ color: themeColors.primary, marginBottom: 24, background: "rgba(124, 58, 237, 0.08)", border: "1px solid rgba(124, 58, 237, 0.15)", width: "clamp(48px, 10vw, 56px)", height: "clamp(48px, 10vw, 56px)", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "16px" }}><IconHistory /></div>
                             <h3 style={{ fontSize: "clamp(22px, 5vw, 26px)", fontWeight: 700, color: themeColors.textMain, marginBottom: 12, letterSpacing: "-0.03em" }}>Context Stays With You</h3>
-                            <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 3.5vw, 17px)", lineHeight: 1.6 }}>Conversations are memory-aware. Pick up exactly where you left off without having to repeat past instructions.</p>
+                            <p style={{ color: themeColors.textMuted, fontSize: "clamp(16px, 3.5vw, 17px)", lineHeight: 1.6, fontWeight: 400 }}>Conversations are memory-aware. Pick up exactly where you left off without having to repeat past instructions.</p>
                         </SpotlightCard>
                     </motion.div>
                 </div>
@@ -208,8 +209,8 @@ function SplitPaneFAQ() {
             <motion.div animate={{ opacity: [0.2, 0.4, 0.2] }} transition={{ duration: 8, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "20%", left: "-10%", width: "50vw", height: "50vw", background: "radial-gradient(circle, rgba(124, 58, 237, 0.04) 0%, transparent 70%)", filter: "blur(80px)", pointerEvents: "none" }} />
             <div style={{ maxWidth: 1200, margin: "0 auto", position: "relative", zIndex: 10 }}>
                 <div style={{ marginBottom: "clamp(40px, 6vw, 80px)" }}>
-                    <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.05em", margin: "0 0 12px 0" }}>Frequently Asked.</h2>
-                    <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, lineHeight: 1.5, letterSpacing: "-0.01em" }}>Explore common questions about how Voxa AI works.</p>
+                    <h2 style={{ fontSize: "clamp(36px, 8vw, 56px)", fontWeight: 700, color: themeColors.textMain, letterSpacing: "-0.04em", margin: "0 0 12px 0" }}>Frequently Asked.</h2>
+                    <p style={{ fontSize: "clamp(18px, 4vw, 22px)", color: themeColors.textMuted, lineHeight: 1.5, letterSpacing: "-0.01em", fontWeight: 400 }}>Explore common questions about how Voxa AI works.</p>
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "clamp(32px, 5vw, 60px)" }}>
                     <div style={{ flex: "1 1 400px", display: "flex", flexDirection: "column", gap: 8, position: "relative" }}>
@@ -231,7 +232,7 @@ function SplitPaneFAQ() {
                             <motion.div key={activeIndex} initial={{ opacity: 0, y: 15, filter: "blur(4px)" }} animate={{ opacity: 1, y: 0, filter: "blur(0px)" }} exit={{ opacity: 0, y: -15, filter: "blur(4px)" }} transition={{ duration: 0.3, ease: customEase }} style={{ willChange: "transform, opacity" }}>
                                 <div style={{ color: themeColors.primary, marginBottom: 28, background: "rgba(124, 58, 237, 0.08)", border: "1px solid rgba(124, 58, 237, 0.15)", width: "clamp(48px, 10vw, 56px)", height: "clamp(48px, 10vw, 56px)", borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center" }}><IconBrain /></div>
                                 <h3 style={{ fontSize: "clamp(24px, 3vw, 32px)", fontWeight: 700, color: themeColors.textMain, marginBottom: 20, letterSpacing: "-0.03em" }}>{faqs[activeIndex].q}</h3>
-                                <p style={{ fontSize: "clamp(16px, 2vw, 18px)", color: themeColors.textMuted, lineHeight: 1.6 }}>{faqs[activeIndex].a}</p>
+                                <p style={{ fontSize: "clamp(16px, 2vw, 18px)", color: themeColors.textMuted, lineHeight: 1.6, fontWeight: 400 }}>{faqs[activeIndex].a}</p>
                             </motion.div>
                         </AnimatePresence>
                     </div>
@@ -271,7 +272,7 @@ export default function LandingPage({ onLaunch }) {
     const innerVideoScale = useTransform(heroScroll, [0.25, 0.85], [1, 1.15]);
 
     return (
-        <div style={{ minHeight: "100dvh", backgroundColor: "#fdfdfd", color: themeColors.textMain, fontFamily: "'SF Pro Display', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased" }}>
+        <div style={{ minHeight: "100dvh", backgroundColor: "#fdfdfd", color: themeColors.textMain, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", WebkitFontSmoothing: "antialiased" }}>
             <AmbientMeshBackground />
             <style>{`
                 html, body { margin: 0; padding: 0; overflow-x: clip; overscroll-behavior: none; }
@@ -285,12 +286,16 @@ export default function LandingPage({ onLaunch }) {
                 .timeline-wrapper { display: flex; width: 100%; max-width: 1200px; margin: 0 auto; align-items: center; justify-content: center; flex-direction: column; gap: 40px; }
                 .timeline-text { width: 100%; order: 2; }
                 .timeline-header { text-align: center; margin-bottom: 32px; }
-                .timeline-visual { width: 100%; max-width: 300px; order: 1; }
+                .timeline-visual { width: 100%; max-width: 300px; order: 1; display: flex; justify-content: center; }
                 @media (min-width: 900px) {
                     .timeline-wrapper { flex-direction: row; justify-content: space-between; gap: 8%; }
                     .timeline-text { width: 45%; order: 1; }
-                    .timeline-visual { width: 45%; max-width: 440px; order: 2; }
+                    .timeline-visual { width: 45%; max-width: 440px; order: 2; display: flex !important; }
                     .timeline-header { text-align: left; margin-bottom: 60px; }
+                }
+                /* Hide How It Works video container strictly on mobile */
+                @media (max-width: 899px) {
+                    .timeline-visual { display: none !important; }
                 }
             `}</style>
             <motion.nav initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, ease: customEase }} style={{ position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, padding: "clamp(12px, 2vh, 20px) max(5%, 24px)", paddingTop: "calc(env(safe-area-inset-top, 0px) + clamp(12px, 2vh, 20px))", display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(253, 253, 253, 0.7)", backdropFilter: "blur(40px) saturate(150%)", WebkitBackdropFilter: "blur(40px) saturate(150%)", borderBottom: "1px solid rgba(0,0,0,0.04)", willChange: "transform, opacity" }}>
@@ -313,7 +318,7 @@ export default function LandingPage({ onLaunch }) {
                             <span style={{ color: themeColors.primary, fontSize: 13 }}>✦</span>
                             <span style={{ color: themeColors.textMuted, fontSize: "clamp(12px, 3vw, 13px)", fontWeight: 600, letterSpacing: "0.02em" }}>Your Voice-Enabled Web Assistant</span>
                         </motion.div>
-                        <h1 style={{ fontSize: "clamp(46px, 12vw, 96px)", fontWeight: 800, letterSpacing: "-0.05em", lineHeight: 1.05, margin: "0 auto 20px auto", color: themeColors.textMain, maxWidth: 900 }}>
+                        <h1 style={{ fontSize: "clamp(46px, 12vw, 96px)", fontWeight: 800, letterSpacing: "-0.04em", lineHeight: 1.05, margin: "0 auto 20px auto", color: themeColors.textMain, maxWidth: 900 }}>
                             <RevealText text="Speak. Assist. Engage." />
                             <span style={{ display: "block" }}>
                                 <motion.span initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.8, delay: 0.8, ease: customEase }} style={{ background: themeColors.gradient, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", willChange: "transform, opacity", display: "inline-block" }}>
@@ -349,7 +354,7 @@ export default function LandingPage({ onLaunch }) {
                         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
                             <VoxaLogo size={24} /> <span style={{ color: themeColors.textMain, fontSize: 20, fontWeight: 700, letterSpacing: "-0.03em" }}>Voxa AI</span>
                         </div>
-                        <p style={{ color: themeColors.textMuted, fontSize: 15, lineHeight: 1.6, letterSpacing: "-0.01em" }}>Voxa AI is a voice-first AI assistant that allows you to have natural, spoken conversations to get answers, insights, or support—hands-free and in real time.</p>
+                        <p style={{ color: themeColors.textMuted, fontSize: 15, lineHeight: 1.6, letterSpacing: "-0.01em", fontWeight: 400 }}>Voxa AI is a voice-first AI assistant that allows you to have natural, spoken conversations to get answers, insights, or support—hands-free and in real time.</p>
                     </div>
                     <div style={{ display: "flex", gap: "clamp(40px, 8vw, 80px)", flexWrap: "wrap" }}>
                         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
