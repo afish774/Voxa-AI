@@ -47,7 +47,7 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
         };
     }, [isActive, facingMode, videoRef]);
 
-    // 🚀 THE NEW PYTHON AI SCANNER
+    // 🚀 THE NEW PYTHON AI SCANNER (Safely Kept)
     useEffect(() => {
         if (isActive) {
             scanIntervalRef.current = setInterval(async () => {
@@ -95,29 +95,51 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
     return (
         <AnimatePresence>
             {isActive && (
-                <motion.div style={{ position: "fixed", inset: 0, zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: "env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)", pointerEvents: "none" }}>
+                <motion.div
+                    style={{
+                        position: "fixed", inset: 0, zIndex: 200, display: "flex",
+                        alignItems: "flex-start", // 🚀 PiP Positioning (Top)
+                        justifyContent: "flex-end", // 🚀 PiP Positioning (Right)
+                        paddingTop: "clamp(80px, 12vh, 100px)", // Clears Navbar
+                        paddingRight: "clamp(16px, 4vw, 32px)", // Edge margin
+                        pointerEvents: "none"
+                    }}
+                >
                     <motion.div
-                        initial={{ opacity: 0, y: 50, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1, boxShadow: `0 40px 100px rgba(0,0,0,0.8), 0 0 60px ${EMOTION_AURA[currentMood] || EMOTION_AURA.neutral}, inset 0 1px 1px rgba(255,255,255,0.2)` }}
-                        exit={{ opacity: 0, y: 30, scale: 0.95, transition: { duration: 0.2 } }}
+                        initial={{ opacity: 0, x: 50, y: -20, scale: 0.9 }}
+                        animate={{
+                            opacity: 1, x: 0, y: 0, scale: 1,
+                            boxShadow: `0 24px 50px rgba(0,0,0,0.8), 0 0 30px ${EMOTION_AURA[currentMood] || EMOTION_AURA.neutral}, inset 0 1px 1px rgba(255,255,255,0.2)`
+                        }}
+                        exit={{ opacity: 0, x: 30, scale: 0.95, transition: { duration: 0.2 } }}
                         transition={{ type: "spring", stiffness: 350, damping: 30, boxShadow: { duration: 1.5 } }}
-                        style={{ pointerEvents: "auto", width: "min(92vw, 420px)", height: "min(80dvh, 600px)", borderRadius: "clamp(24px, 5vw, 40px)", border: `1px solid ${EMOTION_AURA[currentMood] || "rgba(255,255,255,0.15)"}`, position: "relative", overflow: "hidden", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "clamp(12px, 4vw, 24px)", background: "#000" }}
+                        style={{
+                            pointerEvents: "auto",
+                            width: "clamp(140px, 20vw, 240px)",  // 🚀 PiP Size
+                            height: "clamp(180px, 25vh, 340px)", // 🚀 PiP Size
+                            borderRadius: 24,
+                            border: `1.5px solid ${EMOTION_AURA[currentMood] || "rgba(255,255,255,0.15)"}`,
+                            position: "relative", overflow: "hidden", display: "flex", flexDirection: "column",
+                            justifyContent: "space-between", padding: 12, background: "#000"
+                        }}
                     >
                         <video id="voxa-camera-feed" ref={videoRef} autoPlay playsInline muted style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", zIndex: 0, transform: facingMode === "user" ? "scaleX(-1)" : "none", transition: "transform 0.3s" }} />
 
+                        {/* Top Controls: Scaled down to fit smaller window */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", zIndex: 10 }}>
                             {hasMultipleCameras ? (
-                                <button onClick={toggleCamera} style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(20px) saturate(150%)", border: "1px solid rgba(255,255,255,0.2)", width: 44, height: 44, borderRadius: "50%", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "background 0.2s" }}>
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8" /><path d="M2 6v4h4" /><path d="M4 14c0 4.4 3.6 8 8 8s8-3.6 8-8" /><path d="M22 18v-4h-4" /></svg>
+                                <button onClick={toggleCamera} style={{ background: "rgba(0,0,0,0.45)", backdropFilter: "blur(20px) saturate(150%)", border: "1px solid rgba(255,255,255,0.2)", width: 32, height: 32, borderRadius: "50%", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "background 0.2s" }} whileHover={{ backgroundColor: "rgba(255,255,255,0.25)" }}>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M20 10c0-4.4-3.6-8-8-8s-8 3.6-8 8" /><path d="M2 6v4h4" /><path d="M4 14c0 4.4 3.6 8 8 8s8-3.6 8-8" /><path d="M22 18v-4h-4" /></svg>
                                 </button>
-                            ) : (<div style={{ width: 44, height: 44 }} />)}
+                            ) : (<div style={{ width: 32, height: 32 }} />)}
 
-                            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(20px) saturate(150%)", border: "1px solid rgba(255,255,255,0.2)", width: 44, height: 44, borderRadius: "50%", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "background 0.2s" }}>
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", backdropFilter: "blur(20px) saturate(150%)", border: "1px solid rgba(255,255,255,0.2)", width: 32, height: 32, borderRadius: "50%", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", outline: "none", transition: "background 0.2s" }} whileHover={{ backgroundColor: "rgba(255,255,255,0.25)" }}>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                             </button>
                         </div>
 
-                        <motion.div animate={{ y: ["-10%", "600%", "-10%"] }} transition={{ duration: 4, ease: "linear", repeat: Infinity }} style={{ position: "absolute", top: "10%", left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)", boxShadow: "0 0 20px 2px rgba(255,255,255,0.6)" }} />
+                        {/* Scanner Laser */}
+                        <motion.div animate={{ y: ["-10%", "600%", "-10%"] }} transition={{ duration: 4, ease: "linear", repeat: Infinity }} style={{ position: "absolute", top: "10%", left: 0, right: 0, height: 2, background: "linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)", boxShadow: `0 0 20px 2px ${EMOTION_AURA[currentMood] || "rgba(255,255,255,0.6)"}` }} />
                     </motion.div>
                 </motion.div>
             )}

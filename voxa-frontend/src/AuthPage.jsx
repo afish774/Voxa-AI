@@ -35,14 +35,13 @@ const IconGoogle = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="n
 const IconGitHub = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.6.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02 0.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z" /></svg>;
 const IconFacebook = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="#1877F2" xmlns="http://www.w3.org/2000/svg"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" /></svg>;
 
-function AnimatedGradientMesh() {
+function AmbientOrbs() {
     return (
         <div style={{ position: "absolute", inset: 0, zIndex: 0, overflow: "hidden", pointerEvents: "none" }}>
             <div style={{ position: "absolute", inset: 0, opacity: 0.15, mixBlendMode: "overlay", backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} />
-
-            <motion.div animate={{ rotate: 360, scale: [1, 1.2, 1], x: ["0%", "10%", "0%"] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", top: "-20%", left: "-10%", width: "80%", height: "80%", background: "radial-gradient(circle, rgba(124,58,237,0.4) 0%, transparent 60%)", borderRadius: "50%", filter: "blur(80px)" }} />
-            <motion.div animate={{ rotate: -360, scale: [1, 1.3, 1], y: ["0%", "-10%", "0%"] }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", bottom: "-20%", right: "-10%", width: "90%", height: "90%", background: "radial-gradient(circle, rgba(219,39,119,0.3) 0%, transparent 60%)", borderRadius: "50%", filter: "blur(90px)" }} />
-            <motion.div animate={{ scale: [0.8, 1.2, 0.8], x: ["0%", "-10%", "0%"], y: ["0%", "5%", "0%"] }} transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "20%", right: "20%", width: "50%", height: "50%", background: "radial-gradient(circle, rgba(99,102,241,0.25) 0%, transparent 50%)", borderRadius: "50%", filter: "blur(100px)" }} />
+            <motion.div animate={{ rotate: 360, scale: [1, 1.1, 1], x: [0, 30, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", top: "-10%", left: "-10%", width: "60%", height: "60%", background: themeColors.primary, borderRadius: "50%", filter: "blur(120px)", opacity: 0.3 }} />
+            <motion.div animate={{ rotate: -360, scale: [1, 1.2, 1], y: [0, -40, 0] }} transition={{ duration: 30, repeat: Infinity, ease: "linear" }} style={{ position: "absolute", bottom: "-10%", right: "-10%", width: "70%", height: "70%", background: themeColors.secondary, borderRadius: "50%", filter: "blur(140px)", opacity: 0.25 }} />
+            <motion.div animate={{ scale: [0.8, 1.2, 0.8], x: [0, -50, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }} style={{ position: "absolute", top: "30%", right: "10%", width: "40%", height: "40%", background: themeColors.primary, borderRadius: "50%", filter: "blur(100px)", opacity: 0.2 }} />
         </div>
     );
 }
@@ -57,9 +56,36 @@ const InputField = ({ icon, type, placeholder, value, onChange }) => {
     );
 };
 
-const SocialButton = ({ icon, text, onClick }) => (
-    <motion.button type="button" whileHover={{ scale: 1.02, backgroundColor: "#f4f4f5" }} whileTap={{ scale: 0.98 }} onClick={onClick} style={{ width: "100%", padding: "14px", borderRadius: 14, border: "1px solid #e5e5e5", background: "#ffffff", color: "#09090b", fontSize: "15px", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", cursor: "pointer", transition: "border-color 0.2s", boxShadow: "0 2px 4px rgba(0,0,0,0.02)", outline: "none" }}>
-        {icon} {text}
+// 🚀 UPDATED: Re-engineered for square layout with scaled icons
+const SocialButton = ({ icon, ariaLabel, onClick }) => (
+    <motion.button
+        type="button"
+        title={ariaLabel}
+        aria-label={ariaLabel}
+        whileHover={{ scale: 1.05, backgroundColor: "#f4f4f5" }}
+        whileTap={{ scale: 0.95 }}
+        onClick={onClick}
+        style={{
+            flex: 1, // Ensures they stretch equally
+            aspectRatio: "1 / 1", // Forces perfect square
+            maxWidth: "70px", // Caps the size so they don't get too huge on large screens
+            borderRadius: 16,
+            border: "1px solid #e5e5e5",
+            background: "#ffffff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            cursor: "pointer",
+            transition: "border-color 0.2s",
+            boxShadow: "0 2px 4px rgba(0,0,0,0.02)",
+            outline: "none",
+            padding: 0
+        }}
+    >
+        {/* Scale the icon up slightly so it feels balanced inside the square */}
+        <div style={{ transform: "scale(1.25)", display: "flex" }}>
+            {icon}
+        </div>
     </motion.button>
 );
 
@@ -93,9 +119,10 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             const data = await response.json();
 
             if (response.ok) {
+                // Persist token and user to localStorage (with private-browsing failsafe)
                 const userObj = { _id: data._id, name: data.name, email: data.email };
-                try { localStorage.setItem('voxa_token', data.token); } catch (e) { }
-                try { localStorage.setItem('voxa_user', JSON.stringify(userObj)); } catch (e) { }
+                try { localStorage.setItem('voxa_token', data.token); } catch (e) { /* Private mode */ }
+                try { localStorage.setItem('voxa_user', JSON.stringify(userObj)); } catch (e) { /* Private mode */ }
                 onAuthSuccess(userObj);
             } else {
                 alert(data.message || "Authentication failed.");
@@ -108,6 +135,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
         }
     };
 
+    // ─── OAuth handlers: Navigate to backend OAuth endpoints ───
     const handleGoogleLogin = () => { window.location.href = `${API_BASE}/google`; };
     const handleGitHubLogin = () => { window.location.href = `${API_BASE}/github`; };
     const handleFacebookLogin = () => { window.location.href = `${API_BASE}/facebook`; };
@@ -128,7 +156,7 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
             `}</style>
 
             <div className="split-left" style={{ flex: 1, position: "relative", backgroundColor: themeColors.bgDark, overflow: "hidden", display: "flex", flexDirection: "column", padding: "60px", color: "#ffffff" }}>
-                <AnimatedGradientMesh />
+                <AmbientOrbs />
                 <div style={{ position: "relative", zIndex: 10, display: "flex", alignItems: "center", gap: 12 }}>
                     <VoxaLogo size={32} isDark={true} /> <span style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff" }}>Voxa AI</span>
                 </div>
@@ -202,12 +230,11 @@ export default function AuthPage({ onBack, onAuthSuccess }) {
                         <div style={{ flex: 1, height: 1, backgroundColor: "#f4f4f5" }} />
                     </div>
 
-                    <motion.div layout style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px" }}>
-                        <div style={{ width: "100%" }}>
-                            <SocialButton icon={<IconGoogle />} text="Continue with Google" onClick={handleGoogleLogin} />
-                            <SocialButton icon={<IconGitHub />} text="Continue with GitHub" onClick={handleGitHubLogin} />
-                            <SocialButton icon={<IconFacebook />} text="Continue with Facebook" onClick={handleFacebookLogin} />
-                        </div>
+                    {/* 🚀 FIX: Horizontal Row of Square Icons */}
+                    <motion.div layout style={{ display: "flex", flexDirection: "row", justifyContent: "center", gap: "16px", width: "100%" }}>
+                        <SocialButton icon={<IconGoogle />} ariaLabel="Continue with Google" onClick={handleGoogleLogin} />
+                        <SocialButton icon={<IconGitHub />} ariaLabel="Continue with GitHub" onClick={handleGitHubLogin} />
+                        <SocialButton icon={<IconFacebook />} ariaLabel="Continue with Facebook" onClick={handleFacebookLogin} />
                     </motion.div>
 
                     <motion.div layout style={{ marginTop: 24, textAlign: "center", fontSize: 14, color: "#71717a" }}>
