@@ -11,7 +11,6 @@ dotenv.config();
 const groqChat = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
     model: "llama-3.3-70b-versatile",
-    // 🚀 FIX 1: Bumped temperature slightly to stop robotic, repetitive phrasing
     temperature: 0.25,
     maxRetries: 3
 });
@@ -56,7 +55,7 @@ const smartTruncate = (text, maxLength = 1500) => {
     return lastSpace > 0 ? truncated.substring(0, lastSpace) + "... [truncated for memory limits]" : truncated + "...";
 };
 
-// 🧠 4. Background Fact Extractor (🚀 FIX 3: Junk Memory Filter)
+// 🧠 4. Background Fact Extractor
 const extractBackgroundFacts = async (userId, userText) => {
     if (!userText || userText.trim().length < 8) return;
     try {
@@ -99,8 +98,7 @@ const executeAILogic = async (userPrompt, base64Image, userId, onStatusUpdate, m
     const istOptions = { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' };
     const currentIST = now.toLocaleString('en-US', istOptions);
 
-    // 🚀 FIX 2: Omniscience Rule & Conversational Variance injected
-    const systemInstruction = const systemInstruction = `You are Voxa, an intelligent, advanced AI voice OS.
+    const systemInstruction = `You are Voxa, an intelligent, advanced AI voice OS.
 
 <REAL_WORLD_CONTEXT>
 - Baseline Time & Date (IST - Indian Standard Time): ${currentIST}
