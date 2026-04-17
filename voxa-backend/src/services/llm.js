@@ -17,7 +17,7 @@ const groqChat = new ChatGroq({
 
 const groqVision = new ChatGroq({
     apiKey: process.env.GROQ_API_KEY,
-    model: "llama-3.2-11b-vision-preview",
+    model: "meta-llama/llama-4-scout-17b-16e-instruct",
     temperature: 0.4,
     maxRetries: 3
 });
