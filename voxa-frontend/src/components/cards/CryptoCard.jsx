@@ -1,70 +1,94 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { TrendingUp, TrendingDown, Bitcoin, Activity } from 'lucide-react';
+import { TrendingUp, TrendingDown } from 'lucide-react';
 
 const CryptoCard = ({ coin, price, change }) => {
-    // Determine if the price is up or down
-    const isUp = parseFloat(change) >= 0;
+  const numericChange = typeof change === 'number' ? change : parseFloat(change) || 0;
+  const numericPrice = typeof price === 'number' ? price : parseFloat(price) || 0;
+  const isPositive = numericChange > 0;
 
-    // Format the numbers beautifully
-    const formattedPrice = new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 6 // Allows small altcoins to show decimal places
-    }).format(parseFloat(price));
+  // Format price with $ prefix and comma separators
+  const formattedPrice = new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(numericPrice);
 
-    const formattedChange = Math.abs(parseFloat(change)).toFixed(2);
+  const formattedChange = Math.abs(numericChange).toFixed(2);
 
-    return (
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="glass-container relative overflow-hidden"
+    >
+      {/* Glowing background orb */}
+      <div
+        className={
+          isPositive
+            ? 'absolute -top-16 -left-16 w-56 h-56 rounded-full bg-emerald-500 opacity-20 blur-3xl pointer-events-none'
+            : 'absolute -top-16 -left-16 w-56 h-56 rounded-full bg-rose-500 opacity-20 blur-3xl pointer-events-none'
+        }
+      />
+
+      {/* Secondary subtle orb for depth */}
+      <div
+        className={
+          isPositive
+            ? 'absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-emerald-500 opacity-10 blur-3xl pointer-events-none'
+            : 'absolute -bottom-10 -right-10 w-40 h-40 rounded-full bg-rose-500 opacity-10 blur-3xl pointer-events-none'
+        }
+      />
+
+      {/* Content wrapper */}
+      <div className="relative z-10 flex flex-col gap-3 min-h-[140px]">
+        {/* Coin name — top left */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-white/60 tracking-widest uppercase">
+            {coin}
+          </span>
+        </div>
+
+        {/* Price — large, bold, left-aligned */}
         <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            className="glass-container relative overflow-hidden"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.1 }}
+          className="flex-1"
         >
-            {/* Dynamic Background Glow */}
-            <div className={`absolute -top-10 -right-10 w-48 h-48 blur-[80px] rounded-full opacity-30 pointer-events-none transition-colors duration-1000 ${isUp ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
-
-            {/* HEADER */}
-            <div className="flex justify-between items-center mb-6 relative z-10">
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
-                    <Bitcoin className="w-4 h-4 text-amber-400" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-white/90">Crypto Market</span>
-                </div>
-
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/10">
-                    <Activity className="w-3.5 h-3.5 text-white/40" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Live Data</span>
-                </div>
-            </div>
-
-            {/* BODY: Coin Name & Price */}
-            <div className="relative z-10 flex flex-col items-center justify-center py-4">
-                <span className="text-sm font-bold text-white/60 tracking-widest uppercase mb-2">
-                    {coin.replace('-', ' ')}
-                </span>
-
-                <motion.div
-                    initial={{ scale: 0.8, opacity: 0 }}
-                    animate={{ scale: 1, opacity: 1 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 25 }}
-                    className="text-5xl font-black tabular-nums tracking-tighter drop-shadow-2xl bg-gradient-to-b from-white to-white/60 bg-clip-text text-transparent"
-                >
-                    {formattedPrice}
-                </motion.div>
-            </div>
-
-            {/* FOOTER: 24h Change Indicator */}
-            <div className="mt-4 pt-4 border-t border-white/10 relative z-10 flex justify-center">
-                <div className={`flex items-center gap-2 px-4 py-2 rounded-xl backdrop-blur-md border ${isUp ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
-                    {isUp ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    <span className="text-sm font-bold tabular-nums tracking-wide">
-                        {isUp ? '+' : '-'}{formattedChange}% <span className="text-[10px] font-medium opacity-60 ml-1 uppercase">24h</span>
-                    </span>
-                </div>
-            </div>
+          <h2 className="text-5xl font-black tabular-nums tracking-tight leading-none bg-gradient-to-b from-white to-white/70 bg-clip-text text-transparent drop-shadow-2xl">
+            {formattedPrice}
+          </h2>
         </motion.div>
-    );
+
+        {/* Footer row — pill badge in bottom-right */}
+        <div className="flex justify-end items-center pt-2">
+          <motion.div
+            initial={{ opacity: 0, x: 10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.2 }}
+            className={
+              isPositive
+                ? 'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 backdrop-blur-md'
+                : 'flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 backdrop-blur-md'
+            }
+          >
+            {isPositive ? (
+              <TrendingUp className="w-3.5 h-3.5" />
+            ) : (
+              <TrendingDown className="w-3.5 h-3.5" />
+            )}
+            <span className="text-xs font-bold tabular-nums tracking-wide">
+              {isPositive ? '+' : '-'}{formattedChange}%
+            </span>
+            <span className="text-[10px] font-medium opacity-60 uppercase">24h</span>
+          </motion.div>
+        </div>
+      </div>
+    </motion.div>
+  );
 };
 
 export default CryptoCard;
