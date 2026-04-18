@@ -1,124 +1,158 @@
 import React, { useRef } from 'react';
-import { motion, useMotionValue, useTransform, useSpring } from 'framer-motion';
-import { CloudRain, Sun, Cloud, CloudSnow, CloudLightning, Wind } from 'lucide-react';
+import { motion, useMotionValue, useSpring } from 'framer-motion';
+import { Wind, CloudRain, Droplets, RefreshCw } from 'lucide-react';
 
-// Map condition string to a lucide-react icon component
-const getWeatherIcon = (condition) => {
-  const map = {
-    'Rain': CloudRain,
-    'Sunny': Sun,
-    'Cloudy': Cloud,
-    'Snow': CloudSnow,
-    'Thunderstorm': CloudLightning,
-    'Windy': Wind,
-  };
-  return map[condition] ?? Cloud;
+// ─── Weather Emoji Mapper ──────────────────────────────────────────
+const getWeatherEmoji = (condition) => {
+  if (!condition) return '🌡️';
+  if (condition === 'Light Rain' || condition === 'Rain') return '🌦️';
+  if (condition === 'Sunny' || condition === 'Clear') return '☀️';
+  if (condition === 'Cloudy') return '☁️';
+  if (condition === 'Snow') return '❄️';
+  if (condition === 'Thunderstorm') return '⛈️';
+  if (condition === 'Windy') return '🌬️';
+  if (condition === 'Fog' || condition === 'Mist') return '🌫️';
+  if (condition === 'Partly Cloudy') return '⛅';
+  return '🌡️';
 };
 
-export default function WeatherCard({ data, theme }) {
-  const location = data?.location || '';
-  const temp = data?.temp ?? '--';
-  const condition = data?.condition || 'Cloudy';
+// ─── Condition-Based Background Gradient ───────────────────────────
+// Every return value is a complete, hardcoded Tailwind class string (Rule A)
+const getConditionBackground = (condition) => {
+  if (condition === 'Light Rain' || condition === 'Rain')
+    return 'bg-gradient-to-b from-slate-700/80 to-slate-900/95';
+  if (condition === 'Sunny' || condition === 'Clear')
+    return 'bg-gradient-to-b from-amber-800/50 to-zinc-900/95';
+  if (condition === 'Cloudy')
+    return 'bg-gradient-to-b from-zinc-600/60 to-zinc-900/95';
+  if (condition === 'Snow')
+    return 'bg-gradient-to-b from-blue-800/40 to-slate-900/95';
+  if (condition === 'Thunderstorm')
+    return 'bg-gradient-to-b from-purple-900/60 to-zinc-950/95';
+  if (condition === 'Windy')
+    return 'bg-gradient-to-b from-teal-800/40 to-zinc-900/95';
+  if (condition === 'Fog' || condition === 'Mist')
+    return 'bg-gradient-to-b from-gray-600/50 to-gray-900/95';
+  if (condition === 'Partly Cloudy')
+    return 'bg-gradient-to-b from-blue-800/30 to-zinc-900/95';
+  return 'bg-gradient-to-b from-zinc-700/80 to-zinc-900/95';
+};
 
-  const cardRef = useRef(null);
+// ─── WeatherCard Component ─────────────────────────────────────────
+// Accepts both individual props (new API) and data/theme (backward compat)
+export default function WeatherCard({
+  location, temp, condition, date, windSpeed, rainChance, humidity,
+  data, theme,
+}) {
+  // Support both individual props and data-object fallback
+  const _location = location ?? data?.location ?? '';
+  const _temp = temp ?? data?.temp;
+  const _condition = condition ?? data?.condition ?? '';
+  const _date = date ?? data?.date ?? '';
+  const _windSpeed = windSpeed ?? data?.windSpeed ?? '--';
+  const _rainChance = rainChance ?? data?.rainChance ?? '--';
+  const _humidity = humidity ?? data?.humidity ?? '--';
 
-  // Motion values for 3D tilt
-  const mouseX = useMotionValue(0.5);
-  const mouseY = useMotionValue(0.5);
-
-  // Spring config per spec: stiffness: 300, damping: 30
+  // ─── 3D Tilt — Rule B: getBoundingClientRect on card ref ─────────
+  const ref = useRef(null);
+  const rotateX = useMotionValue(0);
+  const rotateY = useMotionValue(0);
   const springConfig = { stiffness: 300, damping: 30 };
-  const smoothX = useSpring(mouseX, springConfig);
-  const smoothY = useSpring(mouseY, springConfig);
-
-  // Map [0, 1] to ±15 degrees
-  // rotateY: left edge = -15, right edge = +15
-  const rotateY = useTransform(smoothX, [0, 1], [-15, 15]);
-  // rotateX: top edge = +15, bottom edge = -15
-  const rotateX = useTransform(smoothY, [0, 1], [15, -15]);
+  const springRotateX = useSpring(rotateX, springConfig);
+  const springRotateY = useSpring(rotateY, springConfig);
 
   const handleMouseMove = (e) => {
-    if (!cardRef.current) return;
-    const rect = cardRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-    mouseX.set(x);
-    mouseY.set(y);
+    if (!ref.current) return;
+    const rect = ref.current.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    // Map to ±15 degrees
+    rotateX.set(((y / rect.height) - 0.5) * -30);
+    rotateY.set(((x / rect.width) - 0.5) * 30);
   };
 
   const handleMouseLeave = () => {
-    mouseX.set(0.5);
-    mouseY.set(0.5);
+    rotateX.set(0);
+    rotateY.set(0);
   };
 
-  const WeatherIcon = getWeatherIcon(condition);
+  const bgClass = getConditionBackground(_condition);
+  const emoji = getWeatherEmoji(_condition);
 
   return (
-    <div style={{ perspective: 1000, marginTop: 24 }}>
-      <motion.div
-        ref={cardRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        style={{
-          rotateX,
-          rotateY,
-          transformPerspective: 1000,
-          transformStyle: 'preserve-3d',
-        }}
-        className="glass-container relative overflow-hidden cursor-grab select-none"
-      >
-        {/* Ambient glow background */}
-        <div className="absolute inset-0 pointer-events-none z-0">
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 rounded-full bg-sky-500 opacity-10 blur-3xl" />
+    <motion.div
+      ref={ref}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      style={{
+        rotateX: springRotateX,
+        rotateY: springRotateY,
+        transformPerspective: 1000,
+      }}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      // bgClass is a complete Tailwind string from getConditionBackground — safe for JIT
+      className={[
+        bgClass,
+        'backdrop-blur-xl border border-white/10 rounded-3xl p-6 relative overflow-hidden',
+        'w-full max-w-md cursor-grab select-none',
+      ].join(' ')}
+      role="region"
+      aria-label="Weather card"
+    >
+      {/* ─── Top Bar ─── */}
+      <div className="relative text-center mb-1">
+        <h3 className="text-white font-semibold text-lg">{_location}</h3>
+        <RefreshCw className="absolute top-0 right-0 w-4 h-4 text-white/30" />
+      </div>
+
+      {/* ─── Temperature ─── */}
+      <div className="text-center my-2">
+        <span className="text-8xl font-thin text-white tracking-tight leading-none">
+          {_temp ?? '--'}°
+        </span>
+      </div>
+
+      {/* ─── Weather Emoji Icon ─── */}
+      <div className="text-center my-3">
+        <span
+          className="text-8xl leading-none inline-block"
+          style={{ filter: 'drop-shadow(0 6px 16px rgba(0,0,0,0.4))' }}
+        >
+          {emoji}
+        </span>
+      </div>
+
+      {/* ─── Condition + Date ─── */}
+      <div className="text-center mb-2">
+        <p className="text-white font-medium text-xl">{_condition}</p>
+        {_date && <p className="text-white/50 text-sm mt-0.5">{_date}</p>}
+      </div>
+
+      {/* ─── Bottom Stats Row (3 columns) ─── */}
+      <div className="border-t border-white/10 mt-4 pt-4 grid grid-cols-3">
+        {/* Wind speed */}
+        <div className="flex flex-col items-center">
+          <Wind className="w-5 h-5 text-white/60" />
+          <span className="text-white/40 text-xs mt-1">Wind speed</span>
+          <span className="text-white font-medium text-sm">{_windSpeed}</span>
         </div>
 
-        {/* Subtle gradient overlay */}
-        <div className="absolute inset-0 pointer-events-none z-0 rounded-[2rem] bg-gradient-to-b from-white/5 to-transparent" />
-
-        {/* Card content — centered layout */}
-        <div className="relative z-10 flex flex-col items-center justify-center text-center py-4 gap-2">
-          {/* Location — small muted text */}
-          <span className="text-sm font-semibold text-white/50 tracking-wider uppercase">
-            {location}
-          </span>
-
-          {/* Massive temperature */}
-          <motion.h1
-            initial={{ opacity: 0, scale: 0.85 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.1 }}
-            className="text-8xl font-extralight tabular-nums tracking-tighter leading-none text-white drop-shadow-2xl"
-            style={{ transform: 'translateZ(30px)' }}
-          >
-            {temp}°
-          </motion.h1>
-
-          {/* Weather icon — 48x48 */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 30, delay: 0.15 }}
-            className="mt-2"
-            style={{ transform: 'translateZ(20px)' }}
-          >
-            <WeatherIcon className="w-12 h-12 text-white/70" strokeWidth={1.5} />
-          </motion.div>
-
-          {/* Condition label */}
-          <motion.span
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.2 }}
-            className="text-lg font-semibold text-white/60 tracking-wide capitalize"
-            style={{ transform: 'translateZ(15px)' }}
-          >
-            {condition}
-          </motion.span>
+        {/* Chance of rain */}
+        <div className="flex flex-col items-center border-l border-white/10">
+          <CloudRain className="w-5 h-5 text-white/60" />
+          <span className="text-white/40 text-xs mt-1">Chance of rain</span>
+          <span className="text-white font-medium text-sm">{_rainChance}</span>
         </div>
-      </motion.div>
-    </div>
+
+        {/* Humidity */}
+        <div className="flex flex-col items-center border-l border-white/10">
+          <Droplets className="w-5 h-5 text-white/60" />
+          <span className="text-white/40 text-xs mt-1">Humidity</span>
+          <span className="text-white font-medium text-sm">{_humidity}</span>
+        </div>
+      </div>
+    </motion.div>
   );
 }
