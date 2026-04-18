@@ -16,6 +16,9 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
     const [hasMultipleCameras, setHasMultipleCameras] = useState(false);
     const [facingMode, setFacingMode] = useState("user");
     const scanIntervalRef = useRef(null);
+    // 🛠️ SURGICAL FIX: Track mount state to prevent state updates after logout unmount
+    const mountedRef = useRef(true);
+    useEffect(() => { return () => { mountedRef.current = false; }; }, []);
 
     // Helper function to check devices
     const checkHardwareDevices = async () => {
@@ -74,7 +77,7 @@ export default function SpatialCameraWindow({ isActive, onClose, videoRef, onEmo
 
                     const data = await response.json();
 
-                    if (data.success && data.dominant_emotion) {
+                    if (data.success && data.dominant_emotion && mountedRef.current) { // 🛠️ SURGICAL FIX: Guard unmounted state
                         setCurrentMood(data.dominant_emotion);
                         // Send the emotion up to App.jsx so Llama knows!
                         if (onEmotionDetected) onEmotionDetected(data.dominant_emotion);

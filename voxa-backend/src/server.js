@@ -7,6 +7,7 @@ import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import memoryRoutes from './routes/memoryRoutes.js';
 import sportsRoutes from './routes/sportsRoutes.js';
+import learnRoutes from './routes/learnRoutes.js'; // 🛠️ SURGICAL FIX: Mount the knowledge ingestion API
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/memory', memoryRoutes);
 app.use('/api/sports', sportsRoutes);
+app.use('/api/learn', learnRoutes); // 🛠️ SURGICAL FIX: Mount the knowledge ingestion API
 
 // Basic health check route
 app.get('/', (req, res) => {

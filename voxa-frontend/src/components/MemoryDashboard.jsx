@@ -12,7 +12,8 @@ export default function MemoryDashboard({ userToken }) {
                 headers: { 'Authorization': `Bearer ${userToken}` }
             });
             const data = await response.json();
-            setMemories(data);
+            // 🛠️ SURGICAL FIX: Guard against non-array API responses to prevent .map() crash
+            setMemories(Array.isArray(data) ? data : []);
         } catch (error) {
             console.error("Failed to load memories", error);
         }

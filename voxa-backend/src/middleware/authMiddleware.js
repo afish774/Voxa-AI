@@ -11,13 +11,12 @@ export const protect = async (req, res, next) => {
 
             // Attach the logged-in user to the request
             req.user = await User.findById(decoded.id).select('-password');
-            next();
+            return next(); // 🛠️ SURGICAL FIX: Added return to prevent fall-through after next()
         } catch (error) {
-            res.status(401).json({ message: 'Not authorized, invalid token' });
+            return res.status(401).json({ message: 'Not authorized, invalid token' }); // 🛠️ SURGICAL FIX: Added return to prevent double-response crash
         }
     }
 
-    if (!token) {
-        res.status(401).json({ message: 'Not authorized, no token provided' });
-    }
+    // 🛠️ SURGICAL FIX: Now only reachable when no Bearer header exists at all
+    return res.status(401).json({ message: 'Not authorized, no token provided' });
 };

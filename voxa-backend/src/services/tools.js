@@ -45,6 +45,11 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
 
             const data = await response.json();
             apiCache.set(cacheKey, { timestamp: Date.now(), data });
+            // 🛠️ SURGICAL FIX: Evict oldest entries to prevent unbounded memory growth (OOM on Render)
+            if (apiCache.size > 200) {
+                const oldestKey = apiCache.keys().next().value;
+                apiCache.delete(oldestKey);
+            }
             return data;
 
         } catch (error) {
@@ -224,15 +229,30 @@ export const getWeatherTool = tool(
             const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
             if (data && data.current_condition && data.current_condition[0]) {
-                const temp = data.current_condition[0].temp_C;
-                const conditionDesc = data.current_condition[0].weatherDesc[0].value.toLowerCase();
+                const cc = data.current_condition[0]; // 🛠️ SURGICAL FIX: Alias for readability
+                const temp = cc.temp_C;
+                const conditionDesc = cc.weatherDesc[0].value.toLowerCase();
 
                 let condition = "Clear";
                 if (conditionDesc.includes("rain") || conditionDesc.includes("drizzle") || conditionDesc.includes("shower")) condition = "Rain";
                 else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
                 else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
 
-                return `Weather fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:${temp}:${condition}||`;
+                // 🛠️ SURGICAL FIX: Extract wind, humidity, rain chance for the WeatherCard bottom row
+                const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : '--';
+                const humidity = cc.humidity ? `${cc.humidity}%` : '--';
+                let rainChance = '--';
+                try {
+                    const hourly = data.weather?.[0]?.hourly;
+                    if (hourly?.length > 0) {
+                        const currentHour = new Date().getHours();
+                        const nearestSlot = Math.floor(currentHour / 3) * 300;
+                        const entry = hourly.find(h => parseInt(h.time) === nearestSlot) || hourly[0];
+                        if (entry?.chanceofrain) rainChance = `${entry.chanceofrain}%`;
+                    }
+                } catch (e) { /* graceful fallback to '--' */ }
+
+                return `Weather fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:${temp}:${condition}:${windSpeed}:${humidity}:${rainChance}||`;
             }
             return `Location unknown. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Unknown||`;
         } catch (error) {
@@ -398,8 +418,12 @@ export const getSportsDataTool = tool(
                     if (sA) {
                         scoreA = `${sA.r}/${sA.w}`;
                         oversA = sA.o;
-                        const oMath = Math.floor(sA.o) + (((sA.o * 10) % 10) / 6);
-                        if (oMath > 0) crr = (sA.r / oMath).toFixed(2);
+                        // 🛠️ SURGICAL FIX: Guard against null/NaN overs to prevent Infinity CRR
+                        const numOvers = parseFloat(sA.o);
+                        if (!isNaN(numOvers) && numOvers > 0) {
+                            const oMath = Math.floor(numOvers) + (((numOvers * 10) % 10) / 6);
+                            if (oMath > 0) crr = (sA.r / oMath).toFixed(2);
+                        }
                     }
                     if (sB) { scoreB = `${sB.r}/${sB.w}`; }
                 }

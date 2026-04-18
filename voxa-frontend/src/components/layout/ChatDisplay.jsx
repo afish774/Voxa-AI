@@ -44,7 +44,8 @@ export default function ChatDisplay({
                                             <motion.div key="receipt-card" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ padding: "16px 24px", borderRadius: 16, background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: 12, marginTop: 16, backdropFilter: "blur(10px)" }}>
                                                 <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981", fontWeight: "bold", flexShrink: 0 }}>✓</div>
                                                 <span style={{ color: theme.text, fontSize: 15, fontWeight: 500, letterSpacing: "-0.01em" }}>
-                                                    {currentCard.message.replace(/^RECEIPT:/i, '').split(':').slice(1).join(':').trim() || currentCard.message}
+                                                    {/* 🛠️ SURGICAL FIX: Guard against undefined message to prevent white-screen crash */}
+                                                    {(currentCard.message || 'Action completed').replace(/^RECEIPT:/i, '').split(':').slice(1).join(':').trim() || currentCard.message || 'Action completed'}
                                                 </span>
                                             </motion.div>
                                         )}

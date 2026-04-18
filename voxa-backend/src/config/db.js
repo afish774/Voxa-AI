@@ -14,7 +14,8 @@ const connectDB = async () => {
         console.log(`📦 MongoDB Connected: ${conn.connection.host}`);
     } catch (error) {
         console.error(`❌ MongoDB Connection Error: ${error.message}`);
-        // We removed process.exit(1) here so the logs have time to flush to the console!
+        // 🛠️ SURGICAL FIX: Exit after logs flush so the server doesn't run without a database
+        setTimeout(() => process.exit(1), 1000);
     }
 };
 

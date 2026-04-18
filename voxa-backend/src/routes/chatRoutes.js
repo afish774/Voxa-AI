@@ -25,8 +25,15 @@ router.post('/', protect, async (req, res) => {
         'Connection': 'keep-alive',
     });
 
+    // 🛠️ SURGICAL FIX: Track client disconnect to prevent ERR_STREAM_WRITE_AFTER_END
+    let clientDisconnected = false;
+    req.on('close', () => { clientDisconnected = true; });
+
     const sendStreamEvent = (type, payload) => {
-        res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
+        if (clientDisconnected) return; // 🛠️ SURGICAL FIX: Guard writes to closed stream
+        try {
+            res.write(`data: ${JSON.stringify({ type, ...payload })}\n\n`);
+        } catch (e) { clientDisconnected = true; }
     };
 
     try {
