@@ -23,23 +23,20 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
   const sparkline = useMemo(() => {
     let data = sparklineData;
 
-    // 🛠️ SURGICAL UPGRADE: If API doesn't provide chart data, mathematically 
-    // generate a realistic visual line based on the 24h % change and current price.
     if (!data || !Array.isArray(data) || data.length < 2) {
       data = [];
       const startPrice = numericPrice / (1 + numericChange / 100);
       let curr = startPrice;
-      const steps = 40; // 40 jagged points for high realism
+      const steps = 40;
       const baseTrend = (numericPrice - startPrice) / steps;
 
       for (let i = 0; i < steps; i++) {
-        // Deterministic pseudo-randomness so it doesn't flicker on re-renders
         const rand = Math.abs(Math.sin(i * 12.9898 + numericPrice) * 43758.5453) % 1;
-        const volatility = numericPrice * 0.003 * (rand - 0.5); // 0.3% max swing per tick
+        const volatility = numericPrice * 0.003 * (rand - 0.5);
         curr += baseTrend + volatility;
         data.push(curr);
       }
-      data[steps - 1] = numericPrice; // Lock exact final price
+      data[steps - 1] = numericPrice;
     }
 
     const minV = Math.min(...data);
@@ -53,7 +50,6 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
       y: padY + (1 - (v - minV) / range) * (SVG_H - padY * 2),
     }));
 
-    // Sharp jagged line (L) exactly matching the reference
     let d = `M ${points[0].x},${points[0].y}`;
     for (let i = 1; i < points.length; i++) {
       d += ` L ${points[i].x},${points[i].y}`;
@@ -65,7 +61,6 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
     return { d, peak, peakPrice: maxV };
   }, [sparklineData, numericPrice, numericChange]);
 
-  // Dynamic date for the tooltip
   const formattedDate = useMemo(() => {
     return new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   }, []);
@@ -74,30 +69,35 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
+      // 🎬 PREMIUM ANIMATION: Subtle 3D lift and glow on hover
+      whileHover={{
+        y: -4,
+        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.15), 0 32px 64px -12px rgba(0,0,0,0.9)',
+        transition: { duration: 0.3, ease: "easeOut" }
+      }}
       transition={{ type: 'spring', stiffness: 300, damping: 30 }}
       className="relative overflow-hidden w-full max-w-[420px] rounded-[36px] p-8"
       style={{
-        // Premium Apple-style Matte Black Gradient & Inner Bevel
         background: 'linear-gradient(180deg, #18181A 0%, #0D0D0F 100%)',
-        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.1), 0 24px 48px -12px rgba(0,0,0,0.8)',
+        boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.08), 0 24px 48px -12px rgba(0,0,0,0.8)',
         border: '1px solid rgba(255,255,255,0.04)'
       }}
     >
       {/* ─── Background Grid Pattern ─── */}
-      <div
+      <motion.div
         className="absolute inset-0 pointer-events-none opacity-[0.06]"
+        // 🎬 PREMIUM ANIMATION: Infinite slow diagonal drift
+        animate={{ backgroundPosition: ["0px 0px", "42px 42px"] }}
+        transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
         style={{
           backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px),
                             linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
           backgroundSize: '42px 42px',
-          backgroundPosition: 'left top'
         }}
       />
 
       {/* ─── Top Row: Price (left) + Coin Badge (right) ─── */}
       <div className="relative z-10 flex items-start justify-between">
-
-        {/* Price & Change Block */}
         <div>
           <div className="flex items-baseline font-sans tracking-tight">
             <span className="text-[42px] font-semibold text-white leading-none">${integerPart}</span>
@@ -113,7 +113,6 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
           </div>
         </div>
 
-        {/* Coin Identity Block */}
         <div className="flex items-center gap-3.5">
           <div
             className="w-[46px] h-[46px] rounded-full flex items-center justify-center relative shadow-xl"
@@ -145,22 +144,49 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
             preserveAspectRatio="none"
             className="overflow-visible"
           >
-            {/* Main jagged line (Unfilled, matching reference) */}
-            <path
+            {/* 🎬 PREMIUM ANIMATION: Line draws itself left-to-right on mount */}
+            <motion.path
               d={sparkline.d}
-              stroke="rgba(255,255,255,0.25)"
+              stroke="rgba(255,255,255,0.3)"
               strokeWidth={1.5}
               strokeLinejoin="round"
               strokeLinecap="round"
               fill="none"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 1 }}
+              transition={{ duration: 1.5, ease: "easeInOut" }}
             />
 
-            {/* Glowing Peak Dot */}
-            <circle cx={sparkline.peak.x} cy={sparkline.peak.y} r={4.5} fill="#FFFFFF" />
+            {/* Solid Peak Dot */}
+            <motion.circle
+              cx={sparkline.peak.x}
+              cy={sparkline.peak.y}
+              r={4.5}
+              fill="#FFFFFF"
+              initial={{ scale: 0, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 1.2, duration: 0.4, type: "spring" }}
+            />
+
+            {/* 🎬 PREMIUM ANIMATION: Infinite expanding radar pulse behind the peak dot */}
+            <motion.circle
+              cx={sparkline.peak.x}
+              cy={sparkline.peak.y}
+              r={4.5}
+              fill="none"
+              stroke="#FFFFFF"
+              strokeWidth={1.5}
+              initial={{ scale: 1, opacity: 0.8 }}
+              animate={{ scale: 3.5, opacity: 0 }}
+              transition={{ delay: 1.5, repeat: Infinity, duration: 1.8, ease: "easeOut" }}
+            />
           </svg>
 
           {/* Floating Peak Tooltip */}
-          <div
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 1.4, duration: 0.4 }}
             className="absolute px-3 py-2 pointer-events-none backdrop-blur-md rounded-xl"
             style={{
               background: 'rgba(30,30,32,0.85)',
@@ -177,7 +203,7 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
             <p className="text-white/40 text-[10px] font-medium text-center leading-tight mt-1 tracking-wide">
               {formattedDate}
             </p>
-          </div>
+          </motion.div>
         </div>
       )}
     </motion.div>
