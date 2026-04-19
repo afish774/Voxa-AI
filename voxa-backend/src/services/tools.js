@@ -151,7 +151,6 @@ export const getCryptoPriceTool = tool(
     }
 );
 
-// 🚀 UPGRADED: Swapped Nodemailer for the official Google API REST client
 export const createSendEmailTool = (userId) => {
     return tool(
         async ({ to, subject, body }) => {
@@ -161,19 +160,16 @@ export const createSendEmailTool = (userId) => {
                 const user = await User.findById(userId);
                 if (!user) return "SYSTEM_ERROR: User not found.";
 
-                // Check if they actually logged in with Google
                 if (!user.gmailAccessToken || !user.gmailRefreshToken) {
                     return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Please link your Google Account.||`;
                 }
 
-                // 1. Initialize the Google OAuth2 Client
                 const oAuth2Client = new google.auth.OAuth2(
                     process.env.GOOGLE_CLIENT_ID,
                     process.env.GOOGLE_CLIENT_SECRET,
                     "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback"
                 );
 
-                // 2. Apply the user's specific tokens (Google automatically handles refreshing!)
                 oAuth2Client.setCredentials({
                     access_token: user.gmailAccessToken,
                     refresh_token: user.gmailRefreshToken,
@@ -181,28 +177,25 @@ export const createSendEmailTool = (userId) => {
 
                 const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
 
-                // 3. Format the email into RFC 2822 MIME format securely
                 const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
                 const messageParts = [
                     `To: ${to}`,
                     `Subject: ${utf8Subject}`,
                     `Content-Type: text/plain; charset=utf-8`,
                     `MIME-Version: 1.0`,
-                    ``, // Empty line separates headers from body
+                    ``,
                     body
                 ];
                 const message = messageParts.join('\n');
 
-                // 4. Gmail API requires strict "Base64URL" encoding
                 const encodedMessage = Buffer.from(message)
                     .toString('base64')
                     .replace(/\+/g, '-')
                     .replace(/\//g, '_')
                     .replace(/=+$/, '');
 
-                // 5. Send via the secure REST API
                 await gmail.users.messages.send({
-                    userId: 'me', // Translates to the authenticated token's email
+                    userId: 'me',
                     requestBody: { raw: encodedMessage },
                 });
 
@@ -229,7 +222,7 @@ export const getWeatherTool = tool(
             const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
             if (data && data.current_condition && data.current_condition[0]) {
-                const cc = data.current_condition[0]; // 🛠️ SURGICAL FIX: Alias for readability
+                const cc = data.current_condition[0];
                 const temp = cc.temp_C;
                 const conditionDesc = cc.weatherDesc[0].value.toLowerCase();
 
@@ -238,7 +231,6 @@ export const getWeatherTool = tool(
                 else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
                 else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
 
-                // 🛠️ SURGICAL FIX: Extract wind, humidity, rain chance for the WeatherCard bottom row
                 const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : '--';
                 const humidity = cc.humidity ? `${cc.humidity}%` : '--';
                 let rainChance = '--';
@@ -268,7 +260,7 @@ export const getWeatherTool = tool(
 );
 
 // ============================================================================
-// 🌍 TOOL 4: The Global Sports Hub (Untouched Omni-Router)
+// 🌍 TOOL 4: The Global Sports Hub (Omni-Router)
 // ============================================================================
 
 export const getSportsDataTool = tool(
@@ -290,7 +282,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL (Football-Data.org)
+            // ⚽ ROUTE 1: FOOTBALL
             // ==========================================
             if (fullContextCheck.includes("football") || fullContextCheck.includes("soccer") || fullContextCheck.includes("epl") || fullContextCheck.includes("ucl") || fullContextCheck.includes("madrid") || fullContextCheck.includes("city") || fullContextCheck.includes("united") || fullContextCheck.includes("arsenal") || fullContextCheck.includes("chelsea") || fullContextCheck.includes("liverpool")) {
 
@@ -346,7 +338,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
+            // 🏀 ROUTE 2: BASKETBALL
             // ==========================================
             else if (fullContextCheck.includes("basketball") || fullContextCheck.includes("nba") || fullContextCheck.includes("lakers") || fullContextCheck.includes("warriors")) {
                 let match = null;
@@ -384,20 +376,18 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // 🏏 ROUTE 3: CRICKET (CRICAPI) — Temporal-Aware Scoring Algorithm
+            // 🏏 ROUTE 3: CRICKET (CRICAPI) — 100% BULLETPROOF EXTRACTOR
             // ==========================================
             else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
-                // ── Step 1: Temporal Intent Extraction ──────────────────────────
+                // ── Step 1: Temporal Intent Extraction
                 const isYesterday = /\b(yesterday|last\s*night|last\s*match|previous\s*match|last\s*game)\b/i.test(voiceNormalizedQuery);
                 const isTomorrow = /\b(tomorrow|next\s*match|next\s*game|upcoming)\b/i.test(voiceNormalizedQuery);
                 const isLiveIntent = /\b(live|current|right\s*now|going\s*on|happening)\b/i.test(voiceNormalizedQuery);
-                // Default: if none of the above, treat as "today"
                 const isToday = !isYesterday && !isTomorrow;
 
-                // Extract team tokens: strip temporal/noise words, split remainder
                 const NOISE_WORDS = /\b(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|fixtures|please|of|the|for|in|is|what|was|who|won|how|between|current|right|now|going|on|happening|cricket|ipl|t20|premier|league|indian|result|vs|versus)\b/gi;
                 const teamTokens = voiceNormalizedQuery
                     .replace(NOISE_WORDS, '')
@@ -405,25 +395,13 @@ export const getSportsDataTool = tool(
                     .split(/\s+/)
                     .filter(t => t.length > 1);
 
-                console.log(`🏏 [Cricket Engine] Temporal: ${isYesterday ? 'YESTERDAY' : isTomorrow ? 'TOMORROW' : 'TODAY'} | Live: ${isLiveIntent} | Tokens: [${teamTokens.join(', ')}]`);
-
-                // ── Step 2: IST Time Engine ─────────────────────────────────────
-                const toIST = (date) => {
-                    // Convert any date to IST by creating a formatter and parsing
-                    const d = new Date(date);
-                    return new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-                };
-
-                const getISTDateString = (date) => {
-                    // Returns "YYYY-MM-DD" in IST for comparison
-                    const d = new Date(date);
-                    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // en-CA gives YYYY-MM-DD
-                };
+                // ── Step 2: IST Time Engine
+                const toIST = (date) => new Date(new Date(date).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                const getISTDateString = (date) => new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
                 const nowIST = toIST(new Date());
                 const todayStr = getISTDateString(new Date());
 
-                // Yesterday and tomorrow in IST
                 const yesterdayDate = new Date(nowIST);
                 yesterdayDate.setDate(yesterdayDate.getDate() - 1);
                 const yesterdayStr = getISTDateString(yesterdayDate);
@@ -432,39 +410,33 @@ export const getSportsDataTool = tool(
                 tomorrowDate.setDate(tomorrowDate.getDate() + 1);
                 const tomorrowStr = getISTDateString(tomorrowDate);
 
-                // ── Fetch from CricAPI ──────────────────────────────────────────
+                // ── Fetch from CricAPI
                 const matchData = await fetchWithCacheAndRetry(
                     `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000
                 );
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No cricket data available from CricAPI.");
 
-                // ── Step 3: The Scoring Loop ────────────────────────────────────
+                // ── Step 3: The Scoring Loop
                 const scoredMatches = matchData.data
-                    .filter(m => m.name) // Skip malformed entries
+                    .filter(m => m.name)
                     .map(match => {
                         let score = 0;
                         const matchNameLower = (match.name || '').toLowerCase();
                         const matchSeriesLower = (match.series || '').toLowerCase();
-
-                        // Get match date in IST for temporal comparison
                         const matchDateStr = getISTDateString(match.dateTimeGMT || match.date);
 
-                        // A) Team Match: +100 per token found in match name
                         for (const token of teamTokens) {
                             if (matchNameLower.includes(token)) score += 100;
                         }
 
-                        // B) Context Match: +50 if "ipl" is in query AND in series name
                         if (voiceNormalizedQuery.includes('ipl') && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) {
                             score += 50;
                         }
 
-                        // C) Exact Temporal Alignment: +150
                         if (isYesterday && matchDateStr === yesterdayStr) score += 150;
                         else if (isTomorrow && matchDateStr === tomorrowStr) score += 150;
                         else if (isToday && matchDateStr === todayStr) score += 150;
 
-                        // D) Live Bonus: +75 if user wants live AND match is actually live
                         if (isLiveIntent && match.matchStarted === true && match.matchEnded === false) {
                             score += 75;
                         }
@@ -473,48 +445,66 @@ export const getSportsDataTool = tool(
                     })
                     .sort((a, b) => b.score - a.score);
 
-                // ── Step 4: Intelligent Selection & Status Formatting ───────────
+                // ── Step 4: Intelligent Selection
                 if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
                     throw new Error("No matches found for this specific query.");
                 }
 
-                const bestResult = scoredMatches[0];
-                const targetMatch = bestResult.match;
+                const targetMatch = scoredMatches[0].match;
 
-                console.log(`🏏 [Cricket Engine] Best match: "${targetMatch.name}" (score: ${bestResult.score})`);
-
-                // ── Extract team names & scores ─────────────────────────────────
+                // ── 100% BULLETPROOF EXTRACTOR
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
                 let scoreA = "-", scoreB = "-", oversA = null, crr = null;
 
-                if (targetMatch.score?.length > 0) {
-                    // 🛠️ SURGICAL FIX: Fuzzy matching by first word to prevent '-' scores
-                    const firstWordA = teamAName.split(' ')[0].toLowerCase();
-                    const firstWordB = teamBName.split(' ')[0].toLowerCase();
+                const isLiveResponse = targetMatch.matchStarted === true && targetMatch.matchEnded === false;
 
-                    let sA = targetMatch.score.find(s => s.inning?.toLowerCase().includes(firstWordA));
-                    let sB = targetMatch.score.find(s => s.inning?.toLowerCase().includes(firstWordB));
+                if (Array.isArray(targetMatch.score) && targetMatch.score.length > 0) {
 
-                    // 🛠️ SURGICAL FIX: Array Index Fallback if fuzzy match fails
-                    if (!sA && targetMatch.score.length > 0) sA = targetMatch.score[0];
-                    if (!sB && targetMatch.score.length > 1) sB = targetMatch.score[1];
+                    // 1. Ultra-Robust Fuzzy Matcher (checks EVERY word > 2 chars)
+                    const findScore = (teamName, scores) => {
+                        const words = teamName.toLowerCase().split(' ').filter(w => w.length > 2);
+                        for (const w of words) {
+                            const found = scores.find(s => s.inning?.toLowerCase().includes(w));
+                            if (found) return found;
+                        }
+                        return null;
+                    };
 
+                    let sA = findScore(teamAName, targetMatch.score);
+                    let sB = findScore(teamBName, targetMatch.score);
+
+                    // 2. Blind Array Index Fallback (If words don't match AT ALL, pull by order)
+                    if (!sA && targetMatch.score[0]) sA = targetMatch.score[0];
+                    if (!sB && targetMatch.score[1] && targetMatch.score[1] !== sA) sB = targetMatch.score[1];
+
+                    // 3. Safe Value Extraction
                     if (sA) {
-                        scoreA = `${sA.r}/${sA.w}`;
-                        oversA = sA.o;
-                        // Guard against null/NaN overs to prevent Infinity CRR
-                        const numOvers = parseFloat(sA.o);
+                        const r = sA.r !== undefined ? sA.r : 0;
+                        const w = sA.w !== undefined ? sA.w : 0;
+                        scoreA = `${r}/${w}`;
+                        oversA = sA.o !== undefined ? sA.o : "0.0";
+
+                        const numOvers = parseFloat(oversA);
                         if (!isNaN(numOvers) && numOvers > 0) {
                             const oMath = Math.floor(numOvers) + (((numOvers * 10) % 10) / 6);
-                            if (oMath > 0) crr = (sA.r / oMath).toFixed(2);
+                            if (oMath > 0) crr = (r / oMath).toFixed(2);
                         }
                     }
-                    if (sB) { scoreB = `${sB.r}/${sB.w}`; }
+
+                    if (sB) {
+                        const r = sB.r !== undefined ? sB.r : 0;
+                        const w = sB.w !== undefined ? sB.w : 0;
+                        scoreB = `${r}/${w}`;
+                    }
+
+                } else if (isLiveResponse) {
+                    // Match literally just started, no balls bowled yet
+                    scoreA = "0/0";
+                    oversA = "0.0";
                 }
 
                 // Determine match status
-                const isLiveResponse = targetMatch.matchStarted === true && targetMatch.matchEnded === false;
                 const isFinished = targetMatch.matchEnded === true;
                 const isNotStarted = targetMatch.matchStarted === false;
 
@@ -524,7 +514,6 @@ export const getSportsDataTool = tool(
                 } else if (isFinished) {
                     statusText = targetMatch.status || "Finished";
                 } else if (isNotStarted) {
-                    // The "Upcoming Pivot": user asked for live/today, but match hasn't started
                     const matchTimeIST = new Date(targetMatch.dateTimeGMT || targetMatch.date)
                         .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
                     statusText = `Scheduled: Today at ${matchTimeIST} IST`;
@@ -532,15 +521,13 @@ export const getSportsDataTool = tool(
                     statusText = targetMatch.status || "Match Info";
                 }
 
-                // 🛠️ SURGICAL FIX: Added explicit teamA and teamB objects for universal UI compatibility
+                // 🛠️ SURGICAL FIX: NO "teamA" OR "teamB" TO PREVENT FOOTBALL UI HIJACK
                 const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse,
                     battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB,
-                    crr: crr, status: statusText,
-                    teamA: { name: teamAName, score: scoreA },
-                    teamB: { name: teamBName, score: scoreB }
+                    crr: crr, status: statusText
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
