@@ -384,30 +384,106 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // 🏏 ROUTE 3: CRICKET (CRICAPI)
+            // 🏏 ROUTE 3: CRICKET (CRICAPI) — Temporal-Aware Scoring Algorithm
             // ==========================================
             else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
-                const matchData = await fetchWithCacheAndRetry(`https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000);
-                if (!matchData.data || matchData.data.length === 0) throw new Error("No live cricket data.");
+                // ── Step 1: Temporal Intent Extraction ──────────────────────────
+                const isYesterday = /\b(yesterday|last\s*night|last\s*match|previous\s*match|last\s*game)\b/i.test(voiceNormalizedQuery);
+                const isTomorrow = /\b(tomorrow|next\s*match|next\s*game|upcoming)\b/i.test(voiceNormalizedQuery);
+                const isLiveIntent = /\b(live|current|right\s*now|going\s*on|happening)\b/i.test(voiceNormalizedQuery);
+                // Default: if none of the above, treat as "today"
+                const isToday = !isYesterday && !isTomorrow;
 
-                t1 = t1 || "match";
+                // Extract team tokens: strip temporal/noise words, split remainder
+                const NOISE_WORDS = /\b(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|fixtures|please|of|the|for|in|is|what|was|who|won|how|between|current|right|now|going|on|happening|cricket|ipl|t20|premier|league|indian|result|vs|versus)\b/gi;
+                const teamTokens = voiceNormalizedQuery
+                    .replace(NOISE_WORDS, '')
+                    .trim()
+                    .split(/\s+/)
+                    .filter(t => t.length > 1);
 
-                let targetMatch = null;
-                if (t2) {
-                    targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1) && m.name?.toLowerCase().includes(t2));
-                } else if (t1 !== "match") {
-                    targetMatch = matchData.data.find(m => m.name?.toLowerCase().includes(t1));
+                console.log(`🏏 [Cricket Engine] Temporal: ${isYesterday ? 'YESTERDAY' : isTomorrow ? 'TOMORROW' : 'TODAY'} | Live: ${isLiveIntent} | Tokens: [${teamTokens.join(', ')}]`);
+
+                // ── Step 2: IST Time Engine ─────────────────────────────────────
+                const toIST = (date) => {
+                    // Convert any date to IST by creating a formatter and parsing
+                    const d = new Date(date);
+                    return new Date(d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
+                };
+
+                const getISTDateString = (date) => {
+                    // Returns "YYYY-MM-DD" in IST for comparison
+                    const d = new Date(date);
+                    return d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // en-CA gives YYYY-MM-DD
+                };
+
+                const nowIST = toIST(new Date());
+                const todayStr = getISTDateString(new Date());
+
+                // Yesterday and tomorrow in IST
+                const yesterdayDate = new Date(nowIST);
+                yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+                const yesterdayStr = getISTDateString(yesterdayDate);
+
+                const tomorrowDate = new Date(nowIST);
+                tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+                const tomorrowStr = getISTDateString(tomorrowDate);
+
+                // ── Fetch from CricAPI ──────────────────────────────────────────
+                const matchData = await fetchWithCacheAndRetry(
+                    `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000
+                );
+                if (!matchData.data || matchData.data.length === 0) throw new Error("No cricket data available from CricAPI.");
+
+                // ── Step 3: The Scoring Loop ────────────────────────────────────
+                const scoredMatches = matchData.data
+                    .filter(m => m.name) // Skip malformed entries
+                    .map(match => {
+                        let score = 0;
+                        const matchNameLower = (match.name || '').toLowerCase();
+                        const matchSeriesLower = (match.series || '').toLowerCase();
+
+                        // Get match date in IST for temporal comparison
+                        const matchDateStr = getISTDateString(match.dateTimeGMT || match.date);
+
+                        // A) Team Match: +100 per token found in match name
+                        for (const token of teamTokens) {
+                            if (matchNameLower.includes(token)) score += 100;
+                        }
+
+                        // B) Context Match: +50 if "ipl" is in query AND in series name
+                        if (voiceNormalizedQuery.includes('ipl') && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) {
+                            score += 50;
+                        }
+
+                        // C) Exact Temporal Alignment: +150
+                        if (isYesterday && matchDateStr === yesterdayStr) score += 150;
+                        else if (isTomorrow && matchDateStr === tomorrowStr) score += 150;
+                        else if (isToday && matchDateStr === todayStr) score += 150;
+
+                        // D) Live Bonus: +75 if user wants live AND match is actually live
+                        if (isLiveIntent && match.matchStarted === true && match.matchEnded === false) {
+                            score += 75;
+                        }
+
+                        return { match, score, matchDateStr };
+                    })
+                    .sort((a, b) => b.score - a.score);
+
+                // ── Step 4: Intelligent Selection & Status Formatting ───────────
+                if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
+                    throw new Error("No matches found for this specific query.");
                 }
 
-                if (!targetMatch) {
-                    targetMatch = matchData.data[0];
-                }
+                const bestResult = scoredMatches[0];
+                const targetMatch = bestResult.match;
 
-                if (!targetMatch) throw new Error("No active cricket matches found.");
+                console.log(`🏏 [Cricket Engine] Best match: "${targetMatch.name}" (score: ${bestResult.score})`);
 
+                // Extract team names & scores
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
                 let scoreA = "-", scoreB = "-", oversA = null, crr = null;
@@ -418,7 +494,6 @@ export const getSportsDataTool = tool(
                     if (sA) {
                         scoreA = `${sA.r}/${sA.w}`;
                         oversA = sA.o;
-                        // 🛠️ SURGICAL FIX: Guard against null/NaN overs to prevent Infinity CRR
                         const numOvers = parseFloat(sA.o);
                         if (!isNaN(numOvers) && numOvers > 0) {
                             const oMath = Math.floor(numOvers) + (((numOvers * 10) % 10) / 6);
@@ -427,12 +502,32 @@ export const getSportsDataTool = tool(
                     }
                     if (sB) { scoreB = `${sB.r}/${sB.w}`; }
                 }
-                const isLiveResponse = targetMatch.matchStarted && !targetMatch.matchEnded;
+
+                // Determine match status
+                const isLiveResponse = targetMatch.matchStarted === true && targetMatch.matchEnded === false;
+                const isFinished = targetMatch.matchEnded === true;
+                const isNotStarted = targetMatch.matchStarted === false;
+
+                let statusText;
+                if (isLiveResponse) {
+                    statusText = targetMatch.status || "Live";
+                } else if (isFinished) {
+                    statusText = targetMatch.status || "Finished";
+                } else if (isNotStarted) {
+                    // The "Upcoming Pivot": user asked for live/today, but match hasn't started
+                    const matchTimeIST = new Date(targetMatch.dateTimeGMT || targetMatch.date)
+                        .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+                    statusText = `Scheduled: Today at ${matchTimeIST} IST`;
+                } else {
+                    statusText = targetMatch.status || "Match Info";
+                }
 
                 const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
-                    isLive: isLiveResponse, battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
-                    bowlingTeam: teamBName, bowlingScore: scoreB, crr: crr, status: targetMatch.status || "Match Info"
+                    isLive: isLiveResponse,
+                    battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
+                    bowlingTeam: teamBName, bowlingScore: scoreB,
+                    crr: crr, status: statusText
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
