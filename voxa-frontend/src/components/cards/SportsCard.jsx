@@ -84,6 +84,44 @@ const clubLogoUrls = {
   'West Indies': 'https://upload.wikimedia.org/wikipedia/commons/1/1b/Cricket_West_Indies_Logo_2017.svg',
 };
 
+// ⚽ LOGO FIX: Robust team name normalizer for fuzzy matching against clubLogoUrls
+// The Football-Data.org API returns formal names like "Manchester United FC",
+// "Real Madrid CF", "AFC Bournemouth" which don't match our dictionary keys.
+const normalizeTeamName = (name) => {
+  if (!name) return '';
+  return name
+    .replace(/\b(FC|CF|AFC|SC|SL|FK|SK|BVB|BSC|SSC|AS|US|SS|1\.\s*FC|1\.\s*FSV)\b/gi, '')
+    .replace(/\b(Football Club|Club de Fútbol|Calcio|Associazione)\b/gi, '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ');
+};
+
+// ⚽ LOGO FIX: Fuzzy lookup — normalize both the input name and every dictionary key,
+// then check for partial substring matches in both directions.
+const findClubLogoUrl = (teamName) => {
+  if (!teamName) return null;
+  const normalized = normalizeTeamName(teamName);
+
+  // Pass 1: Exact match on raw key
+  if (clubLogoUrls[teamName]) return clubLogoUrls[teamName];
+
+  // Pass 2: Normalized exact match
+  for (const key of Object.keys(clubLogoUrls)) {
+    if (normalizeTeamName(key) === normalized) return clubLogoUrls[key];
+  }
+
+  // Pass 3: Partial substring match (handles "Manchester United FC" → "Manchester United")
+  for (const key of Object.keys(clubLogoUrls)) {
+    const normKey = normalizeTeamName(key);
+    if (normKey.length > 3 && (normalized.includes(normKey) || normKey.includes(normalized))) {
+      return clubLogoUrls[key];
+    }
+  }
+
+  return null;
+};
+
 // ═══════════════════════════════════════════════════════════════════
 // getTeamLogo — Three-source waterfall (flags → clubs → SVG shield)
 // ═══════════════════════════════════════════════════════════════════
@@ -104,12 +142,13 @@ const getTeamLogo = (teamName) => {
     );
   }
 
-  // Source 2: Club logos via Wikipedia Commons — rendered as rounded square with white bg
-  if (clubLogoUrls[teamName]) {
+  // ⚽ LOGO FIX: Use fuzzy matching instead of exact key lookup
+  const logoUrl = findClubLogoUrl(teamName);
+  if (logoUrl) {
     return (
       <div className="w-12 h-12 rounded-xl overflow-hidden border border-white/20 bg-white p-1 flex-shrink-0">
         <img
-          src={clubLogoUrls[teamName]}
+          src={logoUrl}
           alt={teamName}
           className="w-full h-full object-contain"
           onError={(e) => { e.currentTarget.style.display = 'none'; }}
@@ -142,6 +181,7 @@ const getTeamLogo = (teamName) => {
     </svg>
   );
 };
+
 
 // ═══════════════════════════════════════════════════════════════════
 // FootballCard — Dark two-zone layout with gradient separator

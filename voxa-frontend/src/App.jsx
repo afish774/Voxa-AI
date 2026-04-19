@@ -63,6 +63,16 @@ function VoiceAssistant({ user, onLogout }) {
   const cameraModeRef = useRef(false);
   const availableVoicesRef = useRef([]);
 
+  // 🛠️ SURGICAL FIX: [V-05] Concurrency guard — prevents double-fire race conditions
+  const busyRef = useRef(false);
+
+  // 🛠️ SURGICAL FIX: [V-07] Ref mirrors for state used inside window.activeRunQuery
+  // This eliminates stale closures: the refs always point to the latest value.
+  const uploadedImageRef = useRef(null);
+  const userMoodRef = useRef("neutral");
+  const selectedVoiceRef = useRef(selectedVoice);
+  const isAppMutedRef = useRef(false);
+
   const theme = isDark ? THEMES.dark : THEMES.light;
   const isDockExpanded = isDockHovered || showInput;
   const isAppMuted = activeModal !== null;
@@ -71,6 +81,12 @@ function VoiceAssistant({ user, onLogout }) {
   const handleToggleTheme = () => { setIsDark(prev => { const newTheme = !prev; try { localStorage.setItem('voxa_theme', newTheme ? 'dark' : 'light'); } catch (e) { } return newTheme; }); };
 
   useEffect(() => { cameraModeRef.current = isCameraMode; }, [isCameraMode]);
+
+  // 🛠️ SURGICAL FIX: [V-07] Keep refs in sync with their state counterparts
+  useEffect(() => { uploadedImageRef.current = uploadedImage; }, [uploadedImage]);
+  useEffect(() => { userMoodRef.current = userMood; }, [userMood]);
+  useEffect(() => { selectedVoiceRef.current = selectedVoice; }, [selectedVoice]);
+  useEffect(() => { isAppMutedRef.current = isAppMuted; }, [isAppMuted]);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -177,6 +193,10 @@ function VoiceAssistant({ user, onLogout }) {
   };
 
   const runQuery = async (q) => {
+    // 🛠️ SURGICAL FIX: [V-05] Concurrency guard — reject double-fires
+    if (busyRef.current) return;
+    busyRef.current = true;
+
     loopRef.current.isBotSpeaking = true;
     if (loopRef.current.silenceTimer) clearTimeout(loopRef.current.silenceTimer);
     if (micRef.current) { try { micRef.current.abort(); } catch (e) { } }
@@ -188,7 +208,8 @@ function VoiceAssistant({ user, onLogout }) {
 
     setPhase(PHASES.PROCESSING); setShowGreeting(false); setRibbonSplit(true); setShowQuery(true); setTyping(false); setCurrentPrompt(q); setCurrentResponse("Thinking..."); setCurrentCard(null);
 
-    let finalImage = uploadedImage;
+    // 🛠️ SURGICAL FIX: [V-07] Read from refs (always current) instead of stale closure state
+    let finalImage = uploadedImageRef.current;
 
     // Capture from Webcam if Spatial mode is open
     if (cameraModeRef.current) {
@@ -210,9 +231,9 @@ function VoiceAssistant({ user, onLogout }) {
     let currentToken = null;
     try { currentToken = localStorage.getItem('voxa_token'); } catch (e) { /* Private mode */ }
 
-    // 🚀 INJECTING MOOD & IMAGE TO BACKEND API STREAM
+    // 🛠️ SURGICAL FIX: [V-07] Read voice, mood, muted state from refs — never stale
     await streamChatResponse(
-      { prompt: q, image: finalImage, voice: selectedVoice, mood: userMood, token: currentToken },
+      { prompt: q, image: finalImage, voice: selectedVoiceRef.current, mood: userMoodRef.current, token: currentToken },
       {
         onStatus: (text) => {
           let cleanStream = text.replace("SYSTEM_DIRECTIVE_DO_NOT_PARAPHRASE: ", "");
@@ -229,17 +250,25 @@ function VoiceAssistant({ user, onLogout }) {
           setTyping(true);
         },
         onAudio: (audio) => {
-          if (!isAppMuted && audio && loopRef.current.audioPlayer) {
+          // 🛠️ SURGICAL FIX: [V-07] Use isAppMutedRef instead of closed-over isAppMuted
+          if (!isAppMutedRef.current && audio && loopRef.current.audioPlayer) {
             loopRef.current.audioPlayer.src = `data:audio/mpeg;base64,${audio}`;
             loopRef.current.audioPlayer.play().catch(e => { triggerVoiceContinuation(); });
           } else { triggerVoiceContinuation(); }
         },
-        onError: (text) => { setPhase(PHASES.RESPONDING); setCurrentResponse(text); triggerVoiceContinuation(); }
+        onError: (text) => {
+          setPhase(PHASES.RESPONDING); setCurrentResponse(text); triggerVoiceContinuation();
+          // 🛠️ SURGICAL FIX: [V-05] Release concurrency lock on error
+          busyRef.current = false;
+        }
       }
     );
+
+    // 🛠️ SURGICAL FIX: [V-05] Release concurrency lock after stream completes
+    busyRef.current = false;
   };
 
-  useEffect(() => { window.activeRunQuery = runQuery; }, [runQuery]);
+  useEffect(() => { window.activeRunQuery = runQuery; });
 
   const handleTextSubmit = () => {
     const q = inputValue.trim(); if (!q || loopRef.current.isBotSpeaking) return;

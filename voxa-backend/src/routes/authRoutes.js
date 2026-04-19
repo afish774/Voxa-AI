@@ -27,8 +27,14 @@ const router = express.Router();
 const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
 const BACKEND_URL = "https://voxa-ai-zh5o.onrender.com";
 
+// 🛠️ SURGICAL FIX: [V-02] Fail hard at boot if JWT_SECRET is missing — never use a guessable fallback
+if (!process.env.JWT_SECRET) {
+    console.error('🚨 FATAL: JWT_SECRET environment variable is not set. Server cannot start securely.');
+    process.exit(1);
+}
+
 const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET || 'fallback_secret', { expiresIn: '30d' });
+    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 };
 
 // ============================================================================

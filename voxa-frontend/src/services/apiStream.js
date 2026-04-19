@@ -2,6 +2,20 @@ export const streamChatResponse = async (payload, callbacks) => {
     const { prompt, image, voice, mood, token } = payload;
     const { onStatus, onText, onAudio, onError } = callbacks;
 
+    // 🛠️ SURGICAL FIX: [V-12] Client-side SSE timeout — if no valid event arrives
+    // within 30s, abort the stream and show an error instead of hanging forever.
+    let streamTimeoutId = null;
+    const STREAM_TIMEOUT_MS = 30000;
+
+    const resetStreamTimeout = (reader) => {
+        if (streamTimeoutId) clearTimeout(streamTimeoutId);
+        streamTimeoutId = setTimeout(() => {
+            console.error("🚨 SSE STREAM TIMEOUT: No events received for 30s. Aborting.");
+            try { reader.cancel(); } catch (e) { }
+            onError("Request timed out. The server may be overloaded — please try again.");
+        }, STREAM_TIMEOUT_MS);
+    };
+
     try {
         const response = await fetch("https://voxa-ai-zh5o.onrender.com/api/chat", {
             method: "POST",
@@ -23,6 +37,9 @@ export const streamChatResponse = async (payload, callbacks) => {
         let done = false;
         let buffer = "";
 
+        // 🛠️ SURGICAL FIX: [V-12] Start the timeout clock as soon as the stream opens
+        resetStreamTimeout(reader);
+
         while (!done) {
             const { value, done: readerDone } = await reader.read();
             done = readerDone;
@@ -36,6 +53,10 @@ export const streamChatResponse = async (payload, callbacks) => {
                         if (line.startsWith('data: ')) {
                             try {
                                 const data = JSON.parse(line.substring(6));
+
+                                // 🛠️ SURGICAL FIX: [V-12] Reset timeout on every valid event
+                                resetStreamTimeout(reader);
+
                                 if (data.type === 'status') onStatus(data.text);
                                 else if (data.type === 'text') onText(data.text, data.card);
                                 else if (data.type === 'audio') onAudio(data.audio);
@@ -43,13 +64,22 @@ export const streamChatResponse = async (payload, callbacks) => {
                                     console.error("🚨 ENGINE STREAM ERROR:", data.text);
                                     onError(data.text);
                                 }
-                            } catch (e) { }
+                            } catch (e) {
+                                // 🛠️ SURGICAL FIX: [V-06] Log malformed SSE data instead of silently swallowing
+                                console.warn("⚠️ SSE JSON parse error (malformed frame):", e.message, "| Raw line:", line);
+                            }
                         }
                     }
                 }
             }
         }
+
+        // 🛠️ SURGICAL FIX: [V-12] Clean up timeout when stream completes normally
+        if (streamTimeoutId) clearTimeout(streamTimeoutId);
+
     } catch (err) {
+        // 🛠️ SURGICAL FIX: [V-12] Clean up timeout on error path too
+        if (streamTimeoutId) clearTimeout(streamTimeoutId);
         console.error("🚨 FETCH FAILED:", err);
         onError("Network connection dropped. Check the console.");
     }

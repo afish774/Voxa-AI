@@ -16,10 +16,23 @@ connectDB();
 
 const app = express();
 
-// 🛡️ THE BULLETPROOF CORS FIX
+// 🛠️ SURGICAL FIX: [V-03] Replaced open wildcard CORS with explicit origin whitelist
+// Only the Vercel production frontend and localhost dev server are allowed
+const ALLOWED_ORIGINS = [
+    "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app",
+    "http://localhost:5173",
+    "http://localhost:3000"
+];
+
 app.use(cors({
     origin: function (origin, callback) {
-        callback(null, origin || true);
+        // Allow server-to-server requests (no origin) and whitelisted origins
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`🛡️ CORS blocked request from: ${origin}`);
+            callback(new Error('Not allowed by CORS'));
+        }
     },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
