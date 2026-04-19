@@ -483,17 +483,27 @@ export const getSportsDataTool = tool(
 
                 console.log(`🏏 [Cricket Engine] Best match: "${targetMatch.name}" (score: ${bestResult.score})`);
 
-                // Extract team names & scores
+                // ── Extract team names & scores ─────────────────────────────────
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
                 let scoreA = "-", scoreB = "-", oversA = null, crr = null;
 
                 if (targetMatch.score?.length > 0) {
-                    const sA = targetMatch.score.find(s => s.inning?.includes(teamAName));
-                    const sB = targetMatch.score.find(s => s.inning?.includes(teamBName));
+                    // 🛠️ SURGICAL FIX: Fuzzy matching by first word to prevent '-' scores
+                    const firstWordA = teamAName.split(' ')[0].toLowerCase();
+                    const firstWordB = teamBName.split(' ')[0].toLowerCase();
+
+                    let sA = targetMatch.score.find(s => s.inning?.toLowerCase().includes(firstWordA));
+                    let sB = targetMatch.score.find(s => s.inning?.toLowerCase().includes(firstWordB));
+
+                    // 🛠️ SURGICAL FIX: Array Index Fallback if fuzzy match fails
+                    if (!sA && targetMatch.score.length > 0) sA = targetMatch.score[0];
+                    if (!sB && targetMatch.score.length > 1) sB = targetMatch.score[1];
+
                     if (sA) {
                         scoreA = `${sA.r}/${sA.w}`;
                         oversA = sA.o;
+                        // Guard against null/NaN overs to prevent Infinity CRR
                         const numOvers = parseFloat(sA.o);
                         if (!isNaN(numOvers) && numOvers > 0) {
                             const oMath = Math.floor(numOvers) + (((numOvers * 10) % 10) / 6);
@@ -522,12 +532,15 @@ export const getSportsDataTool = tool(
                     statusText = targetMatch.status || "Match Info";
                 }
 
+                // 🛠️ SURGICAL FIX: Added explicit teamA and teamB objects for universal UI compatibility
                 const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse,
                     battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
                     bowlingTeam: teamBName, bowlingScore: scoreB,
-                    crr: crr, status: statusText
+                    crr: crr, status: statusText,
+                    teamA: { name: teamAName, score: scoreA },
+                    teamB: { name: teamBName, score: scoreB }
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
