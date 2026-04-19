@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Hexagon } from 'lucide-react';
 
@@ -6,6 +6,9 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
   const numericPrice = typeof price === 'number' ? price : parseFloat(price) || 0;
   const numericChange = typeof change === 'number' ? change : parseFloat(change) || 0;
   const isPositive = numericChange >= 0;
+
+  // Track if the dynamic logo fails to load
+  const [imgError, setImgError] = useState(false);
 
   // Format price into Big Integer and Small Decimal parts
   const priceFormatted = numericPrice.toLocaleString('en-US', {
@@ -57,8 +60,9 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
 
     const peakIdx = data.indexOf(maxV);
     const peak = points[peakIdx];
+    const latest = points[points.length - 1]; // Right-most point for the live pulse
 
-    return { d, peak, peakPrice: maxV };
+    return { d, peak, peakPrice: maxV, latest };
   }, [sparklineData, numericPrice, numericChange]);
 
   const formattedDate = useMemo(() => {
@@ -69,7 +73,6 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      // 🎬 PREMIUM ANIMATION: Subtle 3D lift and glow on hover
       whileHover={{
         y: -4,
         boxShadow: 'inset 0 1px 1px rgba(255,255,255,0.15), 0 32px 64px -12px rgba(0,0,0,0.9)',
@@ -86,7 +89,6 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
       {/* ─── Background Grid Pattern ─── */}
       <motion.div
         className="absolute inset-0 pointer-events-none opacity-[0.06]"
-        // 🎬 PREMIUM ANIMATION: Infinite slow diagonal drift
         animate={{ backgroundPosition: ["0px 0px", "42px 42px"] }}
         transition={{ repeat: Infinity, duration: 4, ease: "linear" }}
         style={{
@@ -115,13 +117,23 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
 
         <div className="flex items-center gap-3.5">
           <div
-            className="w-[46px] h-[46px] rounded-full flex items-center justify-center relative shadow-xl"
+            className="w-[46px] h-[46px] rounded-full flex items-center justify-center relative shadow-xl overflow-hidden"
             style={{
               background: 'linear-gradient(135deg, #2A2A2C 0%, #151516 100%)',
               boxShadow: '0 8px 16px rgba(0,0,0,0.4), inset 0 1px 1px rgba(255,255,255,0.08)'
             }}
           >
-            <Hexagon className="w-6 h-6 text-white/90" strokeWidth={2} />
+            {/* Dynamic Logo Loader with safe fallback */}
+            {!imgError && symbol ? (
+              <img
+                src={`https://assets.coincap.io/assets/icons/${symbol.toLowerCase()}@2x.png`}
+                alt={symbol}
+                onError={() => setImgError(true)}
+                className="w-6 h-6 object-contain z-10"
+              />
+            ) : (
+              <Hexagon className="w-6 h-6 text-white/90 z-10" strokeWidth={2} />
+            )}
           </div>
           <div className="flex flex-col justify-center">
             <span className="text-white font-medium text-[19px] leading-tight capitalize tracking-tight">
@@ -143,11 +155,12 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
             viewBox={`0 0 ${SVG_W} ${SVG_H}`}
             preserveAspectRatio="none"
             className="overflow-visible"
+            style={{ filter: 'drop-shadow(0px 4px 6px rgba(255,255,255,0.15))' }} // Subtle line glow
           >
-            {/* 🎬 PREMIUM ANIMATION: Line draws itself left-to-right on mount */}
+            {/* Draw-in Animation for the Line */}
             <motion.path
               d={sparkline.d}
-              stroke="rgba(255,255,255,0.3)"
+              stroke="rgba(255,255,255,0.4)"
               strokeWidth={1.5}
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -157,10 +170,10 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
               transition={{ duration: 1.5, ease: "easeInOut" }}
             />
 
-            {/* Solid Peak Dot */}
+            {/* LIVE PULSE: Solid Dot at the Leading Edge (Right Side) */}
             <motion.circle
-              cx={sparkline.peak.x}
-              cy={sparkline.peak.y}
+              cx={sparkline.latest.x}
+              cy={sparkline.latest.y}
               r={4.5}
               fill="#FFFFFF"
               initial={{ scale: 0, opacity: 0 }}
@@ -168,10 +181,10 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
               transition={{ delay: 1.2, duration: 0.4, type: "spring" }}
             />
 
-            {/* 🎬 PREMIUM ANIMATION: Infinite expanding radar pulse behind the peak dot */}
+            {/* LIVE PULSE: Expanding Radar Ring at the Leading Edge */}
             <motion.circle
-              cx={sparkline.peak.x}
-              cy={sparkline.peak.y}
+              cx={sparkline.latest.x}
+              cy={sparkline.latest.y}
               r={4.5}
               fill="none"
               stroke="#FFFFFF"
@@ -182,7 +195,7 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
             />
           </svg>
 
-          {/* Floating Peak Tooltip */}
+          {/* Floating Peak Tooltip (Kept at highest point) */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
