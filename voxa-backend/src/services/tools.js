@@ -234,13 +234,19 @@ export const getWeatherTool = tool(
                 const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : '--';
                 const humidity = cc.humidity ? `${cc.humidity}%` : '--';
                 let rainChance = '--';
+
                 try {
                     const hourly = data.weather?.[0]?.hourly;
                     if (hourly?.length > 0) {
-                        const currentHour = new Date().getHours();
-                        const nearestSlot = Math.floor(currentHour / 3) * 300;
-                        const entry = hourly.find(h => parseInt(h.time) === nearestSlot) || hourly[0];
-                        if (entry?.chanceofrain) rainChance = `${entry.chanceofrain}%`;
+                        // 🛠️ SENIOR FIX: Scan the entire day's forecast and find the highest chance of rain
+                        let maxRainChance = 0;
+                        hourly.forEach(slot => {
+                            const chance = parseInt(slot.chanceofrain || "0", 10);
+                            if (chance > maxRainChance) {
+                                maxRainChance = chance;
+                            }
+                        });
+                        rainChance = `${maxRainChance}%`;
                     }
                 } catch (e) { /* graceful fallback to '--' */ }
 
