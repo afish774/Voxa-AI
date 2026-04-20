@@ -1,582 +1,255 @@
 import React, { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Wind, CloudRain, Droplets } from 'lucide-react';
+import { Wind, CloudRain, Droplets, MapPin } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
-// 🌨️  SCENE 1: SNOWFALL — Soft, slow-falling white circles with drift
+// 🌤️ ATMOSPHERIC RENDERING ENGINE (Premium Live Animations)
 // ═══════════════════════════════════════════════════════════════════
-const SnowEffect = () => {
-  const flakes = useMemo(() =>
-    Array.from({ length: 24 }, (_, i) => ({
-      id: i,
-      left: `${Math.random() * 100}%`,
-      size: 2 + Math.random() * 4,
-      dur: 6 + Math.random() * 8,
-      delay: Math.random() * 8,
-      drift: 15 + Math.random() * 25,
-      peak: 0.25 + Math.random() * 0.45,
-    })), []);
 
-  return flakes.map(f => (
+const SunnyEffect = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none">
     <motion.div
-      key={f.id}
-      className="absolute rounded-full"
+      animate={{ rotate: 360, scale: [1, 1.05, 1] }}
+      transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+      className="absolute -top-16 -right-16 w-64 h-64 rounded-full"
       style={{
-        width: f.size,
-        height: f.size,
-        left: f.left,
-        top: -10,
-        background: 'radial-gradient(circle, rgba(255,255,255,0.9) 0%, rgba(200,220,255,0.3) 100%)',
-        boxShadow: '0 0 4px rgba(255,255,255,0.4)',
+        background: 'radial-gradient(circle, rgba(255,215,0,0.15) 0%, rgba(255,165,0,0) 60%)',
+        filter: 'blur(30px)'
       }}
-      animate={{
-        y: [0, 380],
-        x: [-f.drift, f.drift, -f.drift],
-        opacity: [0, f.peak, f.peak, 0],
-      }}
-      transition={{ duration: f.dur, delay: f.delay, repeat: Infinity, ease: 'linear' }}
     />
-  ));
-};
+    <div className="absolute top-10 right-10 w-24 h-24 rounded-full bg-white/5 blur-2xl" />
+  </div>
+);
 
-// ═══════════════════════════════════════════════════════════════════
-// 🍂  SCENE 2: AUTUMN LEAVES — Swaying orange/brown leaf SVGs tumbling
-// ═══════════════════════════════════════════════════════════════════
-const AutumnEffect = () => {
-  const PALETTE = ['#D97706', '#B45309', '#92400E', '#DC2626', '#F59E0B', '#CA8A04'];
-  const leaves = useMemo(() =>
-    Array.from({ length: 14 }, (_, i) => ({
-      id: i,
-      left: `${Math.random() * 100}%`,
-      color: PALETTE[i % PALETTE.length],
-      size: 7 + Math.random() * 6,
-      dur: 5 + Math.random() * 7,
-      delay: Math.random() * 6,
-      spin: 120 + Math.random() * 400,
-      swayAmp: 12 + Math.random() * 18,
-    })), []);
-
-  return leaves.map(l => (
+const CloudyEffect = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-60">
     <motion.div
-      key={l.id}
-      className="absolute"
-      style={{ left: l.left, top: -16 }}
-      animate={{
-        y: [0, 400],
-        x: [-l.swayAmp, l.swayAmp, -l.swayAmp * 0.6, l.swayAmp * 0.8, -l.swayAmp],
-        rotate: [0, l.spin],
-        opacity: [0, 0.7, 0.7, 0],
-      }}
-      transition={{ duration: l.dur, delay: l.delay, repeat: Infinity, ease: 'easeIn' }}
-    >
-      <svg width={l.size} height={l.size * 1.4} viewBox="0 0 10 14" aria-hidden="true">
-        <path d="M5 0 C8 3 10 7 5 14 C0 7 2 3 5 0Z" fill={l.color} opacity={0.8} />
-        <line x1="5" y1="2" x2="5" y2="12" stroke={l.color} strokeWidth={0.5} opacity={0.4} />
-      </svg>
-    </motion.div>
-  ));
-};
+      animate={{ x: [-20, 20, -20] }}
+      transition={{ duration: 15, repeat: Infinity, ease: "easeInOut" }}
+      className="absolute -top-10 -left-10 w-48 h-48 rounded-full"
+      style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.08) 0%, transparent 70%)', filter: 'blur(25px)' }}
+    />
+    <motion.div
+      animate={{ x: [20, -20, 20] }}
+      transition={{ duration: 20, repeat: Infinity, ease: "easeInOut" }}
+      className="absolute top-10 right-0 w-64 h-64 rounded-full"
+      style={{ background: 'radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%)', filter: 'blur(30px)' }}
+    />
+  </div>
+);
 
-// ═══════════════════════════════════════════════════════════════════
-// 🌧️  SCENE 3: RAINSTORM — Fast blue vertical streaks + lightning flash
-// ═══════════════════════════════════════════════════════════════════
-const RainEffect = ({ isThunder }) => {
-  const drops = useMemo(() =>
-    Array.from({ length: 28 }, (_, i) => ({
-      id: i,
-      left: `${Math.random() * 100}%`,
-      h: 16 + Math.random() * 24,
-      dur: 0.3 + Math.random() * 0.4,
-      delay: Math.random() * 2.5,
-      peak: 0.2 + Math.random() * 0.35,
-    })), []);
-
+const RainEffect = () => {
+  const drops = useMemo(() => Array.from({ length: 40 }), []);
   return (
-    <>
-      {drops.map(d => (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {drops.map((_, i) => (
         <motion.div
-          key={d.id}
-          className="absolute"
+          key={i}
+          className="absolute bg-gradient-to-b from-transparent to-white/30"
           style={{
-            width: 1.5,
-            height: d.h,
-            left: d.left,
-            top: -24,
-            borderRadius: 1,
-            background: 'linear-gradient(to bottom, rgba(96,165,250,0.7), rgba(59,130,246,0.15), transparent)',
+            width: Math.random() * 1.5 + 0.5,
+            height: Math.random() * 30 + 15,
+            left: `${Math.random() * 100}%`,
+            top: -50,
+            transform: 'rotate(15deg)'
           }}
-          animate={{ y: [0, 400], opacity: [0, d.peak, d.peak, 0] }}
-          transition={{ duration: d.dur, delay: d.delay, repeat: Infinity, ease: 'linear' }}
+          animate={{ y: [0, 400], opacity: [0, 1, 0] }}
+          transition={{
+            duration: Math.random() * 0.5 + 0.5,
+            repeat: Infinity,
+            ease: "linear",
+            delay: Math.random() * 2
+          }}
         />
       ))}
-      {isThunder && (
+    </div>
+  );
+};
+
+const SnowEffect = () => {
+  const flakes = useMemo(() => Array.from({ length: 30 }, (_, i) => ({
+    id: i,
+    left: `${Math.random() * 100}%`,
+    size: Math.random() * 3 + 2,
+    duration: Math.random() * 4 + 4,
+    delay: Math.random() * 3
+  })), []);
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {flakes.map(f => (
         <motion.div
-          className="absolute inset-0 rounded-3xl bg-white/80 pointer-events-none"
-          animate={{ opacity: [0, 0, 0, 0.6, 0, 0, 0, 0, 0, 0.4, 0, 0, 0, 0, 0, 0] }}
-          transition={{ duration: 8, repeat: Infinity, ease: 'easeOut' }}
+          key={f.id}
+          className="absolute bg-white/60 rounded-full blur-[1px]"
+          style={{ width: f.size, height: f.size, left: f.left, top: -20 }}
+          animate={{ y: [0, 350], x: [-15, 15, -15], opacity: [0, 0.8, 0] }}
+          transition={{
+            y: { duration: f.duration, repeat: Infinity, ease: "linear", delay: f.delay },
+            x: { duration: 3, repeat: Infinity, ease: "easeInOut" },
+            opacity: { duration: f.duration, repeat: Infinity, ease: "easeInOut", delay: f.delay }
+          }}
         />
-      )}
-    </>
+      ))}
+    </div>
+  );
+};
+
+const StormEffect = () => {
+  const drops = useMemo(() => Array.from({ length: 50 }), []);
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none bg-[#050508]">
+      {/* Lightning Flashes */}
+      <motion.div
+        className="absolute inset-0 bg-white/20"
+        animate={{ opacity: [0, 0, 0.8, 0, 0, 0.4, 0, 0, 0] }}
+        transition={{ duration: 6, repeat: Infinity, times: [0, 0.8, 0.82, 0.84, 0.86, 0.88, 0.9, 0.95, 1] }}
+      />
+      {/* Fast Heavy Rain */}
+      {drops.map((_, i) => (
+        <motion.div
+          key={i}
+          className="absolute bg-gradient-to-b from-transparent to-white/40"
+          style={{
+            width: Math.random() * 2 + 1,
+            height: Math.random() * 40 + 20,
+            left: `${Math.random() * 100}%`,
+            top: -60,
+            transform: 'rotate(10deg)'
+          }}
+          animate={{ y: [0, 450] }}
+          transition={{
+            duration: Math.random() * 0.3 + 0.3,
+            repeat: Infinity,
+            ease: "linear",
+            delay: Math.random()
+          }}
+        />
+      ))}
+    </div>
   );
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// ☀️  SCENE 4: SUNNY — Massive pulsing amber radial glow that breathes
-// ═══════════════════════════════════════════════════════════════════
-const SunnyEffect = () => (
-  <>
-    {/* Outer breathing glow */}
-    <motion.div
-      className="absolute pointer-events-none"
-      style={{
-        top: '-30%',
-        right: '-20%',
-        width: '80%',
-        height: '80%',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(251,191,36,0.30) 0%, rgba(245,158,11,0.10) 45%, transparent 70%)',
-      }}
-      animate={{ scale: [1, 1.25, 1], opacity: [0.6, 1, 0.6] }}
-      transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-    />
-    {/* Inner warm core */}
-    <motion.div
-      className="absolute pointer-events-none"
-      style={{
-        top: '-10%',
-        right: '-5%',
-        width: '50%',
-        height: '50%',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(251,191,36,0.45) 0%, rgba(253,224,71,0.12) 50%, transparent 75%)',
-      }}
-      animate={{ scale: [1, 1.15, 1], opacity: [0.8, 1, 0.8] }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-    />
-    {/* Ambient warmth spread */}
-    <motion.div
-      className="absolute pointer-events-none"
-      style={{
-        bottom: '-20%',
-        left: '-10%',
-        width: '60%',
-        height: '60%',
-        borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(251,146,60,0.12) 0%, transparent 65%)',
-      }}
-      animate={{ scale: [1, 1.1, 1], opacity: [0.4, 0.7, 0.4] }}
-      transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
-    />
-  </>
-);
-
-// ═══════════════════════════════════════════════════════════════════
-// ☁️  SCENE 5: CLOUDY / FOG — Soft blurred ovals drifting across
-// ═══════════════════════════════════════════════════════════════════
-const CloudyEffect = () => {
-  const clouds = useMemo(() => [
-    { id: 0, w: 140, h: 48, top: '6%',  from: -50,  to: 320,  dur: 24, op: 0.10 },
-    { id: 1, w: 120, h: 40, top: '28%', from: 340,  to: -60,  dur: 30, op: 0.08 },
-    { id: 2, w: 160, h: 54, top: '50%', from: -70,  to: 330,  dur: 36, op: 0.12 },
-    { id: 3, w: 100, h: 34, top: '72%', from: 310,  to: -40,  dur: 28, op: 0.07 },
-  ], []);
-
-  return clouds.map(c => (
-    <motion.div
-      key={c.id}
-      className="absolute rounded-full bg-white pointer-events-none"
-      style={{ width: c.w, height: c.h, top: c.top, opacity: c.op, filter: 'blur(24px)' }}
-      animate={{ x: [c.from, c.to] }}
-      transition={{ duration: c.dur, repeat: Infinity, repeatType: 'reverse', ease: 'linear' }}
-    />
-  ));
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// 💨  SCENE 6: WINDY — Horizontal streak-lines
-// ═══════════════════════════════════════════════════════════════════
-const WindyEffect = () => {
-  const streaks = useMemo(() =>
-    Array.from({ length: 14 }, (_, i) => ({
-      id: i,
-      top: `${6 + Math.random() * 88}%`,
-      w: 50 + Math.random() * 90,
-      dur: 0.9 + Math.random() * 1.4,
-      delay: Math.random() * 3,
-      peak: 0.06 + Math.random() * 0.14,
-    })), []);
-
-  return streaks.map(s => (
-    <motion.div
-      key={s.id}
-      className="absolute bg-white rounded-full pointer-events-none"
-      style={{ width: s.w, height: 1.5, top: s.top, left: -120 }}
-      animate={{ x: [0, 440], opacity: [0, s.peak, s.peak, 0] }}
-      transition={{ duration: s.dur, delay: s.delay, repeat: Infinity, ease: 'linear' }}
-    />
-  ));
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// 🎬  SCENE RESOLVER — maps condition → animation
-// ═══════════════════════════════════════════════════════════════════
-const resolveScene = (condition) => {
-  if (!condition) return 'clear';
-  const c = condition.toLowerCase();
-  if (c.includes('snow') || c.includes('winter') || c.includes('ice') || c.includes('blizzard') || c.includes('sleet')) return 'snow';
-  if (c.includes('autumn') || c.includes('fall')) return 'autumn';
-  if (c.includes('rain') || c.includes('drizzle') || c.includes('shower') || c.includes('storm') || c.includes('thunder')) return 'rain';
-  if (c.includes('cloud') || c.includes('overcast') || c.includes('fog') || c.includes('mist') || c.includes('haze') || c.includes('partly')) return 'cloudy';
-  if (c.includes('wind') || c.includes('gust') || c.includes('breeze')) return 'windy';
-  return 'clear';
-};
-
-const WeatherScene = ({ condition }) => {
-  const scene = resolveScene(condition);
-  const hasThunder = condition?.toLowerCase()?.includes('thunder') || condition?.toLowerCase()?.includes('storm');
-
-  switch (scene) {
-    case 'snow':   return <SnowEffect />;
-    case 'autumn': return <AutumnEffect />;
-    case 'rain':   return <RainEffect isThunder={hasThunder} />;
-    case 'cloudy': return <CloudyEffect />;
-    case 'windy':  return <WindyEffect />;
-    case 'clear':
-    default:       return <SunnyEffect />;
-  }
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// 🎨  3D ANIMATED WEATHER ICON — Claymorphic emoji with Framer Motion
+// 📱 THE PREMIUM WEATHER CARD
 // ═══════════════════════════════════════════════════════════════════
 
-const SunIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 80 }}
-  >
-    {/* Ambient glow behind sun */}
-    <motion.div
-      className="absolute rounded-full"
-      style={{
-        width: 72,
-        height: 72,
-        background: 'radial-gradient(circle, rgba(251,191,36,0.40) 0%, rgba(253,224,71,0.10) 60%, transparent 80%)',
-        filter: 'blur(8px)',
-      }}
-      animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.8, 0.5] }}
-      transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-    />
-    {/* Rotating 3D sun emoji */}
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 56,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 6px 16px rgba(251,191,36,0.50)) drop-shadow(0 2px 4px rgba(0,0,0,0.20))',
-      }}
-      animate={{ rotate: 360 }}
-      transition={{ duration: 12, repeat: Infinity, ease: 'linear' }}
-    >
-      ☀️
-    </motion.span>
-  </motion.div>
-);
+const WeatherCard = ({ location, temp, condition, windSpeed, humidity, rainChance }) => {
 
-const CloudIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 80 }}
-  >
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 56,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 8px 20px rgba(148,163,184,0.50)) drop-shadow(0 2px 6px rgba(0,0,0,0.15))',
-      }}
-      animate={{
-        y: [-4, 4, -4],
-        x: [-2, 2, -2],
-      }}
-      transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      ☁️
-    </motion.span>
-  </motion.div>
-);
+  // Clean Data Fallbacks
+  const loc = location || "Unknown Location";
+  const temperature = temp !== undefined ? temp : "--";
+  const desc = condition || "Clear";
+  const _windSpeed = windSpeed || "-- km/h";
+  const _humidity = humidity || "--%";
+  const _rainChance = rainChance || "--%";
 
-const RainIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 90 }}
-  >
-    {/* Floating cloud */}
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 48,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 6px 18px rgba(100,116,139,0.50)) drop-shadow(0 2px 4px rgba(0,0,0,0.20))',
-      }}
-      animate={{ y: [-3, 3, -3], x: [-1, 1, -1] }}
-      transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      🌧️
-    </motion.span>
-    {/* Tiny rain drops falling underneath */}
-    {[0, 1, 2, 3, 4].map(i => (
-      <motion.div
-        key={i}
-        className="absolute rounded-full"
-        style={{
-          width: 2,
-          height: 8 + i * 2,
-          bottom: 4,
-          left: 18 + i * 10,
-          background: 'linear-gradient(to bottom, rgba(96,165,250,0.7), rgba(59,130,246,0.2))',
-          borderRadius: 2,
-        }}
-        animate={{
-          y: [0, 18, 0],
-          opacity: [0, 0.8, 0],
-        }}
-        transition={{
-          duration: 0.8 + i * 0.15,
-          delay: i * 0.18,
-          repeat: Infinity,
-          ease: 'easeIn',
-        }}
-      />
-    ))}
-  </motion.div>
-);
+  // Intelligent Condition Parser
+  const getAtmosphere = (c) => {
+    const raw = c.toLowerCase();
+    if (raw.includes('rain') || raw.includes('drizzle') || raw.includes('shower')) return 'rainy';
+    if (raw.includes('snow') || raw.includes('ice') || raw.includes('blizzard')) return 'snowy';
+    if (raw.includes('storm') || raw.includes('thunder')) return 'stormy';
+    if (raw.includes('cloud') || raw.includes('overcast') || raw.includes('fog')) return 'cloudy';
+    return 'sunny';
+  };
 
-const SnowIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 80 }}
-  >
-    {/* Frost glow */}
-    <motion.div
-      className="absolute rounded-full"
-      style={{
-        width: 64,
-        height: 64,
-        background: 'radial-gradient(circle, rgba(186,230,253,0.30) 0%, transparent 70%)',
-        filter: 'blur(6px)',
-      }}
-      animate={{ scale: [1, 1.15, 1], opacity: [0.4, 0.7, 0.4] }}
-      transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut' }}
-    />
-    {/* Slowly spinning + bobbing snowflake */}
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 56,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 6px 16px rgba(186,230,253,0.55)) drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
-      }}
-      animate={{
-        rotate: 360,
-        y: [-3, 3, -3],
-      }}
-      transition={{
-        rotate: { duration: 16, repeat: Infinity, ease: 'linear' },
-        y: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
-      }}
-    >
-      ❄️
-    </motion.span>
-  </motion.div>
-);
+  const atmosphere = getAtmosphere(desc);
 
-const FogIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 80 }}
-  >
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 56,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 6px 18px rgba(148,163,184,0.45)) drop-shadow(0 2px 4px rgba(0,0,0,0.12))',
-      }}
-      animate={{
-        y: [-3, 3, -3],
-        x: [-3, 3, -3],
-        opacity: [0.7, 1, 0.7],
-      }}
-      transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      🌫️
-    </motion.span>
-  </motion.div>
-);
-
-const WindIcon3D = () => (
-  <motion.div
-    className="relative flex items-center justify-center"
-    style={{ width: 80, height: 80 }}
-  >
-    <motion.span
-      className="relative z-10"
-      style={{
-        fontSize: 56,
-        display: 'inline-block',
-        filter: 'drop-shadow(0 6px 14px rgba(148,163,184,0.40)) drop-shadow(0 2px 4px rgba(0,0,0,0.15))',
-      }}
-      animate={{ x: [-5, 5, -5], rotate: [-5, 5, -5] }}
-      transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-    >
-      💨
-    </motion.span>
-  </motion.div>
-);
-
-// ═══════════════════════════════════════════════════════════════════
-// 🎯  3D ICON RESOLVER — maps condition → animated 3D icon
-// ═══════════════════════════════════════════════════════════════════
-const WeatherIcon3D = ({ condition }) => {
-  const scene = resolveScene(condition);
-  switch (scene) {
-    case 'snow':   return <SnowIcon3D />;
-    case 'rain':   return <RainIcon3D />;
-    case 'cloudy':
-      if (condition?.toLowerCase()?.includes('fog') || condition?.toLowerCase()?.includes('mist') || condition?.toLowerCase()?.includes('haze'))
-        return <FogIcon3D />;
-      return <CloudIcon3D />;
-    case 'windy':  return <WindIcon3D />;
-    case 'autumn': return <CloudIcon3D />;
-    case 'clear':
-    default:       return <SunIcon3D />;
-  }
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// ☀️  WeatherCard — Premium Apple visionOS Glassmorphic Widget
-// ═══════════════════════════════════════════════════════════════════
-// Accepts both individual props (new API) and data/theme (backward compat)
-export default function WeatherCard({
-  location, temp, condition, date, windSpeed, rainChance, humidity,
-  data, theme,
-}) {
-  // Support both individual props and data-object fallback
-  const _location  = location  ?? data?.location  ?? '';
-  const _temp      = temp      ?? data?.temp;
-  const _condition = condition ?? data?.condition ?? '';
-  const _date      = date      ?? data?.date      ?? '';
-  const _windSpeed = windSpeed ?? data?.windSpeed  ?? '--';
-  const _rainChance = rainChance ?? data?.rainChance ?? '--';
-  const _humidity  = humidity  ?? data?.humidity   ?? '--';
+  // Dynamic Date Formatting
+  const today = new Date().toLocaleDateString('en-GB', {
+    weekday: 'long', day: 'numeric', month: 'long'
+  });
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 28, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-      className="w-80 rounded-3xl p-5 relative overflow-hidden select-none"
+      initial={{ opacity: 0, y: 15 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+      className="relative flex flex-col justify-between w-full max-w-[340px] h-[380px] rounded-[36px] overflow-hidden"
       style={{
-        background: 'rgba(0, 0, 0, 0.40)',
-        backdropFilter: 'blur(40px)',
-        WebkitBackdropFilter: 'blur(40px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        boxShadow: '0 24px 48px -12px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06)',
+        background: '#0B0B0C',
+        border: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)'
       }}
-      role="region"
-      aria-label="Weather card"
     >
-      {/* ─── Z-0: Live Nature Background ─── */}
-      <div className="absolute inset-0 z-0 overflow-hidden rounded-3xl pointer-events-none">
-        <WeatherScene condition={_condition} />
-      </div>
+      {/* ─── Render Live Atmosphere Animation ─── */}
+      {atmosphere === 'sunny' && <SunnyEffect />}
+      {atmosphere === 'cloudy' && <CloudyEffect />}
+      {atmosphere === 'rainy' && <RainEffect />}
+      {atmosphere === 'snowy' && <SnowEffect />}
+      {atmosphere === 'stormy' && <StormEffect />}
 
-      {/* ─── Glassmorphic inner highlight edge ─── */}
+      {/* ─── Understated Background Grid ─── */}
       <div
-        className="absolute inset-0 rounded-3xl pointer-events-none z-[1]"
+        className="absolute inset-0 pointer-events-none opacity-[0.03] z-0"
         style={{
-          background: 'linear-gradient(135deg, rgba(255,255,255,0.06) 0%, transparent 50%, rgba(255,255,255,0.02) 100%)',
+          backgroundImage: `linear-gradient(to right, #ffffff 1px, transparent 1px),
+                            linear-gradient(to bottom, #ffffff 1px, transparent 1px)`,
+          backgroundSize: '40px 40px',
         }}
       />
 
-      {/* ─── Z-10: Content Layer ─── */}
-      <div className="relative z-10">
-
-        {/* ── Top Row: Location + Date ── */}
-        <div className="mb-4">
-          <h3 className="text-white font-semibold text-base tracking-tight leading-tight">
-            {_location}
-          </h3>
-          {_date && (
-            <p className="text-white/30 text-[11px] mt-0.5 tracking-wide font-medium uppercase">
-              {_date}
-            </p>
-          )}
+      {/* ─── Top Section: Location & Date ─── */}
+      <div className="relative z-10 p-7 pb-0 flex flex-col items-center">
+        <div className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full bg-white/5 border border-white/5 backdrop-blur-sm mb-3">
+          <MapPin className="w-3 h-3 text-[#A1A1AA]" />
+          <span className="text-[#F4F4F5] text-xs font-semibold tracking-wide uppercase">{loc}</span>
         </div>
+        <p className="text-[#71717A] text-[11px] font-medium tracking-widest uppercase">{today}</p>
+      </div>
 
-        {/* ── Center: 3D Icon + Temperature + Condition ── */}
-        <div className="flex items-center gap-3 mb-5">
-          {/* 3D Animated Weather Icon */}
-          <motion.div
-            className="flex-shrink-0"
-            initial={{ scale: 0, rotate: -30 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ type: 'spring', stiffness: 200, damping: 18, delay: 0.15 }}
-          >
-            <WeatherIcon3D condition={_condition} />
-          </motion.div>
-
-          {/* Temperature & Condition text */}
-          <div className="flex flex-col">
-            <div className="leading-none">
-              <span className="text-6xl font-extralight text-white tracking-tighter">
-                {_temp ?? '--'}
-              </span>
-              <span className="text-3xl font-extralight text-white/40">°</span>
-            </div>
-            <p className="text-white/55 font-medium text-sm mt-1.5 tracking-wide">
-              {_condition}
-            </p>
-          </div>
+      {/* ─── Middle Section: Temperature & Condition ─── */}
+      <div className="relative z-10 flex flex-col items-center justify-center flex-grow">
+        <div className="flex items-start tracking-tighter">
+          <span className="text-[#FFFFFF] text-[84px] font-medium leading-none">{temperature}</span>
+          <span className="text-[#A1A1AA] text-[32px] font-medium mt-2">°</span>
         </div>
+        <div className="mt-2 px-4 py-1.5 rounded-[10px] bg-white/[0.03] border border-white/[0.04] backdrop-blur-md">
+          <span className="text-[#FFFFFF] text-[14px] font-medium capitalize tracking-wide drop-shadow-md">
+            {desc}
+          </span>
+        </div>
+      </div>
 
-        {/* ── Bottom: 3-Column Stats Grid ── */}
+      {/* ─── Bottom Section: High-End Data Pill ─── */}
+      <div className="relative z-10 p-5 pt-0">
         <div
-          className="pt-3.5 grid grid-cols-3"
+          className="flex items-center justify-between px-6 py-4 rounded-[20px] backdrop-blur-xl"
           style={{
-            borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'rgba(24,24,27,0.5)',
+            border: '1px solid rgba(255,255,255,0.06)',
+            boxShadow: '0 10px 30px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.04)'
           }}
         >
           {/* Wind */}
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)' }}>
-              <Wind className="w-3.5 h-3.5 text-white/40" strokeWidth={1.5} />
+          <div className="flex flex-col items-center gap-1.5 w-1/3">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <Wind className="w-3.5 h-3.5 text-[#A1A1AA]" strokeWidth={1.5} />
             </div>
-            <span className="text-white/30 text-[10px] leading-none font-medium uppercase tracking-wider">Wind</span>
-            <span className="text-white font-semibold text-xs leading-none">{_windSpeed}</span>
+            <span className="text-[#71717A] text-[9px] leading-none font-bold uppercase tracking-widest">Wind</span>
+            <span className="text-[#F4F4F5] font-semibold text-[11px] leading-none">{_windSpeed}</span>
           </div>
 
           {/* Rain */}
-          <div className="flex flex-col items-center gap-1.5" style={{ borderLeft: '1px solid rgba(255,255,255,0.06)', borderRight: '1px solid rgba(255,255,255,0.06)' }}>
-            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)' }}>
-              <CloudRain className="w-3.5 h-3.5 text-white/40" strokeWidth={1.5} />
+          <div className="flex flex-col items-center gap-1.5 w-1/3 border-x border-white/5">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <CloudRain className="w-3.5 h-3.5 text-[#A1A1AA]" strokeWidth={1.5} />
             </div>
-            <span className="text-white/30 text-[10px] leading-none font-medium uppercase tracking-wider">Rain</span>
-            <span className="text-white font-semibold text-xs leading-none">{_rainChance}</span>
+            <span className="text-[#71717A] text-[9px] leading-none font-bold uppercase tracking-widest">Rain</span>
+            <span className="text-[#F4F4F5] font-semibold text-[11px] leading-none">{_rainChance}</span>
           </div>
 
           {/* Humidity */}
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.06)' }}>
-              <Droplets className="w-3.5 h-3.5 text-white/40" strokeWidth={1.5} />
+          <div className="flex flex-col items-center gap-1.5 w-1/3">
+            <div className="w-7 h-7 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.04)' }}>
+              <Droplets className="w-3.5 h-3.5 text-[#A1A1AA]" strokeWidth={1.5} />
             </div>
-            <span className="text-white/30 text-[10px] leading-none font-medium uppercase tracking-wider">Humidity</span>
-            <span className="text-white font-semibold text-xs leading-none">{_humidity}</span>
+            <span className="text-[#71717A] text-[9px] leading-none font-bold uppercase tracking-widest">Humid</span>
+            <span className="text-[#F4F4F5] font-semibold text-[11px] leading-none">{_humidity}</span>
           </div>
         </div>
-
       </div>
     </motion.div>
   );
-}
+};
+
+export default WeatherCard;
