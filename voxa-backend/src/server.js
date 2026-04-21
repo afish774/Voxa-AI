@@ -7,21 +7,19 @@ import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
 import memoryRoutes from './routes/memoryRoutes.js';
 import sportsRoutes from './routes/sportsRoutes.js';
-import learnRoutes from './routes/learnRoutes.js'; // 🛠️ SURGICAL FIX: Mount the knowledge ingestion API
+import learnRoutes from './routes/learnRoutes.js';
 
 dotenv.config();
 
-// Initialize MongoDB
 connectDB();
 
 const app = express();
 
-// 🛠️ SURGICAL FIX: [V-03] Replaced open wildcard CORS with explicit origin whitelist
-// Only the Vercel production frontend and localhost dev server are allowed
 const ALLOWED_ORIGINS = [
     "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app",
     "http://localhost:5173",
-    "http://localhost:3000"
+    "http://localhost:3000",
+    "https://voxa-ai-chi.vercel.app"
 ];
 
 app.use(cors({
