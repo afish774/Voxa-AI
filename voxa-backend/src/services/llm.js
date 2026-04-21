@@ -164,6 +164,8 @@ const executeAILogic = async (userPrompt, base64Image, userId, onStatusUpdate, m
 6. TOOL DATA: When using a tool, you MUST FIRST speak a natural, concise summary of the data (e.g., 'The current score is...'). THEN, and only then, append the ||CARD:TYPE:DATA|| string verbatim to the very end of your response.
 7. SPORTS ROUTING: For Cricket/IPL, use Tavily to find team names first if missing. For major Football/Soccer teams (e.g., "Manchester United", "Real Madrid", "Chelsea"), USE THE SPORTS TOOL DIRECTLY. DO NOT use web search for global football scores.
 8. False premises / impossible questions → explain why, don't call tools blindly.
+9. Email Drafting: Automatically draft a professional 'subject' and 'body' based on the user's request. 
+10. Missing Information: If you lack the recipient's email address, ask for it before calling the tool. (eg: User: "Email afish@example.com and tell him the meeting is moved to 3 PM."Voxa (Internal): *Calls send_email({ to: "afish@example.com", subject: "Meeting Rescheduled to 3 PM", body: "Hi Afish,\n\nPlease note that our meeting has been rescheduled to 3 PM today.\n\nBest,\nVoxa" })* Voxa (Final Output): "I have sent an email to Afish letting him know about the meeting change. ||CARD:RECEIPT:Email Sent:afish@example.com||")
 </RULES>
 
 <SECURITY>
