@@ -2,7 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import Reminder from "../models/Reminder.js";
 import User from "../models/User.js";
-import { google } from "googleapis"; // 🚀 Replaced nodemailer with official Google API
+import { google } from "googleapis";
 import dotenv from "dotenv";
 
 dotenv.config();
@@ -45,7 +45,6 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
 
             const data = await response.json();
             apiCache.set(cacheKey, { timestamp: Date.now(), data });
-            // 🛠️ SURGICAL FIX: Evict oldest entries to prevent unbounded memory growth (OOM on Render)
             if (apiCache.size > 200) {
                 const oldestKey = apiCache.keys().next().value;
                 apiCache.delete(oldestKey);
@@ -238,7 +237,6 @@ export const getWeatherTool = tool(
                 try {
                     const hourly = data.weather?.[0]?.hourly;
                     if (hourly?.length > 0) {
-                        // 🛠️ SENIOR FIX: Scan the entire day's forecast and find the highest chance of rain
                         let maxRainChance = 0;
                         hourly.forEach(slot => {
                             const chance = parseInt(slot.chanceofrain || "0", 10);
@@ -382,19 +380,21 @@ export const getSportsDataTool = tool(
             }
 
             // ==========================================
-            // 🏏 ROUTE 3: CRICKET (CRICAPI) — 100% BULLETPROOF EXTRACTOR
+            // 🏏 ROUTE 3: CRICKET (CRICAPI) — UPGRADED TOURNAMENT ENGINE
             // ==========================================
             else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
-                // ── Step 1: Temporal Intent Extraction
-                const isYesterday = /\b(yesterday|last\s*night|last\s*match|previous\s*match|last\s*game)\b/i.test(voiceNormalizedQuery);
-                const isTomorrow = /\b(tomorrow|next\s*match|next\s*game|upcoming)\b/i.test(voiceNormalizedQuery);
+                // ── Step 1: Upgraded Temporal Intent Extraction
+                // 🛠️ FIX: Added "previous" to strictly catch "previous ipl match" requests
+                const isYesterday = /\b(yesterday|last\s*night|last\s*match|previous\s*match|previous|last\s*game)\b/i.test(voiceNormalizedQuery);
+                const isTomorrow = /\b(tomorrow|next\s*match|next\s*game|upcoming|next)\b/i.test(voiceNormalizedQuery);
                 const isLiveIntent = /\b(live|current|right\s*now|going\s*on|happening)\b/i.test(voiceNormalizedQuery);
                 const isToday = !isYesterday && !isTomorrow;
 
-                const NOISE_WORDS = /\b(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|fixtures|please|of|the|for|in|is|what|was|who|won|how|between|current|right|now|going|on|happening|cricket|ipl|t20|premier|league|indian|result|vs|versus)\b/gi;
+                // 🛠️ FIX: Added "previous" to noise words so it doesn't get extracted as a team name
+                const NOISE_WORDS = /\b(yesterday|today|tomorrow|match|score|update|live|next|last|previous|game|schedule|fixtures|please|of|the|for|in|is|what|was|who|won|how|between|current|right|now|going|on|happening|cricket|ipl|t20|premier|league|indian|result|vs|versus)\b/gi;
                 const teamTokens = voiceNormalizedQuery
                     .replace(NOISE_WORDS, '')
                     .trim()
@@ -422,43 +422,60 @@ export const getSportsDataTool = tool(
                 );
                 if (!matchData.data || matchData.data.length === 0) throw new Error("No cricket data available from CricAPI.");
 
-                // ── Step 3: The Scoring Loop
+                // ── Step 3: Upgraded Scoring Engine
+                const isIplQuery = voiceNormalizedQuery.includes('ipl') || voiceNormalizedQuery.includes('indian premier');
+
                 const scoredMatches = matchData.data
                     .filter(m => m.name)
                     .map(match => {
                         let score = 0;
                         const matchNameLower = (match.name || '').toLowerCase();
                         const matchSeriesLower = (match.series || '').toLowerCase();
-                        const matchDateStr = getISTDateString(match.dateTimeGMT || match.date);
 
+                        const matchDateObj = new Date(match.dateTimeGMT || match.date);
+                        const matchDateStr = getISTDateString(matchDateObj);
+
+                        // Token (Team Name) Bonus
                         for (const token of teamTokens) {
                             if (matchNameLower.includes(token)) score += 100;
                         }
 
-                        if (voiceNormalizedQuery.includes('ipl') && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) {
-                            score += 50;
+                        // 🛠️ FIX: MASSIVE PRIORITY FOR IPL
+                        // This prevents generic "Live" women's matches from overriding an IPL request
+                        if (isIplQuery && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) {
+                            score += 500;
                         }
 
-                        if (isYesterday && matchDateStr === yesterdayStr) score += 150;
-                        else if (isTomorrow && matchDateStr === tomorrowStr) score += 150;
-                        else if (isToday && matchDateStr === todayStr) score += 150;
+                        // 🛠️ FIX: SMARTER TEMPORAL MATCHING
+                        if (isYesterday) {
+                            if (matchDateStr === yesterdayStr) score += 150;
+                            else if (matchDateObj < nowIST) score += 50; // Fallback: find any recent past match
+                        }
+                        else if (isTomorrow) {
+                            if (matchDateStr === tomorrowStr) score += 150;
+                            else if (matchDateObj > nowIST) score += 50; // Fallback: find any upcoming match
+                        }
+                        else if (isToday) {
+                            if (matchDateStr === todayStr) score += 150;
+                        }
 
+                        // Live Intent Bonus
                         if (isLiveIntent && match.matchStarted === true && match.matchEnded === false) {
-                            score += 75;
+                            score += 200;
                         }
 
                         return { match, score, matchDateStr };
                     })
                     .sort((a, b) => b.score - a.score);
 
-                // ── Step 4: Intelligent Selection
+                // ── Step 4: Selection
                 if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
                     throw new Error("No matches found for this specific query.");
                 }
 
                 const targetMatch = scoredMatches[0].match;
 
-                // ── 100% BULLETPROOF EXTRACTOR
+                // ── Extraction Logic 
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
                 let scoreA = "-", scoreB = "-", oversA = null, crr = null;
@@ -467,7 +484,6 @@ export const getSportsDataTool = tool(
 
                 if (Array.isArray(targetMatch.score) && targetMatch.score.length > 0) {
 
-                    // 1. Ultra-Robust Fuzzy Matcher (checks EVERY word > 2 chars)
                     const findScore = (teamName, scores) => {
                         const words = teamName.toLowerCase().split(' ').filter(w => w.length > 2);
                         for (const w of words) {
@@ -480,11 +496,9 @@ export const getSportsDataTool = tool(
                     let sA = findScore(teamAName, targetMatch.score);
                     let sB = findScore(teamBName, targetMatch.score);
 
-                    // 2. Blind Array Index Fallback (If words don't match AT ALL, pull by order)
                     if (!sA && targetMatch.score[0]) sA = targetMatch.score[0];
                     if (!sB && targetMatch.score[1] && targetMatch.score[1] !== sA) sB = targetMatch.score[1];
 
-                    // 3. Safe Value Extraction
                     if (sA) {
                         const r = sA.r !== undefined ? sA.r : 0;
                         const w = sA.w !== undefined ? sA.w : 0;
@@ -505,12 +519,10 @@ export const getSportsDataTool = tool(
                     }
 
                 } else if (isLiveResponse) {
-                    // Match literally just started, no balls bowled yet
                     scoreA = "0/0";
                     oversA = "0.0";
                 }
 
-                // Determine match status
                 const isFinished = targetMatch.matchEnded === true;
                 const isNotStarted = targetMatch.matchStarted === false;
 
@@ -527,7 +539,6 @@ export const getSportsDataTool = tool(
                     statusText = targetMatch.status || "Match Info";
                 }
 
-                // 🛠️ SURGICAL FIX: NO "teamA" OR "teamB" TO PREVENT FOOTBALL UI HIJACK
                 const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse,
