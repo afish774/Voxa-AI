@@ -8,12 +8,22 @@ import dotenv from "dotenv";
 dotenv.config();
 
 // ============================================================================
-// 🧠 ENTERPRISE INFRASTRUCTURE (Untouched)
+// 🧠 ENTERPRISE INFRASTRUCTURE
 // ============================================================================
 
 const apiCache = new Map();
 
-const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries = 2, timeoutMs = 8000) => {
+/**
+ * Fetches a URL with caching and exponential-backoff retry logic.
+ * This is the single network primitive used by every tool.
+ */
+const fetchWithCacheAndRetry = async (
+    url,
+    options = {},
+    ttlMs = 60000,
+    retries = 2,
+    timeoutMs = 8000
+) => {
     const cacheKey = url;
     if (apiCache.has(cacheKey)) {
         const cached = apiCache.get(cacheKey);
@@ -31,11 +41,11 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
             const response = await fetch(url, {
                 ...options,
                 headers: {
-                    'Accept': 'application/json',
-                    'User-Agent': 'VoxaServer/1.0',
-                    ...options.headers
+                    Accept: "application/json",
+                    "User-Agent": "VoxaServer/1.0",
+                    ...options.headers,
                 },
-                signal: controller.signal
+                signal: controller.signal,
             });
             clearTimeout(timeoutId);
 
@@ -50,7 +60,6 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
                 apiCache.delete(oldestKey);
             }
             return data;
-
         } catch (error) {
             clearTimeout(timeoutId);
             if (i === retries) {
@@ -59,56 +68,65 @@ const fetchWithCacheAndRetry = async (url, options = {}, ttlMs = 60000, retries 
             }
             const backoffTime = 500 * Math.pow(2, i);
             console.warn(`[Retry ${i + 1}] Network issue, waiting ${backoffTime}ms...`);
-            await new Promise(res => setTimeout(res, backoffTime));
+            await new Promise((res) => setTimeout(res, backoffTime));
         }
     }
 };
 
+/**
+ * Normalises common voice/slang abbreviations for cricket teams and football
+ * clubs into their full, searchable names before passing to tool logic.
+ */
 const normalizeVoiceInput = (query) => {
     let clean = query.toLowerCase();
     const map = {
         "man city": "manchester city",
         "man utd": "manchester united",
-        "spurs": "tottenham",
-        "rcb": "royal challengers",
-        "csk": "chennai super kings",
-        "mi": "mumbai indians",
-        "srh": "sunrisers",
-        "kkr": "kolkata knight",
-        "pbks": "punjab kings",
-        "dc": "delhi capitals",
-        "rr": "rajasthan royals",
-        "lsg": "lucknow super",
-        "gt": "gujarat titans"
+        spurs: "tottenham",
+        rcb: "royal challengers",
+        csk: "chennai super kings",
+        mi: "mumbai indians",
+        srh: "sunrisers",
+        kkr: "kolkata knight",
+        pbks: "punjab kings",
+        dc: "delhi capitals",
+        rr: "rajasthan royals",
+        lsg: "lucknow super",
+        gt: "gujarat titans",
     };
     for (const [slang, strict] of Object.entries(map)) {
-        clean = clean.replace(new RegExp(`\\b${slang}\\b`, 'g'), strict);
+        clean = clean.replace(new RegExp(`\\b${slang}\\b`, "g"), strict);
     }
     return clean;
 };
 
 // ============================================================================
-// 🛠️ STANDARD TOOLS
+// 🛠️ TOOL 1: Save Reminder
 // ============================================================================
 
-export const createReminderTool = (userId) => {
-    return tool(
+export const createReminderTool = (userId) =>
+    tool(
         async ({ task }) => {
             try {
                 if (!userId) return "SYSTEM_ERROR: User ID missing.";
-                await Reminder.create({ user: userId, task: task });
+                await Reminder.create({ user: userId, task });
                 return `Task saved successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Reminder Saved:${task}||`;
-            } catch (error) {
+            } catch {
                 return `Database error. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Failed to Save:Database Error||`;
             }
         },
         {
             name: "save_reminder",
-            description: "Saves a reminder or to-do task.",
-            schema: z.object({ task: z.string().describe("The specific task to remember.") })
+            description: "Saves a reminder or to-do task for the user.",
+            schema: z.object({
+                task: z.string().describe("The specific task to remember."),
+            }),
         }
     );
-};
+
+// ============================================================================
+// 🛠️ TOOL 2: Crypto Price (CoinPaprika)
+// ============================================================================
 
 export const getCryptoPriceTool = tool(
     async ({ coinId }) => {
@@ -116,25 +134,33 @@ export const getCryptoPriceTool = tool(
             const normalizedCoin = coinId.toLowerCase().trim();
 
             const symbols = {
-                "bitcoin": "btc-bitcoin", "btc": "btc-bitcoin",
-                "ethereum": "eth-ethereum", "eth": "eth-ethereum",
-                "solana": "sol-solana", "sol": "sol-solana",
-                "dogecoin": "doge-dogecoin", "doge": "doge-dogecoin",
-                "cardano": "ada-cardano", "ada": "ada-cardano",
-                "xrp": "xrp-xrp", "ripple": "xrp-xrp",
-                "binance coin": "bnb-binance-coin", "bnb": "bnb-binance-coin"
+                bitcoin: "btc-bitcoin",
+                btc: "btc-bitcoin",
+                ethereum: "eth-ethereum",
+                eth: "eth-ethereum",
+                solana: "sol-solana",
+                sol: "sol-solana",
+                dogecoin: "doge-dogecoin",
+                doge: "doge-dogecoin",
+                cardano: "ada-cardano",
+                ada: "ada-cardano",
+                xrp: "xrp-xrp",
+                ripple: "xrp-xrp",
+                "binance coin": "bnb-binance-coin",
+                bnb: "bnb-binance-coin",
             };
 
-            const paprikacoin = symbols[normalizedCoin] || "btc-bitcoin";
-            const displayName = Object.keys(symbols).find(key => symbols[key] === paprikacoin) || normalizedCoin;
+            const paprikaCoin = symbols[normalizedCoin] || "btc-bitcoin";
+            const displayName =
+                Object.keys(symbols).find((key) => symbols[key] === paprikaCoin) ||
+                normalizedCoin;
 
-            const url = `https://api.coinpaprika.com/v1/tickers/${paprikacoin}`;
+            const url = `https://api.coinpaprika.com/v1/tickers/${paprikaCoin}`;
             const data = await fetchWithCacheAndRetry(url, {}, 60000);
 
-            if (data && data.quotes && data.quotes.USD) {
+            if (data?.quotes?.USD) {
                 const price = parseFloat(data.quotes.USD.price).toFixed(2);
                 const change = parseFloat(data.quotes.USD.percent_change_24h).toFixed(2);
-
                 return `The price was fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:${price}:${change}||`;
             }
             return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
@@ -145,13 +171,22 @@ export const getCryptoPriceTool = tool(
     },
     {
         name: "get_crypto_price",
-        description: "Fetches live cryptocurrency prices. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
-        schema: z.object({ coinId: z.string().describe("The full name of the coin, e.g., bitcoin, ethereum") })
+        description:
+            "Fetches live cryptocurrency prices. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
+        schema: z.object({
+            coinId: z
+                .string()
+                .describe("The full name of the coin, e.g., bitcoin, ethereum"),
+        }),
     }
 );
 
-export const createSendEmailTool = (userId) => {
-    return tool(
+// ============================================================================
+// 🛠️ TOOL 3: Send Email (Google Gmail API)
+// ============================================================================
+
+export const createSendEmailTool = (userId) =>
+    tool(
         async ({ to, subject, body }) => {
             try {
                 if (!userId) return "SYSTEM_ERROR: User ID missing.";
@@ -174,27 +209,26 @@ export const createSendEmailTool = (userId) => {
                     refresh_token: user.gmailRefreshToken,
                 });
 
-                const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
+                const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
 
-                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
+                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
                 const messageParts = [
                     `To: ${to}`,
                     `Subject: ${utf8Subject}`,
                     `Content-Type: text/plain; charset=utf-8`,
                     `MIME-Version: 1.0`,
                     ``,
-                    body
+                    body,
                 ];
-                const message = messageParts.join('\n');
-
+                const message = messageParts.join("\n");
                 const encodedMessage = Buffer.from(message)
-                    .toString('base64')
-                    .replace(/\+/g, '-')
-                    .replace(/\//g, '_')
-                    .replace(/=+$/, '');
+                    .toString("base64")
+                    .replace(/\+/g, "-")
+                    .replace(/\//g, "_")
+                    .replace(/=+$/, "");
 
                 await gmail.users.messages.send({
-                    userId: 'me',
+                    userId: "me",
                     requestBody: { raw: encodedMessage },
                 });
 
@@ -207,46 +241,67 @@ export const createSendEmailTool = (userId) => {
         {
             name: "send_email",
             description: "Sends an email to a specified address.",
-            schema: z.object({ to: z.string(), subject: z.string(), body: z.string() })
+            schema: z.object({
+                to: z.string().describe("Recipient email address."),
+                subject: z.string().describe("Email subject line."),
+                body: z.string().describe("Email body text."),
+            }),
         }
     );
-};
+
+// ============================================================================
+// 🛠️ TOOL 4: Weather (wttr.in)
+// ============================================================================
 
 export const getWeatherTool = tool(
     async ({ location }) => {
         try {
             const safeLoc = encodeURIComponent(location.trim());
             const url = `https://wttr.in/${safeLoc}?format=j1`;
-
             const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
-            if (data && data.current_condition && data.current_condition[0]) {
+            if (data?.current_condition?.[0]) {
                 const cc = data.current_condition[0];
                 const temp = cc.temp_C;
-                const conditionDesc = cc.weatherDesc[0].value.toLowerCase();
+                const conditionDesc = cc.weatherDesc?.[0]?.value?.toLowerCase() ?? "";
 
                 let condition = "Clear";
-                if (conditionDesc.includes("rain") || conditionDesc.includes("drizzle") || conditionDesc.includes("shower")) condition = "Rain";
-                else if (conditionDesc.includes("cloud") || conditionDesc.includes("overcast")) condition = "Cloudy";
-                else if (conditionDesc.includes("snow") || conditionDesc.includes("ice")) condition = "Snow";
+                if (
+                    conditionDesc.includes("rain") ||
+                    conditionDesc.includes("drizzle") ||
+                    conditionDesc.includes("shower")
+                ) {
+                    condition = "Rain";
+                } else if (
+                    conditionDesc.includes("cloud") ||
+                    conditionDesc.includes("overcast")
+                ) {
+                    condition = "Cloudy";
+                } else if (
+                    conditionDesc.includes("snow") ||
+                    conditionDesc.includes("ice")
+                ) {
+                    condition = "Snow";
+                }
 
-                const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : '--';
-                const humidity = cc.humidity ? `${cc.humidity}%` : '--';
-                let rainChance = '--';
+                const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : "--";
+                const humidity = cc.humidity ? `${cc.humidity}%` : "--";
+                let rainChance = "--";
 
+                // Daily max rain chance — loop over all hourly slots for today
                 try {
                     const hourly = data.weather?.[0]?.hourly;
                     if (hourly?.length > 0) {
                         let maxRainChance = 0;
-                        hourly.forEach(slot => {
+                        hourly.forEach((slot) => {
                             const chance = parseInt(slot.chanceofrain || "0", 10);
-                            if (chance > maxRainChance) {
-                                maxRainChance = chance;
-                            }
+                            if (chance > maxRainChance) maxRainChance = chance;
                         });
                         rainChance = `${maxRainChance}%`;
                     }
-                } catch (e) { /* graceful fallback to '--' */ }
+                } catch {
+                    /* graceful fallback to '--' */
+                }
 
                 return `Weather fetched successfully. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:${temp}:${condition}:${windSpeed}:${humidity}:${rainChance}||`;
             }
@@ -258,71 +313,165 @@ export const getWeatherTool = tool(
     },
     {
         name: "get_weather",
-        description: "Fetches weather data. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
-        schema: z.object({ location: z.string().describe("The city to check.") })
+        description:
+            "Fetches current weather data for a city. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
+        schema: z.object({
+            location: z.string().describe("The city name to check weather for."),
+        }),
     }
 );
 
 // ============================================================================
-// 🌍 TOOL 4: The Global Sports Hub (Omni-Router)
+// 🌍 TOOL 5: Global Sports Hub (Football · Basketball · Cricket/IPL)
+//
+// ARCHITECTURE: The LLM now performs all NLP and passes structured intent
+// fields (temporal_intent, tournament, team_mentions) directly to the tool.
+// The scoring engine is purely data-driven — zero regex temporal guessing.
 // ============================================================================
 
 export const getSportsDataTool = tool(
-    async ({ requestType, sport, query }) => {
+    async ({ sport, query, temporal_intent, tournament, team_mentions }) => {
         try {
+            // ── Shared IST helpers ────────────────────────────────────────────
+
+            /** Convert any Date to an IST-localised Date object */
+            const toIST = (date) =>
+                new Date(
+                    new Date(date).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+                );
+
+            /** Return "YYYY-MM-DD" string in IST timezone for any Date */
+            const getISTDateString = (date) =>
+                new Date(date).toLocaleDateString("en-CA", {
+                    timeZone: "Asia/Kolkata",
+                });
+
+            const nowIST = toIST(new Date());
+            const todayStr = getISTDateString(new Date());
+
+            const yesterdayDate = new Date(nowIST);
+            yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+            const yesterdayStr = getISTDateString(yesterdayDate);
+
+            const tomorrowDate = new Date(nowIST);
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrowStr = getISTDateString(tomorrowDate);
+
             const voiceNormalizedQuery = normalizeVoiceInput(query);
-            const isUpcoming = requestType === "fixtures" || voiceNormalizedQuery.includes("upcoming") || voiceNormalizedQuery.includes("tomorrow") || voiceNormalizedQuery.includes("next");
+            const normalizedMentions = (team_mentions ?? []).map((t) =>
+                normalizeVoiceInput(t)
+            );
 
-            const fullContextCheck = `${sport} ${voiceNormalizedQuery}`.toLowerCase();
+            // Broad context string used for sport-route detection
+            const fullContextCheck =
+                `${sport} ${voiceNormalizedQuery} ${tournament ?? ""} ${normalizedMentions.join(" ")}`.toLowerCase();
 
-            const cleanQuery = voiceNormalizedQuery.replace(/(yesterday|today|tomorrow|match|score|update|live|next|last|game|schedule|gaming|fixtures|please|of|the|for)/gi, '').trim();
+            // "upcoming" flag for Football and Basketball routes
+            const isUpcoming =
+                temporal_intent === "future" ||
+                voiceNormalizedQuery.includes("upcoming") ||
+                voiceNormalizedQuery.includes("tomorrow") ||
+                voiceNormalizedQuery.includes("next");
 
-            let t1 = cleanQuery;
-            let t2 = null;
-            if (cleanQuery.includes(' vs ')) {
-                const parts = cleanQuery.split(/ vs /i);
-                t1 = parts[0].trim();
-                t2 = parts[1].trim();
-            }
+            // Primary and optional secondary team from LLM-extracted mentions
+            const t1 = normalizedMentions[0] ?? voiceNormalizedQuery.trim();
+            const t2 = normalizedMentions[1] ?? null;
 
-            // ==========================================
-            // ⚽ ROUTE 1: FOOTBALL
-            // ==========================================
-            if (fullContextCheck.includes("football") || fullContextCheck.includes("soccer") || fullContextCheck.includes("epl") || fullContextCheck.includes("ucl") || fullContextCheck.includes("madrid") || fullContextCheck.includes("city") || fullContextCheck.includes("united") || fullContextCheck.includes("arsenal") || fullContextCheck.includes("chelsea") || fullContextCheck.includes("liverpool")) {
-
+            // ==================================================================
+            // ⚽ ROUTE 1: FOOTBALL (football-data.org)
+            // ==================================================================
+            if (
+                fullContextCheck.includes("football") ||
+                fullContextCheck.includes("soccer") ||
+                fullContextCheck.includes("epl") ||
+                fullContextCheck.includes("ucl") ||
+                fullContextCheck.includes("madrid") ||
+                fullContextCheck.includes("city") ||
+                fullContextCheck.includes("united") ||
+                fullContextCheck.includes("arsenal") ||
+                fullContextCheck.includes("chelsea") ||
+                fullContextCheck.includes("liverpool")
+            ) {
                 const apiKey = process.env.FOOTBALL_DATA_TOKEN;
                 if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing");
-                const headers = { 'X-Auth-Token': apiKey };
+                const headers = { "X-Auth-Token": apiKey };
 
                 const POPULAR_TEAMS = {
-                    "arsenal": 57, "aston villa": 58, "chelsea": 61, "everton": 62,
-                    "liverpool": 64, "manchester city": 65, "manchester united": 66,
-                    "newcastle": 67, "tottenham": 73, "real madrid": 86,
-                    "barcelona": 81, "atletico madrid": 78, "bayern munich": 5,
-                    "borussia dortmund": 4, "bayer leverkusen": 3, "psg": 524,
-                    "juventus": 109, "ac milan": 98, "inter": 108, "napoli": 113, "roma": 100
+                    arsenal: 57,
+                    "aston villa": 58,
+                    chelsea: 61,
+                    everton: 62,
+                    liverpool: 64,
+                    "manchester city": 65,
+                    "manchester united": 66,
+                    newcastle: 67,
+                    tottenham: 73,
+                    "real madrid": 86,
+                    barcelona: 81,
+                    "atletico madrid": 78,
+                    "bayern munich": 5,
+                    "borussia dortmund": 4,
+                    "bayer leverkusen": 3,
+                    psg: 524,
+                    juventus: 109,
+                    "ac milan": 98,
+                    inter: 108,
+                    napoli: 113,
+                    roma: 100,
                 };
 
-                let teamId = POPULAR_TEAMS[t1];
+                const teamId = POPULAR_TEAMS[t1];
                 if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB");
 
-                const fixData = await fetchWithCacheAndRetry(`https://api.football-data.org/v4/teams/${teamId}/matches`, { headers }, 30000);
+                const fixData = await fetchWithCacheAndRetry(
+                    `https://api.football-data.org/v4/teams/${teamId}/matches`,
+                    { headers },
+                    30000
+                );
                 const allMatches = fixData.matches || [];
                 if (allMatches.length === 0) throw new Error("No fixtures found.");
 
-                let match = null;
                 const now = new Date().getTime();
+                let match = null;
 
                 if (t2) {
-                    const h2hMatches = allMatches.filter(m => m.homeTeam.name.toLowerCase().includes(t2) || m.awayTeam.name.toLowerCase().includes(t2));
-                    if (h2hMatches.length === 0) throw new Error("H2H_NOT_FOUND");
+                    const h2h = allMatches.filter(
+                        (m) =>
+                            m.homeTeam.name.toLowerCase().includes(t2) ||
+                            m.awayTeam.name.toLowerCase().includes(t2)
+                    );
+                    if (h2h.length === 0) throw new Error("H2H_NOT_FOUND");
                     match = isUpcoming
-                        ? h2hMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0]
-                        : h2hMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
+                        ? h2h
+                            .filter((m) => new Date(m.utcDate).getTime() > now)
+                            .sort(
+                                (a, b) =>
+                                    new Date(a.utcDate).getTime() -
+                                    new Date(b.utcDate).getTime()
+                            )[0]
+                        : h2h
+                            .filter((m) => new Date(m.utcDate).getTime() <= now)
+                            .sort(
+                                (a, b) =>
+                                    new Date(b.utcDate).getTime() -
+                                    new Date(a.utcDate).getTime()
+                            )[0];
                 } else {
                     match = isUpcoming
-                        ? allMatches.filter(m => new Date(m.utcDate).getTime() > now).sort((a, b) => new Date(a.utcDate).getTime() - new Date(b.utcDate).getTime())[0]
-                        : allMatches.filter(m => new Date(m.utcDate).getTime() <= now).sort((a, b) => new Date(b.utcDate).getTime() - new Date(a.utcDate).getTime())[0];
+                        ? allMatches
+                            .filter((m) => new Date(m.utcDate).getTime() > now)
+                            .sort(
+                                (a, b) =>
+                                    new Date(a.utcDate).getTime() -
+                                    new Date(b.utcDate).getTime()
+                            )[0]
+                        : allMatches
+                            .filter((m) => new Date(m.utcDate).getTime() <= now)
+                            .sort(
+                                (a, b) =>
+                                    new Date(b.utcDate).getTime() -
+                                    new Date(a.utcDate).getTime()
+                            )[0];
                 }
 
                 if (!match) throw new Error("No match found.");
@@ -333,161 +482,282 @@ export const getSportsDataTool = tool(
                 const cardData = JSON.stringify({
                     league: match.competition.name || "Football",
                     isLive: isLiveResponse,
-                    matchSeconds: isLiveResponse ? 2700 : (isFinishedResponse ? 5400 : 0),
-                    teamA: { name: match.homeTeam.name, score: match.score?.fullTime?.home ?? "-" },
-                    teamB: { name: match.awayTeam.name, score: match.score?.fullTime?.away ?? "-" },
-                    status: isLiveResponse ? "Match Live" : (isFinishedResponse ? "Full Time" : "Scheduled: " + new Date(match.utcDate).toLocaleDateString())
+                    matchSeconds: isLiveResponse ? 2700 : isFinishedResponse ? 5400 : 0,
+                    teamA: {
+                        name: match.homeTeam.name,
+                        score: match.score?.fullTime?.home ?? "-",
+                    },
+                    teamB: {
+                        name: match.awayTeam.name,
+                        score: match.score?.fullTime?.away ?? "-",
+                    },
+                    status: isLiveResponse
+                        ? "Match Live"
+                        : isFinishedResponse
+                            ? "Full Time"
+                            : "Scheduled: " +
+                            new Date(match.utcDate).toLocaleDateString(),
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
-            // ==========================================
-            // 🏀 ROUTE 2: BASKETBALL
-            // ==========================================
-            else if (fullContextCheck.includes("basketball") || fullContextCheck.includes("nba") || fullContextCheck.includes("lakers") || fullContextCheck.includes("warriors")) {
+            // ==================================================================
+            // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
+            // ==================================================================
+            else if (
+                fullContextCheck.includes("basketball") ||
+                fullContextCheck.includes("nba") ||
+                fullContextCheck.includes("lakers") ||
+                fullContextCheck.includes("warriors")
+            ) {
                 let match = null;
+
                 if (t2) {
-                    const q1 = `${t1.replace(/\s+/g, '_')}_vs_${t2.replace(/\s+/g, '_')}`;
-                    let res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q1)}`, {}, 60000);
+                    const q1 = `${t1.replace(/\s+/g, "_")}_vs_${t2.replace(/\s+/g, "_")}`;
+                    let res = await fetchWithCacheAndRetry(
+                        `https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q1)}`,
+                        {},
+                        60000
+                    );
                     if (!res.event) {
-                        const q2 = `${t2.replace(/\s+/g, '_')}_vs_${t1.replace(/\s+/g, '_')}`;
-                        res = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`, {}, 60000);
+                        const q2 = `${t2.replace(/\s+/g, "_")}_vs_${t1.replace(/\s+/g, "_")}`;
+                        res = await fetchWithCacheAndRetry(
+                            `https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`,
+                            {},
+                            60000
+                        );
                     }
                     const allMatches = res.event || [];
-                    const now = Date.now();
+                    const nowMs = Date.now();
                     match = isUpcoming
-                        ? allMatches.filter(m => new Date(m.dateEvent).getTime() >= now).sort((a, b) => new Date(a.dateEvent).getTime() - new Date(b.dateEvent).getTime())[0]
-                        : allMatches.filter(m => new Date(m.dateEvent).getTime() <= now).sort((a, b) => new Date(b.dateEvent).getTime() - new Date(a.dateEvent).getTime())[0];
+                        ? allMatches
+                            .filter((m) => new Date(m.dateEvent).getTime() >= nowMs)
+                            .sort(
+                                (a, b) =>
+                                    new Date(a.dateEvent).getTime() -
+                                    new Date(b.dateEvent).getTime()
+                            )[0]
+                        : allMatches
+                            .filter((m) => new Date(m.dateEvent).getTime() <= nowMs)
+                            .sort(
+                                (a, b) =>
+                                    new Date(b.dateEvent).getTime() -
+                                    new Date(a.dateEvent).getTime()
+                            )[0];
                 } else {
-                    const teamData = await fetchWithCacheAndRetry(`https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`, {}, 86400000);
-                    if (!teamData.teams) throw new Error(`Basketball Team not found`);
+                    const teamData = await fetchWithCacheAndRetry(
+                        `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`,
+                        {},
+                        86400000
+                    );
+                    if (!teamData.teams)
+                        throw new Error(`Basketball team not found: ${t1}`);
                     const teamId = teamData.teams[0].idTeam;
-                    let fetchUrl = isUpcoming ? `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}` : `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
+                    const fetchUrl = isUpcoming
+                        ? `https://www.thesportsdb.com/api/v1/json/3/eventsnext.php?id=${teamId}`
+                        : `https://www.thesportsdb.com/api/v1/json/3/eventslast.php?id=${teamId}`;
                     const fixData = await fetchWithCacheAndRetry(fetchUrl, {}, 60000);
                     const eventsArray = isUpcoming ? fixData.events : fixData.results;
                     match = eventsArray?.[0];
                 }
 
-                if (!match) throw new Error("No matches found.");
+                if (!match) throw new Error("No basketball matches found.");
 
                 const cardData = JSON.stringify({
-                    league: match.strLeague || "NBA", isLive: false,
-                    teamA: { name: match.strHomeTeam, score: match.intHomeScore || "-" },
-                    teamB: { name: match.strAwayTeam, score: match.intAwayScore || "-" },
-                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score"
+                    league: match.strLeague || "NBA",
+                    isLive: false,
+                    teamA: {
+                        name: match.strHomeTeam,
+                        score: match.intHomeScore || "-",
+                    },
+                    teamB: {
+                        name: match.strAwayTeam,
+                        score: match.intAwayScore || "-",
+                    },
+                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score",
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
-            // ==========================================
-            // 🏏 ROUTE 3: CRICKET (CRICAPI) — UPGRADED TOURNAMENT ENGINE
-            // ==========================================
-            else if (fullContextCheck.includes("cricket") || fullContextCheck.includes("ipl") || fullContextCheck.includes("t20") || fullContextCheck.includes("rcb") || fullContextCheck.includes("csk") || fullContextCheck.includes("mi") || fullContextCheck.includes("india")) {
+            // ==================================================================
+            // 🏏 ROUTE 3: CRICKET (CricAPI) — STRUCTURED IST SCORING ENGINE
+            //
+            // KEY UPGRADE: temporal_intent, tournament, and team_mentions are
+            // all LLM-classified and arrive as structured data. The scoring
+            // engine awards points across three independent tiers with no
+            // regex-based temporal guessing whatsoever.
+            //
+            // SCORING TIERS:
+            //   Tier A — Tournament match (IPL):          500 pts
+            //   Tier A — Tournament match (other named):  300 pts
+            //   Tier B — Per team-name token match:       100 pts each
+            //   Tier C — Temporal intent (exact date):    200 pts
+            //   Tier C — Temporal intent (fallback dir):   50 pts
+            //   Tier C — Live bonus (any intent):         100 pts
+            // ==================================================================
+            else if (
+                fullContextCheck.includes("cricket") ||
+                fullContextCheck.includes("ipl") ||
+                fullContextCheck.includes("t20") ||
+                fullContextCheck.includes("odi") ||
+                fullContextCheck.includes("test match") ||
+                fullContextCheck.includes("rcb") ||
+                fullContextCheck.includes("csk") ||
+                fullContextCheck.includes("mumbai indians") ||
+                fullContextCheck.includes("india") ||
+                fullContextCheck.includes("world cup")
+            ) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
 
-                // ── Step 1: Upgraded Temporal Intent Extraction
-                // 🛠️ FIX: Added "previous" to strictly catch "previous ipl match" requests
-                const isYesterday = /\b(yesterday|last\s*night|last\s*match|previous\s*match|previous|last\s*game)\b/i.test(voiceNormalizedQuery);
-                const isTomorrow = /\b(tomorrow|next\s*match|next\s*game|upcoming|next)\b/i.test(voiceNormalizedQuery);
-                const isLiveIntent = /\b(live|current|right\s*now|going\s*on|happening)\b/i.test(voiceNormalizedQuery);
-                const isToday = !isYesterday && !isTomorrow;
-
-                // 🛠️ FIX: Added "previous" to noise words so it doesn't get extracted as a team name
-                const NOISE_WORDS = /\b(yesterday|today|tomorrow|match|score|update|live|next|last|previous|game|schedule|fixtures|please|of|the|for|in|is|what|was|who|won|how|between|current|right|now|going|on|happening|cricket|ipl|t20|premier|league|indian|result|vs|versus)\b/gi;
-                const teamTokens = voiceNormalizedQuery
-                    .replace(NOISE_WORDS, '')
-                    .trim()
-                    .split(/\s+/)
-                    .filter(t => t.length > 1);
-
-                // ── Step 2: IST Time Engine
-                const toIST = (date) => new Date(new Date(date).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-                const getISTDateString = (date) => new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-                const nowIST = toIST(new Date());
-                const todayStr = getISTDateString(new Date());
-
-                const yesterdayDate = new Date(nowIST);
-                yesterdayDate.setDate(yesterdayDate.getDate() - 1);
-                const yesterdayStr = getISTDateString(yesterdayDate);
-
-                const tomorrowDate = new Date(nowIST);
-                tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-                const tomorrowStr = getISTDateString(tomorrowDate);
-
-                // ── Fetch from CricAPI
                 const matchData = await fetchWithCacheAndRetry(
-                    `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`, {}, 30000
+                    `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`,
+                    {},
+                    30000
                 );
-                if (!matchData.data || matchData.data.length === 0) throw new Error("No cricket data available from CricAPI.");
+                if (!matchData?.data?.length) {
+                    throw new Error("No cricket data available from CricAPI.");
+                }
 
-                // ── Step 3: Upgraded Scoring Engine
-                const isIplQuery = voiceNormalizedQuery.includes('ipl') || voiceNormalizedQuery.includes('indian premier');
+                // Normalise tournament name for series/name matching
+                const tournamentLower = (tournament ?? "").toLowerCase();
+                const isIplQuery =
+                    tournamentLower.includes("ipl") ||
+                    tournamentLower.includes("indian premier") ||
+                    fullContextCheck.includes("ipl") ||
+                    fullContextCheck.includes("indian premier");
 
+                // ── STRUCTURED SCORING ENGINE ─────────────────────────────────
                 const scoredMatches = matchData.data
-                    .filter(m => m.name)
-                    .map(match => {
+                    .filter((m) => Boolean(m.name))
+                    .map((match) => {
                         let score = 0;
-                        const matchNameLower = (match.name || '').toLowerCase();
-                        const matchSeriesLower = (match.series || '').toLowerCase();
-
-                        const matchDateObj = new Date(match.dateTimeGMT || match.date);
+                        const matchNameLower = (match.name || "").toLowerCase();
+                        const matchSeriesLower = (match.series || "").toLowerCase();
+                        const matchDateObj = new Date(
+                            match.dateTimeGMT || match.date
+                        );
                         const matchDateStr = getISTDateString(matchDateObj);
 
-                        // Token (Team Name) Bonus
-                        for (const token of teamTokens) {
-                            if (matchNameLower.includes(token)) score += 100;
-                        }
+                        const isMatchLive =
+                            match.matchStarted === true &&
+                            match.matchEnded === false;
+                        const isMatchFinished = match.matchEnded === true;
+                        const isMatchFuture =
+                            match.matchStarted === false &&
+                            match.matchEnded === false;
 
-                        // 🛠️ FIX: MASSIVE PRIORITY FOR IPL
-                        // This prevents generic "Live" women's matches from overriding an IPL request
-                        if (isIplQuery && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) {
+                        // ── Tier A: Tournament priority ───────────────────────
+                        if (
+                            isIplQuery &&
+                            (matchSeriesLower.includes("ipl") ||
+                                matchSeriesLower.includes("indian premier"))
+                        ) {
+                            // Maximum priority — ensures IPL beats all other live matches
                             score += 500;
+                        } else if (
+                            tournamentLower &&
+                            (matchSeriesLower.includes(tournamentLower) ||
+                                matchNameLower.includes(tournamentLower))
+                        ) {
+                            score += 300;
                         }
 
-                        // 🛠️ FIX: SMARTER TEMPORAL MATCHING
-                        if (isYesterday) {
-                            if (matchDateStr === yesterdayStr) score += 150;
-                            else if (matchDateObj < nowIST) score += 50; // Fallback: find any recent past match
-                        }
-                        else if (isTomorrow) {
-                            if (matchDateStr === tomorrowStr) score += 150;
-                            else if (matchDateObj > nowIST) score += 50; // Fallback: find any upcoming match
-                        }
-                        else if (isToday) {
-                            if (matchDateStr === todayStr) score += 150;
+                        // ── Tier B: Team name token matching ──────────────────
+                        for (const token of normalizedMentions) {
+                            if (
+                                token.length > 1 &&
+                                (matchNameLower.includes(token) ||
+                                    matchSeriesLower.includes(token))
+                            ) {
+                                score += 100;
+                            }
                         }
 
-                        // Live Intent Bonus
-                        if (isLiveIntent && match.matchStarted === true && match.matchEnded === false) {
-                            score += 200;
+                        // ── Tier C: Structured temporal intent (IST-accurate) ─
+                        // Uses LLM-classified enum — no regex, no guessing.
+                        switch (temporal_intent) {
+                            case "live":
+                                // User explicitly asked for a live / current match
+                                if (isMatchLive) score += 200;
+                                break;
+
+                            case "past":
+                                // User asked for a previous / last / completed match
+                                if (isMatchFinished) {
+                                    if (matchDateStr === yesterdayStr) score += 200; // exact yesterday
+                                    else if (matchDateStr === todayStr) score += 150; // today but finished
+                                    else score += 50; // any other past match
+                                }
+                                break;
+
+                            case "future":
+                                // User asked for an upcoming / next match
+                                if (isMatchFuture) {
+                                    if (matchDateStr === tomorrowStr) score += 200;
+                                    else if (matchDateStr === todayStr) score += 150;
+                                    else if (matchDateObj > nowIST) score += 50;
+                                }
+                                break;
+
+                            case "any":
+                            default:
+                                // No explicit time cue — bias toward live, then today
+                                if (isMatchLive) score += 100;
+                                else if (matchDateStr === todayStr) score += 75;
+                                break;
                         }
 
-                        return { match, score, matchDateStr };
+                        return { match, score, matchDateObj };
                     })
-                    .sort((a, b) => b.score - a.score);
+                    .sort((a, b) => {
+                        // Primary: score descending
+                        if (b.score !== a.score) return b.score - a.score;
+                        // Secondary: for past queries, most recent first;
+                        //            for future queries, soonest first
+                        if (temporal_intent === "future")
+                            return a.matchDateObj - b.matchDateObj;
+                        return b.matchDateObj - a.matchDateObj;
+                    });
 
-                // ── Step 4: Selection
                 if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
-                    throw new Error("No matches found for this specific query.");
+                    throw new Error(
+                        "No matches found matching your query. The tournament may not have any active fixtures in the CricAPI feed."
+                    );
                 }
 
                 const targetMatch = scoredMatches[0].match;
 
-                // ── Extraction Logic 
+                // ── Score extraction ──────────────────────────────────────────
                 const teamAName = targetMatch.teams?.[0] || "Team A";
                 const teamBName = targetMatch.teams?.[1] || "Team B";
-                let scoreA = "-", scoreB = "-", oversA = null, crr = null;
+                let scoreA = "-";
+                let scoreB = "-";
+                let oversA = null;
+                let crr = null;
 
-                const isLiveResponse = targetMatch.matchStarted === true && targetMatch.matchEnded === false;
+                const isLiveResponse =
+                    targetMatch.matchStarted === true &&
+                    targetMatch.matchEnded === false;
 
-                if (Array.isArray(targetMatch.score) && targetMatch.score.length > 0) {
-
+                if (
+                    Array.isArray(targetMatch.score) &&
+                    targetMatch.score.length > 0
+                ) {
+                    /**
+                     * Finds the innings entry best matching a team name by checking
+                     * whether any meaningful word in the team name appears in the
+                     * inning string returned by CricAPI.
+                     */
                     const findScore = (teamName, scores) => {
-                        const words = teamName.toLowerCase().split(' ').filter(w => w.length > 2);
+                        const words = teamName
+                            .toLowerCase()
+                            .split(" ")
+                            .filter((w) => w.length > 2);
                         for (const w of words) {
-                            const found = scores.find(s => s.inning?.toLowerCase().includes(w));
+                            const found = scores.find((s) =>
+                                s.inning?.toLowerCase().includes(w)
+                            );
                             if (found) return found;
                         }
                         return null;
@@ -497,32 +767,39 @@ export const getSportsDataTool = tool(
                     let sB = findScore(teamBName, targetMatch.score);
 
                     if (!sA && targetMatch.score[0]) sA = targetMatch.score[0];
-                    if (!sB && targetMatch.score[1] && targetMatch.score[1] !== sA) sB = targetMatch.score[1];
+                    if (
+                        !sB &&
+                        targetMatch.score[1] &&
+                        targetMatch.score[1] !== sA
+                    )
+                        sB = targetMatch.score[1];
 
                     if (sA) {
-                        const r = sA.r !== undefined ? sA.r : 0;
-                        const w = sA.w !== undefined ? sA.w : 0;
+                        const r = sA.r ?? 0;
+                        const w = sA.w ?? 0;
                         scoreA = `${r}/${w}`;
-                        oversA = sA.o !== undefined ? sA.o : "0.0";
-
+                        oversA = sA.o ?? "0.0";
                         const numOvers = parseFloat(oversA);
                         if (!isNaN(numOvers) && numOvers > 0) {
-                            const oMath = Math.floor(numOvers) + (((numOvers * 10) % 10) / 6);
+                            // Convert cricket overs notation (e.g. 12.4) to decimal
+                            const oMath =
+                                Math.floor(numOvers) +
+                                (((numOvers * 10) % 10) / 6);
                             if (oMath > 0) crr = (r / oMath).toFixed(2);
                         }
                     }
 
                     if (sB) {
-                        const r = sB.r !== undefined ? sB.r : 0;
-                        const w = sB.w !== undefined ? sB.w : 0;
+                        const r = sB.r ?? 0;
+                        const w = sB.w ?? 0;
                         scoreB = `${r}/${w}`;
                     }
-
                 } else if (isLiveResponse) {
                     scoreA = "0/0";
                     oversA = "0.0";
                 }
 
+                // ── Status label ──────────────────────────────────────────────
                 const isFinished = targetMatch.matchEnded === true;
                 const isNotStarted = targetMatch.matchStarted === false;
 
@@ -532,8 +809,14 @@ export const getSportsDataTool = tool(
                 } else if (isFinished) {
                     statusText = targetMatch.status || "Finished";
                 } else if (isNotStarted) {
-                    const matchTimeIST = new Date(targetMatch.dateTimeGMT || targetMatch.date)
-                        .toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true });
+                    const matchTimeIST = new Date(
+                        targetMatch.dateTimeGMT || targetMatch.date
+                    ).toLocaleTimeString("en-IN", {
+                        timeZone: "Asia/Kolkata",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: true,
+                    });
                     statusText = `Scheduled: Today at ${matchTimeIST} IST`;
                 } else {
                     statusText = targetMatch.status || "Match Info";
@@ -542,15 +825,20 @@ export const getSportsDataTool = tool(
                 const cardData = JSON.stringify({
                     league: targetMatch.matchType?.toUpperCase() || "Cricket",
                     isLive: isLiveResponse,
-                    battingTeam: teamAName, battingScore: scoreA, battingOvers: oversA,
-                    bowlingTeam: teamBName, bowlingScore: scoreB,
-                    crr: crr, status: statusText
+                    battingTeam: teamAName,
+                    battingScore: scoreA,
+                    battingOvers: oversA,
+                    bowlingTeam: teamBName,
+                    bowlingScore: scoreB,
+                    crr,
+                    status: statusText,
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
-            throw new Error("Route not found");
-
+            throw new Error(
+                "Sport route not found. Supported: football, basketball, cricket/IPL."
+            );
         } catch (error) {
             console.error("[Sports Data Error]:", error.message);
             const errorData = JSON.stringify({
@@ -558,18 +846,54 @@ export const getSportsDataTool = tool(
                 isLive: false,
                 teamA: { name: "System", score: "-" },
                 teamB: { name: "Error", score: "-" },
-                status: error.message.includes("CRICKET_API_KEY missing") ? "API Key Missing" : "Data temporarily unavailable"
+                status: error.message.includes("API_KEY missing")
+                    ? "API Key Missing"
+                    : "Data temporarily unavailable",
             });
             return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
         }
     },
     {
         name: "get_sports_data",
-        description: "Fetches live scores and results. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
+        description: `Fetches live scores, recent results, and upcoming fixtures for Football, Basketball, and Cricket (including IPL).
+
+MANDATORY: You MUST classify and populate ALL schema fields accurately before calling this tool.
+
+temporal_intent classification guide:
+  - "live"   → user says "live", "current", "right now", "going on", "happening"
+  - "past"   → user says "yesterday", "last match", "previous match", "last night", "result", "who won"
+  - "future" → user says "next match", "upcoming", "tomorrow", "schedule", "when is"
+  - "any"    → generic query with no clear time cue (e.g. "IPL score", "cricket update")
+
+tournament: specific league/series name mentioned (e.g. "IPL", "World Cup", "Champions League"). Use "" if none mentioned.
+
+team_mentions: every team the user names, with abbreviations expanded (e.g. "MI" → "Mumbai Indians", "CSK" → "Chennai Super Kings"). Use [] if no teams mentioned.
+
+You MUST include the ||CARD:...|| string from the tool output verbatim at the end of your response.`,
         schema: z.object({
-            requestType: z.enum(["team_info", "fixtures", "scores", "tactics"]),
-            sport: z.string(),
-            query: z.string()
+            sport: z
+                .string()
+                .describe(
+                    "The sport: 'cricket', 'football', or 'basketball'."
+                ),
+            query: z
+                .string()
+                .describe("The user's original natural language query, verbatim."),
+            temporal_intent: z
+                .enum(["past", "live", "future", "any"])
+                .describe(
+                    "LLM-classified temporal focus. 'past'=completed, 'live'=in progress, 'future'=upcoming, 'any'=no time cue."
+                ),
+            tournament: z
+                .string()
+                .describe(
+                    "Tournament or league name mentioned by the user (e.g. 'IPL', 'World Cup'). Empty string if none."
+                ),
+            team_mentions: z
+                .array(z.string())
+                .describe(
+                    "Team names mentioned by the user with abbreviations expanded. Empty array if no teams mentioned."
+                ),
         }),
     }
 );
