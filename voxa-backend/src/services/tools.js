@@ -687,6 +687,14 @@ export const getSportsDataTool = tool(
             //   Tier C — Temporal intent (exact date):    200 pts
             //   Tier C — Temporal intent (fallback dir):   50 pts
             //   Tier C — Live bonus (any intent):         100 pts
+            //
+            // DATA SOURCING [PATCH 1 — PARALLEL FETCH & MERGE]:
+            //   Both `currentMatches` (live/recent) and `matches` (full schedule
+            //   including future fixtures) are fetched in parallel via Promise.all.
+            //   Results are merged and deduplicated by match.id so the scoring
+            //   engine has visibility across past, live, AND future calendars.
+            //   This fixes the critical gap where "upcoming IPL matches" returned
+            //   nothing because `currentMatches` holds only live/recent data.
             // ==================================================================
             else if (
                 fullContextCheck.includes('cricket') ||
@@ -703,13 +711,68 @@ export const getSportsDataTool = tool(
                 const cricApiKey = process.env.CRICKET_API_KEY;
                 if (!cricApiKey) throw new Error('CRICKET_API_KEY missing');
 
-                // Cricket live feed: 30-second TTL (scores update frequently)
-                const matchData = await fetchWithCacheAndRetry(
-                    `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`,
-                    {},
-                    30000
+                // ── PATCH 1: Parallel fetch — currentMatches + full matches feed ──
+                //
+                // `currentMatches` → live scores and very recently completed games.
+                //   TTL: 30s — scores update frequently during live play.
+                //
+                // `matches`        → full CricAPI schedule feed: past, live, AND
+                //   upcoming fixtures. This is the endpoint that carries tomorrow's
+                //   and next-week's fixtures that `currentMatches` never surfaces.
+                //   TTL: 5 min — schedules don't change second-to-second; a longer
+                //   TTL here avoids rate-limit pressure on a secondary endpoint.
+                //
+                // Both fetches run concurrently. If one rejects, Promise.all rejects
+                // and the outer try/catch surfaces a clean error to the user rather
+                // than silently returning partial data.
+                const [currentMatchData, scheduledMatchData] = await Promise.all([
+                    fetchWithCacheAndRetry(
+                        `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`,
+                        {},
+                        30000   // 30-second TTL — live scores change rapidly
+                    ),
+                    fetchWithCacheAndRetry(
+                        `https://api.cricapi.com/v1/matches?apikey=${cricApiKey}&offset=0`,
+                        {},
+                        300000  // 5-minute TTL — schedules are relatively stable
+                    ),
+                ]);
+
+                // ── Merge + deduplicate by match.id ──────────────────────────────
+                //
+                // Both endpoints can return the same live match. Deduplication by
+                // `match.id` ensures the scoring engine sees each fixture exactly
+                // once. `currentMatches` entries are added first so their richer
+                // live score payload (score[], matchStarted, matchEnded) wins over
+                // a potentially staler copy from the `matches` feed.
+                const currentList = Array.isArray(currentMatchData?.data) ? currentMatchData.data : [];
+                const scheduledList = Array.isArray(scheduledMatchData?.data) ? scheduledMatchData.data : [];
+
+                const seenIds = new Set();
+                const mergedMatches = [];
+
+                // Priority pass: live/recent entries first (richest score payload)
+                for (const m of currentList) {
+                    if (m?.id && !seenIds.has(m.id)) {
+                        seenIds.add(m.id);
+                        mergedMatches.push(m);
+                    }
+                }
+                // Second pass: schedule entries not already seen
+                for (const m of scheduledList) {
+                    if (m?.id && !seenIds.has(m.id)) {
+                        seenIds.add(m.id);
+                        mergedMatches.push(m);
+                    }
+                }
+
+                console.log(
+                    `🏏 [Cricket] Merged pool: ${mergedMatches.length} unique matches ` +
+                    `(${currentList.length} current + ${scheduledList.length} scheduled, ` +
+                    `${currentList.length + scheduledList.length - mergedMatches.length} deduped)`
                 );
-                if (!matchData?.data?.length) {
+
+                if (mergedMatches.length === 0) {
                     throw new Error('No cricket data available from CricAPI.');
                 }
 
@@ -722,7 +785,10 @@ export const getSportsDataTool = tool(
                     fullContextCheck.includes('indian premier');
 
                 // ── STRUCTURED SCORING ENGINE ───────────────────────────────────
-                const scoredMatches = matchData.data
+                //
+                // Runs over the MERGED array — identical point values as before.
+                // No scoring constants have been altered.
+                const scoredMatches = mergedMatches
                     .filter((m) => Boolean(m.name))
                     .map((match) => {
                         let score = 0;
@@ -806,7 +872,7 @@ export const getSportsDataTool = tool(
                                 break;
                         }
 
-                        return { match, score, matchDateObj };
+                        return { match, score, matchDateObj, matchDateStr };
                     })
                     .sort((a, b) => {
                         if (b.score !== a.score) return b.score - a.score;
@@ -827,6 +893,74 @@ export const getSportsDataTool = tool(
                 }
 
                 const targetMatch = scoredMatches[0].match;
+
+                // ── PATCH 2: MULTI-MATCH CONTEXT PAYLOAD ─────────────────────────
+                //
+                // PROBLEM: For schedule/future queries the UI card only ever showed
+                // the single top-scored match, leaving the LLM completely blind to
+                // the rest of the upcoming fixtures. The assistant could not read out
+                // "here are your next 5 IPL matches" because it had no data for them.
+                //
+                // SOLUTION: When temporal_intent === 'future' OR the user's query
+                // contains a schedule keyword, we build a human-readable mini-schedule
+                // string from the next N future/unstarted matches (up to 5) sorted by
+                // ascending date. This string is prepended to the tool return value so
+                // the LLM receives it in the tool-result message and can narrate it.
+                //
+                // The UI Card is UNCHANGED — it still renders scoredMatches[0] only.
+                // The mini schedule is purely conversational context for the LLM.
+                //
+                // Schedule-trigger detection: we check temporal_intent AND several
+                // natural-language schedule keywords in the raw (voice-normalised)
+                // query so the feature fires on phrasing like "IPL schedule",
+                // "what matches are coming up", "show me the fixtures", etc.
+                const scheduleKeywords = [
+                    'schedule', 'fixture', 'fixtures', 'upcoming', 'coming up',
+                    'next matches', 'matches this week', 'calendar',
+                ];
+                const isScheduleQuery =
+                    temporal_intent === 'future' ||
+                    scheduleKeywords.some((kw) => voiceNormalizedQuery.includes(kw));
+
+                let miniScheduleContext = '';
+
+                if (isScheduleQuery) {
+                    // Collect future/unstarted matches from the scored list, re-sorted
+                    // by ascending date so the LLM reads them in chronological order.
+                    // We cap at 5 entries to stay within a reasonable context budget.
+                    const upcomingMatches = scoredMatches
+                        .filter(
+                            ({ match: m }) =>
+                                m.matchStarted === false && m.matchEnded === false
+                        )
+                        .sort((a, b) => a.matchDateObj - b.matchDateObj)
+                        .slice(0, 5);
+
+                    if (upcomingMatches.length > 0) {
+                        // Format each entry as "N. [Match Name] on [YYYY-MM-DD IST]"
+                        // The date is shown in IST (getISTDateString already handles
+                        // the timezone conversion) to match the user's locale.
+                        const scheduleLines = upcomingMatches.map(
+                            ({ match: m, matchDateStr: ds }, idx) =>
+                                `${idx + 1}. ${m.name} on ${ds}`
+                        );
+
+                        miniScheduleContext =
+                            `Here is the upcoming schedule to read to the user: ` +
+                            scheduleLines.join(', ') +
+                            `. `;
+
+                        console.log(
+                            `📅 [Cricket] Mini-schedule built with ${upcomingMatches.length} fixture(s) for LLM context.`
+                        );
+                    } else {
+                        // Future intent but no unstarted matches found in the merged pool.
+                        // Surface a soft hint so the LLM can craft a natural reply.
+                        miniScheduleContext =
+                            `No upcoming fixtures were found in the merged data pool. ` +
+                            `Inform the user that the schedule may not yet be published. `;
+                    }
+                }
 
                 // ── Score extraction ────────────────────────────────────────────
                 const teamAName = targetMatch.teams?.[0] || 'Team A';
@@ -933,7 +1067,20 @@ export const getSportsDataTool = tool(
                     crr,
                     status: statusText,
                 });
-                return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
+
+                // ── Final return: mini-schedule context + card directive ─────────
+                //
+                // Structure of the returned string:
+                //   [preamble] [miniScheduleContext?] [CRITICAL DIRECTIVE + CARD]
+                //
+                // `miniScheduleContext` is an empty string for non-schedule queries
+                // so the return value is byte-identical to the old implementation
+                // in those cases — no regression risk for live/past queries.
+                return (
+                    `Sports data fetched. ` +
+                    miniScheduleContext +
+                    `CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`
+                );
             }
 
             throw new Error(
