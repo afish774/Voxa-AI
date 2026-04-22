@@ -673,7 +673,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==================================================================
-            // 🏏 ROUTE 3: CRICKET (cricketdata.org) — STRUCTURED IST SCORING ENGINE
+            // 🏏 ROUTE 3: CRICKET (CricAPI) — STRUCTURED IST SCORING ENGINE
             //
             // KEY ARCHITECTURE: temporal_intent, tournament, and team_mentions are
             // all LLM-classified and arrive as structured data. The scoring engine
@@ -687,17 +687,6 @@ export const getSportsDataTool = tool(
             //   Tier C — Temporal intent (exact date):    200 pts
             //   Tier C — Temporal intent (fallback dir):   50 pts
             //   Tier C — Live bonus (any intent):         100 pts
-            //
-            // DATA SOURCING [cricketdata.org — SINGLE FETCH]:
-            //   Migrated from CricAPI (429/403-prone) to the official free-tier
-            //   cricketdata.org API. A single endpoint delivers past, live, AND
-            //   future fixtures in one payload, so no parallel fetch or merge is
-            //   required. TTL is set to 5 minutes (300 000 ms) to aggressively
-            //   protect the 100 hits/day free-tier quota.
-            //   Raw records are normalised through a deterministic adapter before
-            //   reaching the scoring engine, keeping every downstream field name
-            //   identical to the old schema (name, series, date, matchStarted,
-            //   matchEnded, status, teams[], score[]).
             // ==================================================================
             else if (
                 fullContextCheck.includes('cricket') ||
@@ -711,74 +700,17 @@ export const getSportsDataTool = tool(
                 fullContextCheck.includes('india') ||
                 fullContextCheck.includes('world cup')
             ) {
-                const cricketDataKey = process.env.CRICKETDATA_API_KEY;
-                if (!cricketDataKey) throw new Error('CRICKETDATA_API_KEY missing');
+                const cricApiKey = process.env.CRICKET_API_KEY;
+                if (!cricApiKey) throw new Error('CRICKET_API_KEY missing');
 
-                // ── Single fetch — 5-minute TTL to guard 100 hits/day free quota ──
-                //
-                // cricketdata.org /v1/matches returns the full calendar in one call:
-                // scheduled, live, and recently completed matches are all present.
-                // The aggressive 300 000 ms TTL means a worst-case burst of 288 app
-                // requests per day (every 5 min) costs only 288 API hits — well inside
-                // the free tier. A cache hit costs zero hits regardless of traffic.
-                const rawMatchData = await fetchWithCacheAndRetry(
-                    `https://api.cricketdata.org/v1/matches?apikey=${cricketDataKey}&offset=0`,
+                // Cricket live feed: 30-second TTL (scores update frequently)
+                const matchData = await fetchWithCacheAndRetry(
+                    `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`,
                     {},
-                    300000  // 5-minute TTL — aggressively protects 100 hits/day quota
+                    30000
                 );
-
-                // ── Data normalizer ───────────────────────────────────────────────
-                //
-                // cricketdata.org field names differ slightly from the old CricAPI
-                // schema that the scoring engine, score extractor, and card builder
-                // all depend on. This adapter translates every raw record into the
-                // canonical internal shape so every downstream line remains unchanged.
-                //
-                // Field mapping rationale:
-                //   series      → raw.series_id preferred; falls back to raw.name so
-                //                 Tier A IPL detection (matchSeriesLower.includes('ipl'))
-                //                 still fires when series_id is populated correctly.
-                //   date        → Date object constructed from dateTimeGMT (appending
-                //                 "Z" to mark it UTC) so getISTDateString() produces
-                //                 the correct IST calendar date. Falls back to raw.date
-                //                 when dateTimeGMT is absent (older/historical records).
-                //   teams[]     → teamInfo preferred (contains full display names);
-                //                 falls back to raw.teams (abbreviation array).
-                //   score[]     → re-mapped field-by-field with 0/`'0.0'` defaults so
-                //                 the findScore() inning-matcher never encounters nulls.
-                const rawList = Array.isArray(rawMatchData?.data) ? rawMatchData.data : [];
-
-                const mergedMatches = rawList
-                    .filter((raw) => raw?.id) // discard malformed entries silently
-                    .map((raw) => ({
-                        id: raw.id,
-                        name: raw.name || `${raw.teams?.[0]} vs ${raw.teams?.[1]}`,
-                        series: raw.series_id || raw.name || 'Cricket',
-                        date: new Date(
-                            raw.dateTimeGMT
-                                ? raw.dateTimeGMT + 'Z'   // force UTC parse
-                                : raw.date
-                        ),
-                        matchStarted: raw.matchStarted === true,
-                        matchEnded: raw.matchEnded === true,
-                        status: raw.status || 'Scheduled',
-                        teams: raw.teamInfo
-                            ? [raw.teamInfo[0]?.name, raw.teamInfo[1]?.name]
-                            : raw.teams,
-                        score: (raw.score || []).map((s) => ({
-                            inning: s.inning,
-                            r: s.r || 0,
-                            w: s.w || 0,
-                            o: s.o || '0.0',
-                        })),
-                    }));
-
-                console.log(
-                    `🏏 [Cricket] cricketdata.org pool: ${mergedMatches.length} normalised fixtures`
-                );
-
-                if (mergedMatches.length === 0) {
-                    throw new Error('No cricket data available from cricketdata.org.');
+                if (!matchData?.data?.length) {
+                    throw new Error('No cricket data available from CricAPI.');
                 }
 
                 // Normalise tournament name for series/name matching
@@ -790,18 +722,15 @@ export const getSportsDataTool = tool(
                     fullContextCheck.includes('indian premier');
 
                 // ── STRUCTURED SCORING ENGINE ───────────────────────────────────
-                //
-                // Runs over the MERGED array — identical point values as before.
-                // No scoring constants have been altered.
-                const scoredMatches = mergedMatches
+                const scoredMatches = matchData.data
                     .filter((m) => Boolean(m.name))
                     .map((match) => {
                         let score = 0;
                         const matchNameLower = (match.name || '').toLowerCase();
                         const matchSeriesLower = (match.series || '').toLowerCase();
-                        // match.date is always a Date object post-normalisation —
-                        // new Date(dateObj) clones it safely; no dateTimeGMT fallback needed.
-                        const matchDateObj = new Date(match.date);
+                        const matchDateObj = new Date(
+                            match.dateTimeGMT || match.date
+                        );
                         const matchDateStr = getISTDateString(matchDateObj);
 
                         const isMatchLive =
@@ -877,7 +806,7 @@ export const getSportsDataTool = tool(
                                 break;
                         }
 
-                        return { match, score, matchDateObj, matchDateStr };
+                        return { match, score, matchDateObj };
                     })
                     .sort((a, b) => {
                         if (b.score !== a.score) return b.score - a.score;
@@ -898,74 +827,6 @@ export const getSportsDataTool = tool(
                 }
 
                 const targetMatch = scoredMatches[0].match;
-
-                // ── PATCH 2: MULTI-MATCH CONTEXT PAYLOAD ─────────────────────────
-                //
-                // PROBLEM: For schedule/future queries the UI card only ever showed
-                // the single top-scored match, leaving the LLM completely blind to
-                // the rest of the upcoming fixtures. The assistant could not read out
-                // "here are your next 5 IPL matches" because it had no data for them.
-                //
-                // SOLUTION: When temporal_intent === 'future' OR the user's query
-                // contains a schedule keyword, we build a human-readable mini-schedule
-                // string from the next N future/unstarted matches (up to 5) sorted by
-                // ascending date. This string is prepended to the tool return value so
-                // the LLM receives it in the tool-result message and can narrate it.
-                //
-                // The UI Card is UNCHANGED — it still renders scoredMatches[0] only.
-                // The mini schedule is purely conversational context for the LLM.
-                //
-                // Schedule-trigger detection: we check temporal_intent AND several
-                // natural-language schedule keywords in the raw (voice-normalised)
-                // query so the feature fires on phrasing like "IPL schedule",
-                // "what matches are coming up", "show me the fixtures", etc.
-                const scheduleKeywords = [
-                    'schedule', 'fixture', 'fixtures', 'upcoming', 'coming up',
-                    'next matches', 'matches this week', 'calendar',
-                ];
-                const isScheduleQuery =
-                    temporal_intent === 'future' ||
-                    scheduleKeywords.some((kw) => voiceNormalizedQuery.includes(kw));
-
-                let miniScheduleContext = '';
-
-                if (isScheduleQuery) {
-                    // Collect future/unstarted matches from the scored list, re-sorted
-                    // by ascending date so the LLM reads them in chronological order.
-                    // We cap at 5 entries to stay within a reasonable context budget.
-                    const upcomingMatches = scoredMatches
-                        .filter(
-                            ({ match: m }) =>
-                                m.matchStarted === false && m.matchEnded === false
-                        )
-                        .sort((a, b) => a.matchDateObj - b.matchDateObj)
-                        .slice(0, 5);
-
-                    if (upcomingMatches.length > 0) {
-                        // Format each entry as "N. [Match Name] on [YYYY-MM-DD IST]"
-                        // The date is shown in IST (getISTDateString already handles
-                        // the timezone conversion) to match the user's locale.
-                        const scheduleLines = upcomingMatches.map(
-                            ({ match: m, matchDateStr: ds }, idx) =>
-                                `${idx + 1}. ${m.name} on ${ds}`
-                        );
-
-                        miniScheduleContext =
-                            `Here is the upcoming schedule to read to the user: ` +
-                            scheduleLines.join(', ') +
-                            `. `;
-
-                        console.log(
-                            `📅 [Cricket] Mini-schedule built with ${upcomingMatches.length} fixture(s) for LLM context.`
-                        );
-                    } else {
-                        // Future intent but no unstarted matches found in the merged pool.
-                        // Surface a soft hint so the LLM can craft a natural reply.
-                        miniScheduleContext =
-                            `No upcoming fixtures were found in the merged data pool. ` +
-                            `Inform the user that the schedule may not yet be published. `;
-                    }
-                }
 
                 // ── Score extraction ────────────────────────────────────────────
                 const teamAName = targetMatch.teams?.[0] || 'Team A';
@@ -1048,9 +909,9 @@ export const getSportsDataTool = tool(
                 } else if (isFinished) {
                     statusText = targetMatch.status || 'Finished';
                 } else if (isNotStarted) {
-                    // targetMatch.date is always a Date object after normalisation —
-                    // no need to fall back to dateTimeGMT (field no longer exists).
-                    const matchTimeIST = new Date(targetMatch.date).toLocaleTimeString('en-IN', {
+                    const matchTimeIST = new Date(
+                        targetMatch.dateTimeGMT || targetMatch.date
+                    ).toLocaleTimeString('en-IN', {
                         timeZone: 'Asia/Kolkata',
                         hour: '2-digit',
                         minute: '2-digit',
@@ -1062,12 +923,7 @@ export const getSportsDataTool = tool(
                 }
 
                 const cardData = JSON.stringify({
-                    // matchType is not present in the cricketdata.org normalised shape;
-                    // fall back gracefully to 'Cricket' so the card always has a label.
-                    league: (targetMatch.matchType ?? targetMatch.name ?? 'Cricket')
-                        .toUpperCase()
-                        .split(' VS ')[0]   // avoid "CSK VS MI" as the league label
-                        .trim() || 'Cricket',
+                    league: targetMatch.matchType?.toUpperCase() || 'Cricket',
                     isLive: isLiveResponse,
                     battingTeam: teamAName,
                     battingScore: scoreA,
@@ -1077,20 +933,7 @@ export const getSportsDataTool = tool(
                     crr,
                     status: statusText,
                 });
-
-                // ── Final return: mini-schedule context + card directive ─────────
-                //
-                // Structure of the returned string:
-                //   [preamble] [miniScheduleContext?] [CRITICAL DIRECTIVE + CARD]
-                //
-                // `miniScheduleContext` is an empty string for non-schedule queries
-                // so the return value is byte-identical to the old implementation
-                // in those cases — no regression risk for live/past queries.
-                return (
-                    `Sports data fetched. ` +
-                    miniScheduleContext +
-                    `CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`
-                );
+                return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
 
             throw new Error(
