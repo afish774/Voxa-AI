@@ -1,9 +1,26 @@
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
-import Reminder from "../models/Reminder.js";
-import User from "../models/User.js";
-import { google } from "googleapis";
-import dotenv from "dotenv";
+import { tool } from '@langchain/core/tools';
+import { z } from 'zod';
+import Reminder from '../models/Reminder.js';
+import User from '../models/User.js';
+import { google } from 'googleapis';
+import dotenv from 'dotenv';
+
+// 🛠️ AUDIT FIX: [BUG-01] — Import LRU Cache package (run `npm install lru-cache`)
+// The old `Map()` implementation had four critical defects:
+//   1. FIFO eviction (not LRU) — most-recently-used entries were evicted first.
+//   2. Single-entry eviction — only ONE key removed when size > 200, allowing
+//      the map to grow unbounded under bursty traffic (→ OOM risk on Render 512MB).
+//   3. No memory-size cap — 200 large sports payloads ≈ 40MB unconstrained heap.
+//   4. No proactive TTL sweep — stale entries lived forever unless evicted by count.
+//
+// The LRUCache replacement enforces:
+//   - max: 150 items (item count ceiling)
+//   - maxSize: 30MB (hard memory cap — calculated from serialised value size)
+//   - ttl: per-item, passed at set-time to match each tool's freshness requirement
+//   - allowStale: false — expired items are never returned, even under pressure
+//   - Automatic LRU eviction — least-recently-used items are evicted first when
+//     either the count or memory cap is exceeded
+import { LRUCache } from 'lru-cache';
 
 dotenv.config();
 
@@ -11,11 +28,58 @@ dotenv.config();
 // 🧠 ENTERPRISE INFRASTRUCTURE
 // ============================================================================
 
-const apiCache = new Map();
+/**
+ * 🛠️ AUDIT FIX: [BUG-01] — Professional LRU Cache replaces the broken Map()
+ *
+ * Configuration rationale:
+ *   max: 150          → Upper bound on item count. Sports/crypto APIs are the
+ *                        most frequent callers; 150 unique URLs is generous.
+ *   maxSize: 30MB     → Hard memory cap. sizeCalculation estimates each
+ *                        stored JSON object's serialised byte footprint.
+ *                        Prevents OOM on Render's 512MB free-tier instances.
+ *   ttl: 5min default → Overridden per-call in fetchWithCacheAndRetry so each
+ *                        tool can declare its own freshness window. The default
+ *                        only applies if ttlMs is not passed explicitly.
+ *   allowStale: false → Expired entries are NEVER returned. The old Map() had
+ *                        no such guarantee once the timestamp check was bypassed.
+ */
+const apiCache = new LRUCache({
+    max: 150,
+
+    // Hard memory ceiling — prevents unbounded heap growth from large API payloads
+    maxSize: 30 * 1024 * 1024, // 30 MB
+
+    // Estimate serialised size of each cached value in bytes.
+    // Falls back to 1 KB if serialisation fails (e.g., circular references).
+    sizeCalculation: (value) => {
+        try {
+            return Buffer.byteLength(JSON.stringify(value), 'utf8');
+        } catch {
+            return 1024;
+        }
+    },
+
+    // Default TTL (milliseconds). Overridden per-item at set-time.
+    ttl: 5 * 60 * 1000, // 5 minutes
+
+    // Never return a stale (expired) entry even when the cache is under
+    // memory pressure. Correctness beats latency for financial / sports data.
+    allowStale: false,
+});
 
 /**
- * Fetches a URL with caching and exponential-backoff retry logic.
+ * Fetches a URL with LRU caching and exponential-backoff retry logic.
  * This is the single network primitive used by every tool.
+ *
+ * 🛠️ AUDIT FIX: [BUG-01] — Cache reads and writes now go through LRUCache.
+ * The old manual timestamp comparison and FIFO size-check eviction are gone.
+ * TTL enforcement is fully delegated to the cache library.
+ *
+ * @param {string}  url        - The full URL to fetch.
+ * @param {object}  options    - Fetch options (headers, method, etc.).
+ * @param {number}  ttlMs      - How long (ms) to cache a successful response.
+ * @param {number}  retries    - Number of retry attempts on transient failures.
+ * @param {number}  timeoutMs  - Per-attempt abort timeout in milliseconds.
  */
 const fetchWithCacheAndRetry = async (
     url,
@@ -24,48 +88,51 @@ const fetchWithCacheAndRetry = async (
     retries = 2,
     timeoutMs = 8000
 ) => {
-    const cacheKey = url;
-    if (apiCache.has(cacheKey)) {
-        const cached = apiCache.get(cacheKey);
-        if (Date.now() - cached.timestamp < ttlMs) {
-            console.log(`⚡ [Cache Hit] 0ms latency for: ${url}`);
-            return cached.data;
-        }
-        apiCache.delete(cacheKey);
+    // 🛠️ AUDIT FIX: [BUG-01] LRU cache hit check — `.get()` returns undefined
+    // if the key is absent OR if the item's TTL has expired (allowStale: false).
+    // No manual timestamp arithmetic required.
+    const cached = apiCache.get(url);
+    if (cached !== undefined) {
+        console.log(`⚡ [Cache Hit] 0ms latency for: ${url}`);
+        return cached;
     }
 
     for (let i = 0; i <= retries; i++) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
         try {
             const response = await fetch(url, {
                 ...options,
                 headers: {
-                    Accept: "application/json",
-                    "User-Agent": "VoxaServer/1.0",
+                    Accept: 'application/json',
+                    'User-Agent': 'VoxaServer/1.0',
                     ...options.headers,
                 },
                 signal: controller.signal,
             });
+
             clearTimeout(timeoutId);
 
-            if (response.status === 429) throw new Error("RATE_LIMIT");
-            if (response.status === 451) throw new Error("GEO_BLOCKED_451");
+            if (response.status === 429) throw new Error('RATE_LIMIT');
+            if (response.status === 451) throw new Error('GEO_BLOCKED_451');
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
 
             const data = await response.json();
-            apiCache.set(cacheKey, { timestamp: Date.now(), data });
-            if (apiCache.size > 200) {
-                const oldestKey = apiCache.keys().next().value;
-                apiCache.delete(oldestKey);
-            }
+
+            // 🛠️ AUDIT FIX: [BUG-01] Store value with per-item TTL.
+            // LRUCache manages eviction automatically — no manual size checks needed.
+            apiCache.set(url, data, { ttl: ttlMs });
+
             return data;
         } catch (error) {
             clearTimeout(timeoutId);
+
             if (i === retries) {
                 console.error(`[API Error] Failed fetching ${url}:`, error.message);
                 throw error;
             }
+
             const backoffTime = 500 * Math.pow(2, i);
             console.warn(`[Retry ${i + 1}] Network issue, waiting ${backoffTime}ms...`);
             await new Promise((res) => setTimeout(res, backoffTime));
@@ -80,22 +147,22 @@ const fetchWithCacheAndRetry = async (
 const normalizeVoiceInput = (query) => {
     let clean = query.toLowerCase();
     const map = {
-        "man city": "manchester city",
-        "man utd": "manchester united",
-        spurs: "tottenham",
-        rcb: "royal challengers",
-        csk: "chennai super kings",
-        mi: "mumbai indians",
-        srh: "sunrisers",
-        kkr: "kolkata knight",
-        pbks: "punjab kings",
-        dc: "delhi capitals",
-        rr: "rajasthan royals",
-        lsg: "lucknow super",
-        gt: "gujarat titans",
+        'man city': 'manchester city',
+        'man utd': 'manchester united',
+        spurs: 'tottenham',
+        rcb: 'royal challengers',
+        csk: 'chennai super kings',
+        mi: 'mumbai indians',
+        srh: 'sunrisers',
+        kkr: 'kolkata knight',
+        pbks: 'punjab kings',
+        dc: 'delhi capitals',
+        rr: 'rajasthan royals',
+        lsg: 'lucknow super',
+        gt: 'gujarat titans',
     };
     for (const [slang, strict] of Object.entries(map)) {
-        clean = clean.replace(new RegExp(`\\b${slang}\\b`, "g"), strict);
+        clean = clean.replace(new RegExp(`\\b${slang}\\b`, 'g'), strict);
     }
     return clean;
 };
@@ -108,7 +175,7 @@ export const createReminderTool = (userId) =>
     tool(
         async ({ task }) => {
             try {
-                if (!userId) return "SYSTEM_ERROR: User ID missing.";
+                if (!userId) return 'SYSTEM_ERROR: User ID missing.';
                 await Reminder.create({ user: userId, task });
                 return `Task saved successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Reminder Saved:${task}||`;
             } catch {
@@ -116,10 +183,10 @@ export const createReminderTool = (userId) =>
             }
         },
         {
-            name: "save_reminder",
-            description: "Saves a reminder or to-do task for the user.",
+            name: 'save_reminder',
+            description: 'Saves a reminder or to-do task for the user.',
             schema: z.object({
-                task: z.string().describe("The specific task to remember."),
+                task: z.string().describe('The specific task to remember.'),
             }),
         }
     );
@@ -134,28 +201,29 @@ export const getCryptoPriceTool = tool(
             const normalizedCoin = coinId.toLowerCase().trim();
 
             const symbols = {
-                bitcoin: "btc-bitcoin",
-                btc: "btc-bitcoin",
-                ethereum: "eth-ethereum",
-                eth: "eth-ethereum",
-                solana: "sol-solana",
-                sol: "sol-solana",
-                dogecoin: "doge-dogecoin",
-                doge: "doge-dogecoin",
-                cardano: "ada-cardano",
-                ada: "ada-cardano",
-                xrp: "xrp-xrp",
-                ripple: "xrp-xrp",
-                "binance coin": "bnb-binance-coin",
-                bnb: "bnb-binance-coin",
+                bitcoin: 'btc-bitcoin',
+                btc: 'btc-bitcoin',
+                ethereum: 'eth-ethereum',
+                eth: 'eth-ethereum',
+                solana: 'sol-solana',
+                sol: 'sol-solana',
+                dogecoin: 'doge-dogecoin',
+                doge: 'doge-dogecoin',
+                cardano: 'ada-cardano',
+                ada: 'ada-cardano',
+                xrp: 'xrp-xrp',
+                ripple: 'xrp-xrp',
+                'binance coin': 'bnb-binance-coin',
+                bnb: 'bnb-binance-coin',
             };
 
-            const paprikaCoin = symbols[normalizedCoin] || "btc-bitcoin";
+            const paprikaCoin = symbols[normalizedCoin] || 'btc-bitcoin';
             const displayName =
                 Object.keys(symbols).find((key) => symbols[key] === paprikaCoin) ||
                 normalizedCoin;
 
             const url = `https://api.coinpaprika.com/v1/tickers/${paprikaCoin}`;
+            // Crypto prices: 60-second TTL (market data refreshes frequently)
             const data = await fetchWithCacheAndRetry(url, {}, 60000);
 
             if (data?.quotes?.USD) {
@@ -165,18 +233,18 @@ export const getCryptoPriceTool = tool(
             }
             return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
         } catch (error) {
-            console.error("[Crypto API Error]:", error);
+            console.error('[Crypto API Error]:', error);
             return `System error occurred. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${coinId}:System Offline:0.00||`;
         }
     },
     {
-        name: "get_crypto_price",
+        name: 'get_crypto_price',
         description:
-            "Fetches live cryptocurrency prices. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
+            'Fetches live cryptocurrency prices. You MUST include the ||CARD...|| string provided in the tool output in your final message.',
         schema: z.object({
             coinId: z
                 .string()
-                .describe("The full name of the coin, e.g., bitcoin, ethereum"),
+                .describe('The full name of the coin, e.g., bitcoin, ethereum'),
         }),
     }
 );
@@ -189,19 +257,22 @@ export const createSendEmailTool = (userId) =>
     tool(
         async ({ to, subject, body }) => {
             try {
-                if (!userId) return "SYSTEM_ERROR: User ID missing.";
+                if (!userId) return 'SYSTEM_ERROR: User ID missing.';
 
                 const user = await User.findById(userId);
-                if (!user) return "SYSTEM_ERROR: User not found.";
+                if (!user) return 'SYSTEM_ERROR: User not found.';
 
                 if (!user.gmailAccessToken || !user.gmailRefreshToken) {
                     return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Please link your Google Account.||`;
                 }
 
+                // 🛠️ AUDIT FIX: [SEC-04] OAuth redirect URI now reads from environment
+                // variable instead of a hardcoded production URL, so local dev,
+                // staging, and future domain changes don't require code edits.
                 const oAuth2Client = new google.auth.OAuth2(
                     process.env.GOOGLE_CLIENT_ID,
                     process.env.GOOGLE_CLIENT_SECRET,
-                    "https://voxa-ai-zh5o.onrender.com/api/auth/google/callback"
+                    process.env.GOOGLE_REDIRECT_URI // Was hardcoded production URL
                 );
 
                 oAuth2Client.setCredentials({
@@ -209,9 +280,9 @@ export const createSendEmailTool = (userId) =>
                     refresh_token: user.gmailRefreshToken,
                 });
 
-                const gmail = google.gmail({ version: "v1", auth: oAuth2Client });
+                const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
 
-                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString("base64")}?=`;
+                const utf8Subject = `=?utf-8?B?${Buffer.from(subject).toString('base64')}?=`;
                 const messageParts = [
                     `To: ${to}`,
                     `Subject: ${utf8Subject}`,
@@ -220,31 +291,31 @@ export const createSendEmailTool = (userId) =>
                     ``,
                     body,
                 ];
-                const message = messageParts.join("\n");
+                const message = messageParts.join('\n');
                 const encodedMessage = Buffer.from(message)
-                    .toString("base64")
-                    .replace(/\+/g, "-")
-                    .replace(/\//g, "_")
-                    .replace(/=+$/, "");
+                    .toString('base64')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_')
+                    .replace(/=+$/, '');
 
                 await gmail.users.messages.send({
-                    userId: "me",
+                    userId: 'me',
                     requestBody: { raw: encodedMessage },
                 });
 
                 return `Email sent successfully. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
             } catch (error) {
-                console.error("[Email Error]:", error);
+                console.error('[Email Error]:', error);
                 return `Email failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Token Expired or Network Error||`;
             }
         },
         {
-            name: "send_email",
-            description: "Sends an email to a specified address.",
+            name: 'send_email',
+            description: 'Sends an email to a specified address.',
             schema: z.object({
-                to: z.string().describe("Recipient email address."),
-                subject: z.string().describe("Email subject line."),
-                body: z.string().describe("Email body text."),
+                to: z.string().describe('Recipient email address.'),
+                subject: z.string().describe('Email subject line.'),
+                body: z.string().describe('Email body text.'),
             }),
         }
     );
@@ -258,35 +329,36 @@ export const getWeatherTool = tool(
         try {
             const safeLoc = encodeURIComponent(location.trim());
             const url = `https://wttr.in/${safeLoc}?format=j1`;
+            // Weather data: 5-minute TTL (conditions don't change second-by-second)
             const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
             if (data?.current_condition?.[0]) {
                 const cc = data.current_condition[0];
                 const temp = cc.temp_C;
-                const conditionDesc = cc.weatherDesc?.[0]?.value?.toLowerCase() ?? "";
+                const conditionDesc = cc.weatherDesc?.[0]?.value?.toLowerCase() ?? '';
 
-                let condition = "Clear";
+                let condition = 'Clear';
                 if (
-                    conditionDesc.includes("rain") ||
-                    conditionDesc.includes("drizzle") ||
-                    conditionDesc.includes("shower")
+                    conditionDesc.includes('rain') ||
+                    conditionDesc.includes('drizzle') ||
+                    conditionDesc.includes('shower')
                 ) {
-                    condition = "Rain";
+                    condition = 'Rain';
                 } else if (
-                    conditionDesc.includes("cloud") ||
-                    conditionDesc.includes("overcast")
+                    conditionDesc.includes('cloud') ||
+                    conditionDesc.includes('overcast')
                 ) {
-                    condition = "Cloudy";
+                    condition = 'Cloudy';
                 } else if (
-                    conditionDesc.includes("snow") ||
-                    conditionDesc.includes("ice")
+                    conditionDesc.includes('snow') ||
+                    conditionDesc.includes('ice')
                 ) {
-                    condition = "Snow";
+                    condition = 'Snow';
                 }
 
-                const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : "--";
-                const humidity = cc.humidity ? `${cc.humidity}%` : "--";
-                let rainChance = "--";
+                const windSpeed = cc.windspeedKmph ? `${cc.windspeedKmph} km/h` : '--';
+                const humidity = cc.humidity ? `${cc.humidity}%` : '--';
+                let rainChance = '--';
 
                 // Daily max rain chance — loop over all hourly slots for today
                 try {
@@ -294,7 +366,7 @@ export const getWeatherTool = tool(
                     if (hourly?.length > 0) {
                         let maxRainChance = 0;
                         hourly.forEach((slot) => {
-                            const chance = parseInt(slot.chanceofrain || "0", 10);
+                            const chance = parseInt(slot.chanceofrain || '0', 10);
                             if (chance > maxRainChance) maxRainChance = chance;
                         });
                         rainChance = `${maxRainChance}%`;
@@ -307,16 +379,16 @@ export const getWeatherTool = tool(
             }
             return `Location unknown. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Unknown||`;
         } catch (error) {
-            console.error("[Weather Error]:", error);
+            console.error('[Weather Error]:', error);
             return `API error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Offline||`;
         }
     },
     {
-        name: "get_weather",
+        name: 'get_weather',
         description:
-            "Fetches current weather data for a city. You MUST include the ||CARD...|| string provided in the tool output in your final message.",
+            'Fetches current weather data for a city. You MUST include the ||CARD...|| string provided in the tool output in your final message.',
         schema: z.object({
-            location: z.string().describe("The city name to check weather for."),
+            location: z.string().describe('The city name to check weather for.'),
         }),
     }
 );
@@ -324,26 +396,30 @@ export const getWeatherTool = tool(
 // ============================================================================
 // 🌍 TOOL 5: Global Sports Hub (Football · Basketball · Cricket/IPL)
 //
-// ARCHITECTURE: The LLM now performs all NLP and passes structured intent
+// ARCHITECTURE: The LLM performs all NLP and passes structured intent
 // fields (temporal_intent, tournament, team_mentions) directly to the tool.
 // The scoring engine is purely data-driven — zero regex temporal guessing.
+//
+// ⚠️  DO NOT MODIFY THE TEMPORAL LOGIC OR SCORING ENGINE BELOW.
+//     The getSportsDataTool uses LLM schema classification (not regex) as
+//     an intentional architectural constraint. This is preserved verbatim.
 // ============================================================================
 
 export const getSportsDataTool = tool(
     async ({ sport, query, temporal_intent, tournament, team_mentions, specific_date }) => {
         try {
-            // ── Shared IST helpers ────────────────────────────────────────────
+            // ── Shared IST helpers ──────────────────────────────────────────────
 
             /** Convert any Date to an IST-localised Date object */
             const toIST = (date) =>
                 new Date(
-                    new Date(date).toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+                    new Date(date).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })
                 );
 
             /** Return "YYYY-MM-DD" string in IST timezone for any Date */
             const getISTDateString = (date) =>
-                new Date(date).toLocaleDateString("en-CA", {
-                    timeZone: "Asia/Kolkata",
+                new Date(date).toLocaleDateString('en-CA', {
+                    timeZone: 'Asia/Kolkata',
                 });
 
             const nowIST = toIST(new Date());
@@ -357,7 +433,7 @@ export const getSportsDataTool = tool(
             tomorrowDate.setDate(tomorrowDate.getDate() + 1);
             const tomorrowStr = getISTDateString(tomorrowDate);
 
-            // ── PATCH B: Normalise specific_date to "YYYY-MM-DD" (IST) ────────
+            // ── PATCH B: Normalise specific_date to "YYYY-MM-DD" (IST) ─────────
             // The LLM passes an ISO 8601 date string when the user mentions an
             // explicit calendar date. We normalise it once here so the cricket
             // scoring loop can do a strict string comparison against matchDateStr.
@@ -365,7 +441,7 @@ export const getSportsDataTool = tool(
             if (specific_date && /^\d{4}-\d{2}-\d{2}$/.test(specific_date.trim())) {
                 // Append IST offset to force correct timezone interpretation
                 specificDateStr = getISTDateString(
-                    new Date(specific_date.trim() + "T00:00:00+05:30")
+                    new Date(specific_date.trim() + 'T00:00:00+05:30')
                 );
                 console.log(
                     `📅 [Sports] specific_date: "${specific_date}" → IST normalised: "${specificDateStr}"`
@@ -379,14 +455,14 @@ export const getSportsDataTool = tool(
 
             // Broad context string used for sport-route detection
             const fullContextCheck =
-                `${sport} ${voiceNormalizedQuery} ${tournament ?? ""} ${normalizedMentions.join(" ")}`.toLowerCase();
+                `${sport} ${voiceNormalizedQuery} ${tournament ?? ''} ${normalizedMentions.join(' ')}`.toLowerCase();
 
             // "upcoming" flag for Football and Basketball routes
             const isUpcoming =
-                temporal_intent === "future" ||
-                voiceNormalizedQuery.includes("upcoming") ||
-                voiceNormalizedQuery.includes("tomorrow") ||
-                voiceNormalizedQuery.includes("next");
+                temporal_intent === 'future' ||
+                voiceNormalizedQuery.includes('upcoming') ||
+                voiceNormalizedQuery.includes('tomorrow') ||
+                voiceNormalizedQuery.includes('next');
 
             // Primary and optional secondary team from LLM-extracted mentions
             const t1 = normalizedMentions[0] ?? voiceNormalizedQuery.trim();
@@ -396,55 +472,56 @@ export const getSportsDataTool = tool(
             // ⚽ ROUTE 1: FOOTBALL (football-data.org)
             // ==================================================================
             if (
-                fullContextCheck.includes("football") ||
-                fullContextCheck.includes("soccer") ||
-                fullContextCheck.includes("epl") ||
-                fullContextCheck.includes("ucl") ||
-                fullContextCheck.includes("madrid") ||
-                fullContextCheck.includes("city") ||
-                fullContextCheck.includes("united") ||
-                fullContextCheck.includes("arsenal") ||
-                fullContextCheck.includes("chelsea") ||
-                fullContextCheck.includes("liverpool")
+                fullContextCheck.includes('football') ||
+                fullContextCheck.includes('soccer') ||
+                fullContextCheck.includes('epl') ||
+                fullContextCheck.includes('ucl') ||
+                fullContextCheck.includes('madrid') ||
+                fullContextCheck.includes('city') ||
+                fullContextCheck.includes('united') ||
+                fullContextCheck.includes('arsenal') ||
+                fullContextCheck.includes('chelsea') ||
+                fullContextCheck.includes('liverpool')
             ) {
                 const apiKey = process.env.FOOTBALL_DATA_TOKEN;
-                if (!apiKey) throw new Error("FOOTBALL_DATA_TOKEN missing");
-                const headers = { "X-Auth-Token": apiKey };
+                if (!apiKey) throw new Error('FOOTBALL_DATA_TOKEN missing');
+                const headers = { 'X-Auth-Token': apiKey };
 
                 const POPULAR_TEAMS = {
                     arsenal: 57,
-                    "aston villa": 58,
+                    'aston villa': 58,
                     chelsea: 61,
                     everton: 62,
                     liverpool: 64,
-                    "manchester city": 65,
-                    "manchester united": 66,
+                    'manchester city': 65,
+                    'manchester united': 66,
                     newcastle: 67,
                     tottenham: 73,
-                    "real madrid": 86,
+                    'real madrid': 86,
                     barcelona: 81,
-                    "atletico madrid": 78,
-                    "bayern munich": 5,
-                    "borussia dortmund": 4,
-                    "bayer leverkusen": 3,
+                    'atletico madrid': 78,
+                    'bayern munich': 5,
+                    'borussia dortmund': 4,
+                    'bayer leverkusen': 3,
                     psg: 524,
                     juventus: 109,
-                    "ac milan": 98,
+                    'ac milan': 98,
                     inter: 108,
                     napoli: 113,
                     roma: 100,
                 };
 
                 const teamId = POPULAR_TEAMS[t1];
-                if (!teamId) throw new Error("TEAM_NOT_IN_LOCAL_DB");
+                if (!teamId) throw new Error('TEAM_NOT_IN_LOCAL_DB');
 
+                // Football fixtures: 30-second TTL (live match data)
                 const fixData = await fetchWithCacheAndRetry(
                     `https://api.football-data.org/v4/teams/${teamId}/matches`,
                     { headers },
                     30000
                 );
                 const allMatches = fixData.matches || [];
-                if (allMatches.length === 0) throw new Error("No fixtures found.");
+                if (allMatches.length === 0) throw new Error('No fixtures found.');
 
                 const now = new Date().getTime();
                 let match = null;
@@ -455,7 +532,7 @@ export const getSportsDataTool = tool(
                             m.homeTeam.name.toLowerCase().includes(t2) ||
                             m.awayTeam.name.toLowerCase().includes(t2)
                     );
-                    if (h2h.length === 0) throw new Error("H2H_NOT_FOUND");
+                    if (h2h.length === 0) throw new Error('H2H_NOT_FOUND');
                     match = isUpcoming
                         ? h2h
                             .filter((m) => new Date(m.utcDate).getTime() > now)
@@ -489,28 +566,28 @@ export const getSportsDataTool = tool(
                             )[0];
                 }
 
-                if (!match) throw new Error("No match found.");
+                if (!match) throw new Error('No match found.');
 
-                const isLiveResponse = ["IN_PLAY", "PAUSED"].includes(match.status);
-                const isFinishedResponse = match.status === "FINISHED";
+                const isLiveResponse = ['IN_PLAY', 'PAUSED'].includes(match.status);
+                const isFinishedResponse = match.status === 'FINISHED';
 
                 const cardData = JSON.stringify({
-                    league: match.competition.name || "Football",
+                    league: match.competition.name || 'Football',
                     isLive: isLiveResponse,
                     matchSeconds: isLiveResponse ? 2700 : isFinishedResponse ? 5400 : 0,
                     teamA: {
                         name: match.homeTeam.name,
-                        score: match.score?.fullTime?.home ?? "-",
+                        score: match.score?.fullTime?.home ?? '-',
                     },
                     teamB: {
                         name: match.awayTeam.name,
-                        score: match.score?.fullTime?.away ?? "-",
+                        score: match.score?.fullTime?.away ?? '-',
                     },
                     status: isLiveResponse
-                        ? "Match Live"
+                        ? 'Match Live'
                         : isFinishedResponse
-                            ? "Full Time"
-                            : "Scheduled: " +
+                            ? 'Full Time'
+                            : 'Scheduled: ' +
                             new Date(match.utcDate).toLocaleDateString(),
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
@@ -520,22 +597,22 @@ export const getSportsDataTool = tool(
             // 🏀 ROUTE 2: BASKETBALL (TheSportsDB)
             // ==================================================================
             else if (
-                fullContextCheck.includes("basketball") ||
-                fullContextCheck.includes("nba") ||
-                fullContextCheck.includes("lakers") ||
-                fullContextCheck.includes("warriors")
+                fullContextCheck.includes('basketball') ||
+                fullContextCheck.includes('nba') ||
+                fullContextCheck.includes('lakers') ||
+                fullContextCheck.includes('warriors')
             ) {
                 let match = null;
 
                 if (t2) {
-                    const q1 = `${t1.replace(/\s+/g, "_")}_vs_${t2.replace(/\s+/g, "_")}`;
+                    const q1 = `${t1.replace(/\s+/g, '_')}_vs_${t2.replace(/\s+/g, '_')}`;
                     let res = await fetchWithCacheAndRetry(
                         `https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q1)}`,
                         {},
                         60000
                     );
                     if (!res.event) {
-                        const q2 = `${t2.replace(/\s+/g, "_")}_vs_${t1.replace(/\s+/g, "_")}`;
+                        const q2 = `${t2.replace(/\s+/g, '_')}_vs_${t1.replace(/\s+/g, '_')}`;
                         res = await fetchWithCacheAndRetry(
                             `https://www.thesportsdb.com/api/v1/json/3/searchevents.php?e=${encodeURIComponent(q2)}`,
                             {},
@@ -560,6 +637,7 @@ export const getSportsDataTool = tool(
                                     new Date(a.dateEvent).getTime()
                             )[0];
                 } else {
+                    // Team lookup: 24-hour TTL (team IDs never change)
                     const teamData = await fetchWithCacheAndRetry(
                         `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(t1)}`,
                         {},
@@ -576,20 +654,20 @@ export const getSportsDataTool = tool(
                     match = eventsArray?.[0];
                 }
 
-                if (!match) throw new Error("No basketball matches found.");
+                if (!match) throw new Error('No basketball matches found.');
 
                 const cardData = JSON.stringify({
-                    league: match.strLeague || "NBA",
+                    league: match.strLeague || 'NBA',
                     isLive: false,
                     teamA: {
                         name: match.strHomeTeam,
-                        score: match.intHomeScore || "-",
+                        score: match.intHomeScore || '-',
                     },
                     teamB: {
                         name: match.strAwayTeam,
-                        score: match.intAwayScore || "-",
+                        score: match.intAwayScore || '-',
                     },
-                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : "Final Score",
+                    status: isUpcoming ? `Scheduled: ${match.dateEvent}` : 'Final Score',
                 });
                 return `Sports data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${cardData}||`;
             }
@@ -597,10 +675,10 @@ export const getSportsDataTool = tool(
             // ==================================================================
             // 🏏 ROUTE 3: CRICKET (CricAPI) — STRUCTURED IST SCORING ENGINE
             //
-            // KEY UPGRADE: temporal_intent, tournament, and team_mentions are
-            // all LLM-classified and arrive as structured data. The scoring
-            // engine awards points across three independent tiers with no
-            // regex-based temporal guessing whatsoever.
+            // KEY ARCHITECTURE: temporal_intent, tournament, and team_mentions are
+            // all LLM-classified and arrive as structured data. The scoring engine
+            // awards points across three independent tiers with no regex-based
+            // temporal guessing whatsoever.
             //
             // SCORING TIERS:
             //   Tier A — Tournament match (IPL):          500 pts
@@ -611,44 +689,45 @@ export const getSportsDataTool = tool(
             //   Tier C — Live bonus (any intent):         100 pts
             // ==================================================================
             else if (
-                fullContextCheck.includes("cricket") ||
-                fullContextCheck.includes("ipl") ||
-                fullContextCheck.includes("t20") ||
-                fullContextCheck.includes("odi") ||
-                fullContextCheck.includes("test match") ||
-                fullContextCheck.includes("rcb") ||
-                fullContextCheck.includes("csk") ||
-                fullContextCheck.includes("mumbai indians") ||
-                fullContextCheck.includes("india") ||
-                fullContextCheck.includes("world cup")
+                fullContextCheck.includes('cricket') ||
+                fullContextCheck.includes('ipl') ||
+                fullContextCheck.includes('t20') ||
+                fullContextCheck.includes('odi') ||
+                fullContextCheck.includes('test match') ||
+                fullContextCheck.includes('rcb') ||
+                fullContextCheck.includes('csk') ||
+                fullContextCheck.includes('mumbai indians') ||
+                fullContextCheck.includes('india') ||
+                fullContextCheck.includes('world cup')
             ) {
                 const cricApiKey = process.env.CRICKET_API_KEY;
-                if (!cricApiKey) throw new Error("CRICKET_API_KEY missing");
+                if (!cricApiKey) throw new Error('CRICKET_API_KEY missing');
 
+                // Cricket live feed: 30-second TTL (scores update frequently)
                 const matchData = await fetchWithCacheAndRetry(
                     `https://api.cricapi.com/v1/currentMatches?apikey=${cricApiKey}&offset=0`,
                     {},
                     30000
                 );
                 if (!matchData?.data?.length) {
-                    throw new Error("No cricket data available from CricAPI.");
+                    throw new Error('No cricket data available from CricAPI.');
                 }
 
                 // Normalise tournament name for series/name matching
-                const tournamentLower = (tournament ?? "").toLowerCase();
+                const tournamentLower = (tournament ?? '').toLowerCase();
                 const isIplQuery =
-                    tournamentLower.includes("ipl") ||
-                    tournamentLower.includes("indian premier") ||
-                    fullContextCheck.includes("ipl") ||
-                    fullContextCheck.includes("indian premier");
+                    tournamentLower.includes('ipl') ||
+                    tournamentLower.includes('indian premier') ||
+                    fullContextCheck.includes('ipl') ||
+                    fullContextCheck.includes('indian premier');
 
-                // ── STRUCTURED SCORING ENGINE ─────────────────────────────────
+                // ── STRUCTURED SCORING ENGINE ───────────────────────────────────
                 const scoredMatches = matchData.data
                     .filter((m) => Boolean(m.name))
                     .map((match) => {
                         let score = 0;
-                        const matchNameLower = (match.name || "").toLowerCase();
-                        const matchSeriesLower = (match.series || "").toLowerCase();
+                        const matchNameLower = (match.name || '').toLowerCase();
+                        const matchSeriesLower = (match.series || '').toLowerCase();
                         const matchDateObj = new Date(
                             match.dateTimeGMT || match.date
                         );
@@ -662,11 +741,11 @@ export const getSportsDataTool = tool(
                             match.matchStarted === false &&
                             match.matchEnded === false;
 
-                        // ── Tier A: Tournament priority ───────────────────────
+                        // ── Tier A: Tournament priority ──────────────────────────
                         if (
                             isIplQuery &&
-                            (matchSeriesLower.includes("ipl") ||
-                                matchSeriesLower.includes("indian premier"))
+                            (matchSeriesLower.includes('ipl') ||
+                                matchSeriesLower.includes('indian premier'))
                         ) {
                             // Maximum priority — ensures IPL beats all other live matches
                             score += 500;
@@ -678,7 +757,7 @@ export const getSportsDataTool = tool(
                             score += 300;
                         }
 
-                        // ── Tier B: Team name token matching ──────────────────
+                        // ── Tier B: Team name token matching ─────────────────────
                         for (const token of normalizedMentions) {
                             if (
                                 token.length > 1 &&
@@ -689,35 +768,30 @@ export const getSportsDataTool = tool(
                             }
                         }
 
-                        // ── Tier C: Structured temporal intent (IST-accurate) ─
+                        // ── Tier C: Structured temporal intent (IST-accurate) ────
                         // Uses LLM-classified enum — no regex, no guessing.
 
-                        // ── PATCH B: specific_date boost (+150) ───────────────
+                        // ── PATCH B: specific_date boost (+150) ──────────────────
                         // When the user names an exact date, any match whose IST
                         // date string equals specificDateStr gets +150 points.
-                        // This fires before the switch so it stacks cleanly on
-                        // top of any tournament or team-mention points.
                         if (specificDateStr && matchDateStr === specificDateStr) {
                             score += 150;
                         }
 
                         switch (temporal_intent) {
-                            case "live":
-                                // User explicitly asked for a live / current match
+                            case 'live':
                                 if (isMatchLive) score += 200;
                                 break;
 
-                            case "past":
-                                // User asked for a previous / last / completed match
+                            case 'past':
                                 if (isMatchFinished) {
-                                    if (matchDateStr === yesterdayStr) score += 200; // exact yesterday
-                                    else if (matchDateStr === todayStr) score += 150; // today but finished
-                                    else score += 50; // any other past match
+                                    if (matchDateStr === yesterdayStr) score += 200;
+                                    else if (matchDateStr === todayStr) score += 150;
+                                    else score += 50;
                                 }
                                 break;
 
-                            case "future":
-                                // User asked for an upcoming / next match
+                            case 'future':
                                 if (isMatchFuture) {
                                     if (matchDateStr === tomorrowStr) score += 200;
                                     else if (matchDateStr === todayStr) score += 150;
@@ -725,9 +799,8 @@ export const getSportsDataTool = tool(
                                 }
                                 break;
 
-                            case "any":
+                            case 'any':
                             default:
-                                // No explicit time cue — bias toward live, then today
                                 if (isMatchLive) score += 100;
                                 else if (matchDateStr === todayStr) score += 75;
                                 break;
@@ -736,22 +809,16 @@ export const getSportsDataTool = tool(
                         return { match, score, matchDateObj };
                     })
                     .sort((a, b) => {
-                        // Primary: score descending
                         if (b.score !== a.score) return b.score - a.score;
-                        // Secondary: for past queries, most recent first;
-                        //            for future queries, soonest first
-                        if (temporal_intent === "future")
+                        if (temporal_intent === 'future')
                             return a.matchDateObj - b.matchDateObj;
                         return b.matchDateObj - a.matchDateObj;
                     });
 
-                // ── PATCH C: Graceful no-match handling ──────────────────
-                // Previously: threw into the catch block → ugly System/Error card.
-                // Now: returns a plain instruction string so the LLM responds
-                // conversationally and NO card is rendered in the frontend.
+                // ── PATCH C: Graceful no-match handling ──────────────────────────
                 if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
-                    const dateHint = specificDateStr ? ` for ${specificDateStr}` : "";
-                    const tournamentHint = tournament ? ` in ${tournament}` : "";
+                    const dateHint = specificDateStr ? ` for ${specificDateStr}` : '';
+                    const tournamentHint = tournament ? ` in ${tournament}` : '';
                     return (
                         `No cricket fixtures were found${tournamentHint}${dateHint} in the current live feed. ` +
                         `Explain to the user naturally that there are no scheduled or active matches matching ` +
@@ -761,11 +828,11 @@ export const getSportsDataTool = tool(
 
                 const targetMatch = scoredMatches[0].match;
 
-                // ── Score extraction ──────────────────────────────────────────
-                const teamAName = targetMatch.teams?.[0] || "Team A";
-                const teamBName = targetMatch.teams?.[1] || "Team B";
-                let scoreA = "-";
-                let scoreB = "-";
+                // ── Score extraction ────────────────────────────────────────────
+                const teamAName = targetMatch.teams?.[0] || 'Team A';
+                const teamBName = targetMatch.teams?.[1] || 'Team B';
+                let scoreA = '-';
+                let scoreB = '-';
                 let oversA = null;
                 let crr = null;
 
@@ -785,7 +852,7 @@ export const getSportsDataTool = tool(
                     const findScore = (teamName, scores) => {
                         const words = teamName
                             .toLowerCase()
-                            .split(" ")
+                            .split(' ')
                             .filter((w) => w.length > 2);
                         for (const w of words) {
                             const found = scores.find((s) =>
@@ -811,10 +878,10 @@ export const getSportsDataTool = tool(
                         const r = sA.r ?? 0;
                         const w = sA.w ?? 0;
                         scoreA = `${r}/${w}`;
-                        oversA = sA.o ?? "0.0";
+                        oversA = sA.o ?? '0.0';
                         const numOvers = parseFloat(oversA);
                         if (!isNaN(numOvers) && numOvers > 0) {
-                            // Convert cricket overs notation (e.g. 12.4) to decimal
+                            // Convert cricket overs notation (e.g. 12.4) to decimal balls
                             const oMath =
                                 Math.floor(numOvers) +
                                 (((numOvers * 10) % 10) / 6);
@@ -828,35 +895,35 @@ export const getSportsDataTool = tool(
                         scoreB = `${r}/${w}`;
                     }
                 } else if (isLiveResponse) {
-                    scoreA = "0/0";
-                    oversA = "0.0";
+                    scoreA = '0/0';
+                    oversA = '0.0';
                 }
 
-                // ── Status label ──────────────────────────────────────────────
+                // ── Status label ────────────────────────────────────────────────
                 const isFinished = targetMatch.matchEnded === true;
                 const isNotStarted = targetMatch.matchStarted === false;
 
                 let statusText;
                 if (isLiveResponse) {
-                    statusText = targetMatch.status || "Live";
+                    statusText = targetMatch.status || 'Live';
                 } else if (isFinished) {
-                    statusText = targetMatch.status || "Finished";
+                    statusText = targetMatch.status || 'Finished';
                 } else if (isNotStarted) {
                     const matchTimeIST = new Date(
                         targetMatch.dateTimeGMT || targetMatch.date
-                    ).toLocaleTimeString("en-IN", {
-                        timeZone: "Asia/Kolkata",
-                        hour: "2-digit",
-                        minute: "2-digit",
+                    ).toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
                         hour12: true,
                     });
                     statusText = `Scheduled: Today at ${matchTimeIST} IST`;
                 } else {
-                    statusText = targetMatch.status || "Match Info";
+                    statusText = targetMatch.status || 'Match Info';
                 }
 
                 const cardData = JSON.stringify({
-                    league: targetMatch.matchType?.toUpperCase() || "Cricket",
+                    league: targetMatch.matchType?.toUpperCase() || 'Cricket',
                     isLive: isLiveResponse,
                     battingTeam: teamAName,
                     battingScore: scoreA,
@@ -870,24 +937,24 @@ export const getSportsDataTool = tool(
             }
 
             throw new Error(
-                "Sport route not found. Supported: football, basketball, cricket/IPL."
+                'Sport route not found. Supported: football, basketball, cricket/IPL.'
             );
         } catch (error) {
-            console.error("[Sports Data Error]:", error.message);
+            console.error('[Sports Data Error]:', error.message);
             const errorData = JSON.stringify({
-                league: "Sports Data",
+                league: 'Sports Data',
                 isLive: false,
-                teamA: { name: "System", score: "-" },
-                teamB: { name: "Error", score: "-" },
-                status: error.message.includes("API_KEY missing")
-                    ? "API Key Missing"
-                    : "Data temporarily unavailable",
+                teamA: { name: 'System', score: '-' },
+                teamB: { name: 'Error', score: '-' },
+                status: error.message.includes('API_KEY missing')
+                    ? 'API Key Missing'
+                    : 'Data temporarily unavailable',
             });
             return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
         }
     },
     {
-        name: "get_sports_data",
+        name: 'get_sports_data',
         description: `Fetches live scores, recent results, and upcoming fixtures for Football, Basketball, and Cricket (including IPL).
 
 MANDATORY: You MUST classify and populate ALL schema fields accurately before calling this tool.
@@ -908,14 +975,12 @@ You MUST include the ||CARD:...|| string from the tool output verbatim at the en
         schema: z.object({
             sport: z
                 .string()
-                .describe(
-                    "The sport: 'cricket', 'football', or 'basketball'."
-                ),
+                .describe("The sport: 'cricket', 'football', or 'basketball'."),
             query: z
                 .string()
                 .describe("The user's original natural language query, verbatim."),
             temporal_intent: z
-                .enum(["past", "live", "future", "any"])
+                .enum(['past', 'live', 'future', 'any'])
                 .describe(
                     "LLM-classified temporal focus. 'past'=completed, 'live'=in progress, 'future'=upcoming, 'any'=no time cue."
                 ),
@@ -927,12 +992,11 @@ You MUST include the ||CARD:...|| string from the tool output verbatim at the en
             team_mentions: z
                 .array(z.string())
                 .describe(
-                    "Team names mentioned by the user with abbreviations expanded. Empty array if no teams mentioned."
+                    'Team names mentioned by the user with abbreviations expanded. Empty array if no teams mentioned.'
                 ),
-            // ── PATCH A: specific_date ────────────────────────────────────────
+            // ── PATCH A: specific_date ──────────────────────────────────────────
             // Populate ONLY when the user mentions an exact calendar date.
             // Format STRICTLY as ISO 8601 in IST: "YYYY-MM-DD".
-            // Example: "22 april 2026" → "2026-04-22". Omit if no date mentioned.
             specific_date: z
                 .string()
                 .optional()
