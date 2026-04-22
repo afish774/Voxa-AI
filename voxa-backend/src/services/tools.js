@@ -330,7 +330,7 @@ export const getWeatherTool = tool(
 // ============================================================================
 
 export const getSportsDataTool = tool(
-    async ({ sport, query, temporal_intent, tournament, team_mentions }) => {
+    async ({ sport, query, temporal_intent, tournament, team_mentions, specific_date }) => {
         try {
             // ── Shared IST helpers ────────────────────────────────────────────
 
@@ -356,6 +356,21 @@ export const getSportsDataTool = tool(
             const tomorrowDate = new Date(nowIST);
             tomorrowDate.setDate(tomorrowDate.getDate() + 1);
             const tomorrowStr = getISTDateString(tomorrowDate);
+
+            // ── PATCH B: Normalise specific_date to "YYYY-MM-DD" (IST) ────────
+            // The LLM passes an ISO 8601 date string when the user mentions an
+            // explicit calendar date. We normalise it once here so the cricket
+            // scoring loop can do a strict string comparison against matchDateStr.
+            let specificDateStr = null;
+            if (specific_date && /^\d{4}-\d{2}-\d{2}$/.test(specific_date.trim())) {
+                // Append IST offset to force correct timezone interpretation
+                specificDateStr = getISTDateString(
+                    new Date(specific_date.trim() + "T00:00:00+05:30")
+                );
+                console.log(
+                    `📅 [Sports] specific_date: "${specific_date}" → IST normalised: "${specificDateStr}"`
+                );
+            }
 
             const voiceNormalizedQuery = normalizeVoiceInput(query);
             const normalizedMentions = (team_mentions ?? []).map((t) =>
@@ -676,6 +691,16 @@ export const getSportsDataTool = tool(
 
                         // ── Tier C: Structured temporal intent (IST-accurate) ─
                         // Uses LLM-classified enum — no regex, no guessing.
+
+                        // ── PATCH B: specific_date boost (+150) ───────────────
+                        // When the user names an exact date, any match whose IST
+                        // date string equals specificDateStr gets +150 points.
+                        // This fires before the switch so it stacks cleanly on
+                        // top of any tournament or team-mention points.
+                        if (specificDateStr && matchDateStr === specificDateStr) {
+                            score += 150;
+                        }
+
                         switch (temporal_intent) {
                             case "live":
                                 // User explicitly asked for a live / current match
@@ -720,9 +745,17 @@ export const getSportsDataTool = tool(
                         return b.matchDateObj - a.matchDateObj;
                     });
 
+                // ── PATCH C: Graceful no-match handling ──────────────────
+                // Previously: threw into the catch block → ugly System/Error card.
+                // Now: returns a plain instruction string so the LLM responds
+                // conversationally and NO card is rendered in the frontend.
                 if (scoredMatches.length === 0 || scoredMatches[0].score === 0) {
-                    throw new Error(
-                        "No matches found matching your query. The tournament may not have any active fixtures in the CricAPI feed."
+                    const dateHint = specificDateStr ? ` for ${specificDateStr}` : "";
+                    const tournamentHint = tournament ? ` in ${tournament}` : "";
+                    return (
+                        `No cricket fixtures were found${tournamentHint}${dateHint} in the current live feed. ` +
+                        `Explain to the user naturally that there are no scheduled or active matches matching ` +
+                        `their request right now. CRITICAL: DO NOT APPEND A ||CARD:...|| STRING.`
                     );
                 }
 
@@ -869,6 +902,8 @@ tournament: specific league/series name mentioned (e.g. "IPL", "World Cup", "Cha
 
 team_mentions: every team the user names, with abbreviations expanded (e.g. "MI" → "Mumbai Indians", "CSK" → "Chennai Super Kings"). Use [] if no teams mentioned.
 
+specific_date: if the user mentions a specific calendar date (e.g. "22 april 2026", "the 22nd"), convert it to ISO 8601 "YYYY-MM-DD" (IST) and pass it here. Omit or pass "" if no explicit date is mentioned.
+
 You MUST include the ||CARD:...|| string from the tool output verbatim at the end of your response.`,
         schema: z.object({
             sport: z
@@ -893,6 +928,17 @@ You MUST include the ||CARD:...|| string from the tool output verbatim at the en
                 .array(z.string())
                 .describe(
                     "Team names mentioned by the user with abbreviations expanded. Empty array if no teams mentioned."
+                ),
+            // ── PATCH A: specific_date ────────────────────────────────────────
+            // Populate ONLY when the user mentions an exact calendar date.
+            // Format STRICTLY as ISO 8601 in IST: "YYYY-MM-DD".
+            // Example: "22 april 2026" → "2026-04-22". Omit if no date mentioned.
+            specific_date: z
+                .string()
+                .optional()
+                .describe(
+                    "Exact date mentioned by the user in ISO 8601 format 'YYYY-MM-DD' (IST). " +
+                    "E.g. 'april 22 2026' → '2026-04-22'. Omit or pass empty string if no specific date was mentioned."
                 ),
         }),
     }
