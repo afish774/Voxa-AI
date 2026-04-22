@@ -327,7 +327,6 @@ export const getWeatherTool = tool(
 export const getSportsDataTool = tool(
     async ({ sport, query, temporal_intent, tournament, team_mentions, specific_date }) => {
         try {
-            // ── Shared IST helpers ──────────────────────────────────────────────
             const toIST = (date) => new Date(new Date(date).toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
             const getISTDateString = (date) => new Date(date).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 
@@ -473,13 +472,7 @@ export const getSportsDataTool = tool(
             }
 
             // ==================================================================
-            // 🏏 ROUTE 3: CRICKET — NATIVE IN-HOUSE FETCHER (No RapidAPI)
-            // Architecture: 3-source waterfall.
-            //   Primary   → ESPN Cricinfo hs-consumer-api (public, unauthenticated)
-            //   Secondary → Cricbuzz public web JSON endpoint (no proxy, no key)
-            //   Tertiary  → IPLT20 official score feed (IPL-specific queries only)
-            // All sources are normalised into one canonical schema before the
-            // existing scoring engine processes them — zero downstream changes.
+            // 🏏 ROUTE 3: CRICKET (RapidAPI Cricbuzz - Sequential Fetching)
             // ==================================================================
             else if (
                 fullContextCheck.includes('cricket') ||
@@ -493,307 +486,85 @@ export const getSportsDataTool = tool(
                 fullContextCheck.includes('india') ||
                 fullContextCheck.includes('world cup')
             ) {
-                // ── Shared browser-like headers — required by all three sources ──
-                const cricketHeaders = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*',
-                    'Accept-Language': 'en-US,en;q=0.9',
-                    'Origin': 'https://www.espncricinfo.com',
-                    'Referer': 'https://www.espncricinfo.com/',
+                const rapidApiKey = process.env.RAPIDAPI_KEY;
+                if (!rapidApiKey) throw new Error('RAPIDAPI_KEY missing. Please set this in your .env file.');
+
+                const rapidHeaders = {
+                    'X-RapidAPI-Key': rapidApiKey,
+                    'X-RapidAPI-Host': 'cricbuzz-cricket.p.rapidapi.com'
                 };
 
-                // ── ESPN Cricinfo endpoints ──────────────────────────────────────
-                const ESPN_CURRENT = 'https://hs-consumer-api.espncricinfo.com/v1/pages/matches/current?lang=en&latest=true';
-                const ESPN_UPCOMING = 'https://hs-consumer-api.espncricinfo.com/v1/pages/matches/upcoming?lang=en&onlyMatchCards=true';
-                const ESPN_RECENT = 'https://hs-consumer-api.espncricinfo.com/v1/pages/matches/recent?lang=en&onlyMatchCards=true';
+                // 🛠️ SEQUENTIAL POLLING: Protects against the 429 Rate Limit error.
+                const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-                // ── Cricbuzz public web-JSON endpoints (zero auth, same feed their site uses)
-                const CBZ_LIVE = 'https://www.cricbuzz.com/api/cricket-match/live-matches';
-                const CBZ_UPCOMING = 'https://www.cricbuzz.com/api/cricket-match/upcoming-matches';
-                const CBZ_RECENT = 'https://www.cricbuzz.com/api/cricket-match/recent-matches';
+                const liveData = await fetchWithCacheAndRetry('https://cricbuzz-cricket.p.rapidapi.com/matches/v1/live', { headers: rapidHeaders }, 30000);
+                await sleep(600);
 
-                // ── IPL T20 official score feed (IPL-specific fallback) ──────────
-                const IPL_LIVE = 'https://ipl-stats-sports-mechanic.s3.ap-south-1.amazonaws.com/ipl/feeds/standings.js?callback=onStandingData';
+                const recentData = await fetchWithCacheAndRetry('https://cricbuzz-cricket.p.rapidapi.com/matches/v1/recent', { headers: rapidHeaders }, 120000);
+                await sleep(600);
 
-                // ────────────────────────────────────────────────────────────────
-                // normalizeMatchData()
-                // The single canonical normaliser. Accepts raw match objects from
-                // ESPN Cricinfo, Cricbuzz web-JSON, or IPL feeds and returns the
-                // exact structure the Voxa scoring engine requires.
-                // ────────────────────────────────────────────────────────────────
-                const normalizeMatchData = (raw, source = 'espn') => {
-                    try {
-                        if (source === 'espn') {
-                            // ESPN Cricinfo hs-consumer-api match card structure
-                            const ms = raw.matchScore || {};
-                            const mInfo = raw.match || raw;
-                            const t1 = mInfo.team1 || {};
-                            const t2 = mInfo.team2 || {};
-                            const series = mInfo.series || mInfo.tournament || {};
+                const upcomingData = await fetchWithCacheAndRetry('https://cricbuzz-cricket.p.rapidapi.com/matches/v1/upcoming', { headers: rapidHeaders }, 300000);
 
-                            // State mapping: ESPN uses 'live'|'completed'|'upcoming'|'innings break' etc.
-                            const stateRaw = (mInfo.state || mInfo.matchPlayingStatus || '').toLowerCase();
-                            const matchStarted = !stateRaw.includes('preview') && !stateRaw.includes('upcoming') && stateRaw !== '';
-                            const matchEnded = stateRaw.includes('complete') || stateRaw.includes('finished') || stateRaw.includes('result') || stateRaw.includes('ended');
-
-                            // Score extraction — ESPN nests per-innings in `inningScores[]`
-                            const buildScoreArr = (scoreObj, teamName) => {
-                                const inningScores = scoreObj?.inningScores || [];
-                                if (inningScores.length > 0) {
-                                    return inningScores.map((inn) => ({
-                                        inning: inn.inningName || teamName,
-                                        r: inn.runs ?? 0,
-                                        w: inn.wickets ?? 0,
-                                        o: inn.overs ?? '0.0',
-                                    }));
-                                }
-                                // Fallback to flat score if inningScores absent
-                                if (scoreObj?.runs != null) {
-                                    return [{
-                                        inning: teamName,
-                                        r: scoreObj.runs ?? 0,
-                                        w: scoreObj.wickets ?? 0,
-                                        o: scoreObj.overs ?? '0.0',
-                                    }];
-                                }
-                                return [];
-                            };
-
-                            const scoreArr = [
-                                ...buildScoreArr(ms.team1Score, t1.longName || t1.name || 'Team A'),
-                                ...buildScoreArr(ms.team2Score, t2.longName || t2.name || 'Team B'),
-                            ];
-
-                            return {
-                                id: (mInfo.objectId || mInfo.id || '').toString(),
-                                name: `${t1.longName || t1.name || 'TBD'} vs ${t2.longName || t2.name || 'TBD'}`,
-                                series: series.longName || series.name || '',
-                                date: new Date(mInfo.startDate || mInfo.startTime || Date.now()),
-                                matchStarted,
-                                matchEnded,
-                                status: mInfo.statusText || mInfo.matchStatusText || (matchEnded ? 'Finished' : matchStarted ? 'In Progress' : 'Upcoming'),
-                                teams: [t1.longName || t1.name || 'Team A', t2.longName || t2.name || 'Team B'],
-                                score: scoreArr,
-                            };
+                const extractCricbuzzMatches = (apiResponse) => {
+                    const matches = [];
+                    const typeMatches = apiResponse?.typeMatches || [];
+                    for (const type of typeMatches) {
+                        for (const series of (type.seriesMatches || [])) {
+                            if (series.seriesAdWrapper?.matches) {
+                                matches.push(...series.seriesAdWrapper.matches);
+                            }
                         }
-
-                        if (source === 'cricbuzz') {
-                            // Cricbuzz public web-JSON structure
-                            const info = raw.matchInfo || raw;
-                            const score = raw.matchScore || {};
-                            const t1 = info.team1 || {};
-                            const t2 = info.team2 || {};
-
-                            const stateRaw = (info.state || '').toLowerCase();
-                            const matchStarted = stateRaw !== 'preview' && stateRaw !== 'upcoming';
-                            const matchEnded = stateRaw === 'complete' || stateRaw === 'result';
-
-                            return {
-                                id: (info.matchId || info.id || '').toString(),
-                                name: `${t1.teamName || 'TBD'} vs ${t2.teamName || 'TBD'}`,
-                                series: info.seriesName || '',
-                                date: new Date(parseInt(info.startDate || '0')),
-                                matchStarted,
-                                matchEnded,
-                                status: info.status || (matchEnded ? 'Finished' : matchStarted ? 'In Progress' : 'Upcoming'),
-                                teams: [t1.teamName || 'Team A', t2.teamName || 'Team B'],
-                                score: [
-                                    {
-                                        inning: t1.teamName || 'Team A',
-                                        r: score?.team1Score?.inngs1?.runs ?? 0,
-                                        w: score?.team1Score?.inngs1?.wickets ?? 0,
-                                        o: score?.team1Score?.inngs1?.overs ?? '0.0',
-                                    },
-                                    {
-                                        inning: t2.teamName || 'Team B',
-                                        r: score?.team2Score?.inngs1?.runs ?? 0,
-                                        w: score?.team2Score?.inngs1?.wickets ?? 0,
-                                        o: score?.team2Score?.inngs1?.overs ?? '0.0',
-                                    },
-                                ],
-                            };
-                        }
-
-                        // source === 'ipl' — IPLT20 standings/live feed
-                        // This feed returns team standings; we synthesise a lightweight
-                        // match stub so the scoring engine can still surface IPL context.
-                        if (source === 'ipl') {
-                            const t1 = raw.Team1 || raw.HomeTeam || {};
-                            const t2 = raw.Team2 || raw.AwayTeam || {};
-                            return {
-                                id: (raw.MatchID || raw.matchid || '').toString(),
-                                name: `${t1.Name || t1.ShortName || 'TBD'} vs ${t2.Name || t2.ShortName || 'TBD'}`,
-                                series: 'IPL 2026',
-                                date: raw.StartDate ? new Date(raw.StartDate) : new Date(),
-                                matchStarted: raw.MatchStarted === true || raw.Status === 'Live',
-                                matchEnded: raw.MatchEnded === true || raw.Status === 'Result',
-                                status: raw.StatusText || raw.Status || 'IPL Match',
-                                teams: [t1.Name || t1.ShortName || 'TBD', t2.Name || t2.ShortName || 'TBD'],
-                                score: [
-                                    {
-                                        inning: t1.Name || t1.ShortName || 'Team A',
-                                        r: parseInt(raw.Team1Runs || 0),
-                                        w: parseInt(raw.Team1Wickets || 0),
-                                        o: raw.Team1Overs || '0.0',
-                                    },
-                                    {
-                                        inning: t2.Name || t2.ShortName || 'Team B',
-                                        r: parseInt(raw.Team2Runs || 0),
-                                        w: parseInt(raw.Team2Wickets || 0),
-                                        o: raw.Team2Overs || '0.0',
-                                    },
-                                ],
-                            };
-                        }
-
-                        return null;
-                    } catch (normErr) {
-                        console.warn('[normalizeMatchData] Skipping malformed entry:', normErr.message);
-                        return null;
                     }
+                    return matches;
                 };
 
-                // ── SOURCE A: ESPN Cricinfo (primary) ────────────────────────────
-                // Fetch all three ESPN feeds in parallel — same latency as one request.
-                let mergedMatches = [];
+                const rawMatches = [
+                    ...extractCricbuzzMatches(liveData),
+                    ...extractCricbuzzMatches(recentData),
+                    ...extractCricbuzzMatches(upcomingData)
+                ];
 
-                try {
-                    const espnFetchOpts = { headers: cricketHeaders };
-                    const [espnCurrent, espnUpcoming, espnRecent] = await Promise.allSettled([
-                        fetchWithCacheAndRetry(ESPN_CURRENT, espnFetchOpts, 30000),
-                        fetchWithCacheAndRetry(ESPN_UPCOMING, espnFetchOpts, 300000),
-                        fetchWithCacheAndRetry(ESPN_RECENT, espnFetchOpts, 120000),
-                    ]);
-
-                    // ESPN wraps matches in `content.matchCards[]` or `matches[]`
-                    const extractEspnMatches = (result) => {
-                        if (result.status !== 'fulfilled') return [];
-                        const data = result.value;
-                        // Try the standard matchCards envelope first
-                        if (Array.isArray(data?.content?.matchCards)) {
-                            return data.content.matchCards.map((mc) => mc.match || mc).filter(Boolean);
-                        }
-                        // Fallback: flat matches array
-                        if (Array.isArray(data?.matches)) return data.matches;
-                        // Some current endpoints wrap in content.matches
-                        if (Array.isArray(data?.content?.matches)) return data.content.matches;
-                        return [];
-                    };
-
-                    const espnRaw = [
-                        ...extractEspnMatches(espnCurrent),
-                        ...extractEspnMatches(espnUpcoming),
-                        ...extractEspnMatches(espnRecent),
-                    ];
-
-                    const seenIds = new Set();
-                    for (const raw of espnRaw) {
-                        const normalized = normalizeMatchData(raw, 'espn');
-                        if (normalized?.id && !seenIds.has(normalized.id) && normalized.name !== 'TBD vs TBD') {
-                            seenIds.add(normalized.id);
-                            mergedMatches.push(normalized);
-                        }
-                    }
-                    console.log(`[Cricket/ESPN] Normalised ${mergedMatches.length} matches from ESPN Cricinfo.`);
-                } catch (espnErr) {
-                    console.warn('[Cricket/ESPN] Primary source failed:', espnErr.message);
-                }
-
-                // ── SOURCE B: Cricbuzz public web-JSON (secondary fallback) ──────
-                if (mergedMatches.length === 0) {
-                    console.log('[Cricket] ESPN returned 0 matches. Falling back to Cricbuzz web-JSON...');
-                    try {
-                        const cbzFetchOpts = {
-                            headers: {
-                                ...cricketHeaders,
-                                'Origin': 'https://www.cricbuzz.com',
-                                'Referer': 'https://www.cricbuzz.com/',
-                            }
-                        };
-                        const [cbzLive, cbzUpcoming, cbzRecent] = await Promise.allSettled([
-                            fetchWithCacheAndRetry(CBZ_LIVE, cbzFetchOpts, 30000),
-                            fetchWithCacheAndRetry(CBZ_UPCOMING, cbzFetchOpts, 300000),
-                            fetchWithCacheAndRetry(CBZ_RECENT, cbzFetchOpts, 120000),
-                        ]);
-
-                        // Cricbuzz web-JSON nests matches inside typeMatches[].seriesMatches[].seriesAdWrapper.matches
-                        const extractCbzMatches = (result) => {
-                            if (result.status !== 'fulfilled') return [];
-                            const data = result.value;
-                            const out = [];
-                            for (const type of (data?.typeMatches || [])) {
-                                for (const series of (type.seriesMatches || [])) {
-                                    const arr = series.seriesAdWrapper?.matches || series.matches || [];
-                                    out.push(...arr);
-                                }
-                            }
-                            // Flat fallback
-                            if (out.length === 0 && Array.isArray(data?.matches)) out.push(...data.matches);
-                            return out;
-                        };
-
-                        const cbzRaw = [
-                            ...extractCbzMatches(cbzLive),
-                            ...extractCbzMatches(cbzUpcoming),
-                            ...extractCbzMatches(cbzRecent),
-                        ];
-
-                        const seenIds = new Set();
-                        for (const raw of cbzRaw) {
-                            const normalized = normalizeMatchData(raw, 'cricbuzz');
-                            if (normalized?.id && !seenIds.has(normalized.id) && normalized.name !== 'TBD vs TBD') {
-                                seenIds.add(normalized.id);
-                                mergedMatches.push(normalized);
-                            }
-                        }
-                        console.log(`[Cricket/Cricbuzz] Normalised ${mergedMatches.length} matches from Cricbuzz web-JSON.`);
-                    } catch (cbzErr) {
-                        console.warn('[Cricket/Cricbuzz] Secondary source failed:', cbzErr.message);
-                    }
-                }
-
-                // ── SOURCE C: IPLT20 official feed (tertiary — IPL-specific only) ─
-                const isIplQueryEarly =
-                    fullContextCheck.includes('ipl') ||
-                    fullContextCheck.includes('indian premier') ||
-                    (tournament ?? '').toLowerCase().includes('ipl');
-
-                if (mergedMatches.length === 0 && isIplQueryEarly) {
-                    console.log('[Cricket] All sources empty for IPL query. Trying IPLT20 official feed...');
-                    try {
-                        const iplRaw = await fetchWithCacheAndRetry(
-                            IPL_LIVE,
+                const normalizeCricbuzzMatch = (cbMatch) => {
+                    const info = cbMatch.matchInfo;
+                    const score = cbMatch.matchScore;
+                    return {
+                        id: info?.matchId?.toString(),
+                        name: `${info?.team1?.teamName} vs ${info?.team2?.teamName}`,
+                        series: info?.seriesName,
+                        date: new Date(parseInt(info?.startDate)),
+                        matchStarted: info?.state !== 'Preview' && info?.state !== 'Upcoming',
+                        matchEnded: info?.state === 'Complete' || info?.state === 'Result',
+                        status: info?.status,
+                        teams: [info?.team1?.teamName, info?.team2?.teamName],
+                        score: [
                             {
-                                headers: {
-                                    ...cricketHeaders,
-                                    'Origin': 'https://www.iplt20.com',
-                                    'Referer': 'https://www.iplt20.com/',
-                                }
+                                inning: info?.team1?.teamName,
+                                r: score?.team1Score?.inngs1?.runs || 0,
+                                w: score?.team1Score?.inngs1?.wickets || 0,
+                                o: score?.team1Score?.inngs1?.overs || 0
                             },
-                            60000
-                        );
-                        // The IPLT20 feed is JSONP: `onStandingData({...})` — strip the wrapper
-                        const iplJson = typeof iplRaw === 'string'
-                            ? JSON.parse(iplRaw.replace(/^[^(]+\(/, '').replace(/\);?\s*$/, ''))
-                            : iplRaw;
-
-                        const iplMatches = iplJson?.Standings?.Standing || iplJson?.matches || [];
-                        const seenIds = new Set();
-                        for (const raw of iplMatches) {
-                            const normalized = normalizeMatchData(raw, 'ipl');
-                            if (normalized?.id && !seenIds.has(normalized.id)) {
-                                seenIds.add(normalized.id);
-                                mergedMatches.push(normalized);
+                            {
+                                inning: info?.team2?.teamName,
+                                r: score?.team2Score?.inngs1?.runs || 0,
+                                w: score?.team2Score?.inngs1?.wickets || 0,
+                                o: score?.team2Score?.inngs1?.overs || 0
                             }
-                        }
-                        console.log(`[Cricket/IPLT20] Normalised ${mergedMatches.length} entries from IPLT20 feed.`);
-                    } catch (iplErr) {
-                        console.warn('[Cricket/IPLT20] Tertiary source failed:', iplErr.message);
+                        ]
+                    };
+                };
+
+                const seenIds = new Set();
+                const mergedMatches = [];
+                for (const raw of rawMatches) {
+                    const normalized = normalizeCricbuzzMatch(raw);
+                    if (normalized.id && !seenIds.has(normalized.id)) {
+                        seenIds.add(normalized.id);
+                        mergedMatches.push(normalized);
                     }
                 }
 
                 if (mergedMatches.length === 0) {
-                    throw new Error('No cricket data available. All three sources (ESPN, Cricbuzz, IPLT20) failed or returned empty feeds.');
+                    throw new Error('No cricket data available from RapidAPI.');
                 }
 
                 const tournamentLower = (tournament ?? '').toLowerCase();
@@ -816,7 +587,6 @@ export const getSportsDataTool = tool(
                         const isMatchFinished = match.matchEnded === true;
                         const isMatchFuture = match.matchStarted === false && match.matchEnded === false;
 
-                        // ── STRICT TOURNAMENT GATE ────────────────────────────────
                         const isTournamentRequested = isIplQuery || tournamentLower !== '';
                         const matchesTournament =
                             (isIplQuery && (matchSeriesLower.includes('ipl') || matchSeriesLower.includes('indian premier'))) ||
@@ -826,19 +596,16 @@ export const getSportsDataTool = tool(
                             return { match, score: 0, matchDateObj, matchDateStr };
                         }
 
-                        // ── Tier A: Tournament priority ──────────────────────────
                         if (matchesTournament) {
                             score += isIplQuery ? 500 : 300;
                         }
 
-                        // ── Tier B: Team name token matching ─────────────────────
                         for (const token of normalizedMentions) {
                             if (token.length > 1 && (matchNameLower.includes(token) || matchSeriesLower.includes(token))) {
                                 score += 100;
                             }
                         }
 
-                        // ── Tier C: Structured temporal intent (IST-accurate) ────
                         if (specificDateStr && matchDateStr === specificDateStr) {
                             score += 150;
                         }
@@ -888,7 +655,6 @@ export const getSportsDataTool = tool(
 
                 const targetMatch = scoredMatches[0].match;
 
-                // ── MULTI-MATCH CONTEXT PAYLOAD ─────────────────────────
                 const scheduleKeywords = ['schedule', 'fixture', 'fixtures', 'upcoming', 'coming up', 'next matches', 'matches this week', 'calendar'];
                 const isScheduleQuery = temporal_intent === 'future' || scheduleKeywords.some((kw) => voiceNormalizedQuery.includes(kw));
 
@@ -908,7 +674,6 @@ export const getSportsDataTool = tool(
                     }
                 }
 
-                // ── Score extraction ────────────────────────────────────────────
                 const teamAName = targetMatch.teams?.[0] || 'Team A';
                 const teamBName = targetMatch.teams?.[1] || 'Team B';
                 let scoreA = '-';
@@ -1000,7 +765,7 @@ export const getSportsDataTool = tool(
                 isLive: false,
                 teamA: { name: 'System', score: '-' },
                 teamB: { name: 'Error', score: '-' },
-                status: 'Data temporarily unavailable',
+                status: error.message.includes('RAPIDAPI_KEY') ? 'API Key Missing' : 'Data temporarily unavailable',
             });
             return `API Error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:SPORTS:${errorData}||`;
         }
