@@ -752,6 +752,43 @@ export const generateAIResponse = async (
         ]);
     } catch (error) {
         console.error('LLM Master Pipeline Error:', error);
+
+        // 🛡️ SURGICAL FIX: [GROQ-XML-02] Self-Healing Architecture for Groq
+        // tool_use_failed errors. When Llama-3 suffers an XML tokenization
+        // glitch (e.g., emitting '<function=tool_name{...}</function>' without
+        // the closing '>'), Groq's strict parser throws a 400 Bad Request with:
+        //   error.error.error.code === 'tool_use_failed'
+        //   error.error.error.type === 'invalid_request_error'
+        // Previously this crashed through to the generic handler below, showing
+        // a scary "secure connection disruption" message. Now we intercept it
+        // and return a clean, user-friendly retry prompt so the frontend never
+        // sees a broken state.
+        const groqErrorCode = error?.error?.error?.code
+            || error?.response?.data?.error?.code
+            || error?.code
+            || '';
+        const groqErrorType = error?.error?.error?.type
+            || error?.response?.data?.error?.type
+            || '';
+        const errorMessage = error?.message || '';
+
+        if (
+            groqErrorCode === 'tool_use_failed'
+            || groqErrorType === 'invalid_request_error'
+            || errorMessage.includes('tool_use_failed')
+            || errorMessage.includes('failed_generation')
+        ) {
+            console.warn(
+                '🛡️ [GROQ-XML-02] Intercepted Groq tool_use_failed — returning graceful fallback. ' +
+                `Code: ${groqErrorCode}, Type: ${groqErrorType}`
+            );
+            return {
+                error: false,
+                text: 'I am accessing the data, but I encountered a temporary connection glitch. Please ask me again.',
+                card: null,
+            };
+        }
+
         return {
             error: true,
             text: 'I encountered a secure connection disruption while processing that. Please try again.',

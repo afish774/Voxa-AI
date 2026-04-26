@@ -829,8 +829,18 @@ export const getNASATool = tool(
     },
     {
         name: 'get_nasa_data',
-        description: 'Fetches NASA space data. "apod" = Astronomy Picture of the Day. "neo" = Near Earth Asteroids. "mars" = Latest Mars Curiosity rover photos.',
-        schema: z.object({ queryType: z.enum(['apod', 'neo', 'mars']) }),
+        // 🛡️ SURGICAL FIX: [GROQ-XML-01] Aggressively explicit description to prevent
+        // Groq Llama-3 XML tokenization glitch on single-parameter tools. The model
+        // was rushing token generation and emitting malformed XML like:
+        //   <function=get_nasa_data{"queryType": "apod"}</function>
+        // (missing closing '>'), causing a 400 Bad Request with code 'tool_use_failed'.
+        // Verbose description forces the model to slow down and generate correct XML.
+        description: 'Fetches NASA space data. MANDATORY: You MUST pass exactly ONE of these three literal enum strings as queryType: "apod" = Astronomy Picture of the Day, "neo" = Near Earth Asteroids today, "mars" = Latest Mars Curiosity rover photos. Do NOT pass any other value.',
+        schema: z.object({
+            queryType: z.enum(['apod', 'neo', 'mars']).describe(
+                'MANDATORY: The exact type of NASA data to fetch. You MUST pass the exact string "apod" for Astronomy Picture of the Day, "neo" for Near Earth Objects, or "mars" for Mars rover photos. No other values are accepted.'
+            ),
+        }),
     }
 );
 
