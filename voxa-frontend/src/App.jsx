@@ -327,7 +327,8 @@ function VoiceAssistant({ user, onLogout }) {
   const handleAudioEnd = useCallback(() => { setTimeout(() => { triggerVoiceContinuation(); }, 500); }, [triggerVoiceContinuation]);
 
   return (
-    <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale" }}>
+    // 📱 RESPONSIVE FIX: Root container — uses dvh for mobile viewport safety, overflow hidden
+    <div style={{ position: "fixed", inset: 0, width: "100vw", height: "100dvh", background: "#000", overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", WebkitFontSmoothing: "antialiased", MozOsxFontSmoothing: "grayscale", WebkitTextSizeAdjust: "100%" }}>
       <GlobalStyles />
       <audio ref={handleAudioRef} style={{ display: "none" }} onEnded={handleAudioEnd} />
 

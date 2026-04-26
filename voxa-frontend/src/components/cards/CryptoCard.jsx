@@ -147,7 +147,8 @@ const CryptoCard = ({ coin, symbol, price, change, sparklineData }) => {
             )}
           </div>
           <div className="flex flex-col">
-            <span className="text-[#FFFFFF] font-medium text-[17px] leading-tight capitalize tracking-tight">
+            {/* 🧹 QA FIX: Added truncate to prevent long coin name overflow */}
+            <span className="text-[#FFFFFF] font-medium text-[17px] leading-tight capitalize tracking-tight truncate max-w-[120px]">
               {coin || 'Crypto'}
             </span>
             <span className="text-[#71717A] text-[13px] font-semibold leading-tight mt-[2px] uppercase tracking-widest">

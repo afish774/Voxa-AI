@@ -37,50 +37,69 @@ import SearchWidget from '../cards/SearchWidget';
 const WidgetRenderer = ({ card }) => {
   if (!card || !card.type) return null;
 
-  switch (card.type) {
-    // ── Batch 1: Daily Life Suite ──────────────────────────────────────────
-    case 'briefing':
-      return <BriefingWidget key="briefing-card" data={card} />;
-    case 'finance':
-      return <FinanceWidget key="finance-card" data={card} />;
-    case 'fitness':
-      return <FitnessWidget key="fitness-card" data={card} />;
-    case 'forecast':
-      return <ForecastWidget key="forecast-card" data={card} />;
-    case 'receipt':
-      return <ActionReceiptWidget key="receipt-card" data={card} />;
+  // 📱 RESPONSIVE FIX: Fluid container wrapper — enforces w-full + overflow-hidden
+  // to prevent any child widget from causing horizontal scroll on mobile devices.
+  // All individual widgets use max-w constraints internally (e.g., max-w-[460px]).
+  const widget = (() => {
+    switch (card.type) {
+      // ── Batch 1: Daily Life Suite ──────────────────────────────────────────
+      case 'briefing':
+        return <BriefingWidget key="briefing-card" data={card} />;
+      case 'finance':
+        return <FinanceWidget key="finance-card" data={card} />;
+      case 'fitness':
+        return <FitnessWidget key="fitness-card" data={card} />;
+      case 'forecast':
+        return <ForecastWidget key="forecast-card" data={card} />;
+      case 'receipt':
+        return <ActionReceiptWidget key="receipt-card" data={card} />;
 
-    // ── Batch 2: Travel & Global Suite ─────────────────────────────────────
-    case 'flight':
-      return <FlightWidget key="flight-card" data={card} />;
-    case 'currency':
-      return <CurrencyWidget key="currency-card" data={card} />;
-    case 'translate':
-      return <TranslateWidget key="translate-card" data={card} />;
-    case 'timezone':
-      return <TimezoneWidget key="timezone-card" data={card} />;
+      // ── Batch 2: Travel & Global Suite ─────────────────────────────────────
+      case 'flight':
+        return <FlightWidget key="flight-card" data={card} />;
+      case 'currency':
+        return <CurrencyWidget key="currency-card" data={card} />;
+      case 'translate':
+        return <TranslateWidget key="translate-card" data={card} />;
+      case 'timezone':
+        return <TimezoneWidget key="timezone-card" data={card} />;
 
-    // ── Batch 3: Intelligence & Utility Suite ──────────────────────────────
-    case 'news':
-      return <NewsWidget key="news-card" data={card} />;
-    case 'movie':
-      return <MovieWidget key="movie-card" data={card} />;
-    case 'recipe':
-      return <RecipeWidget key="recipe-card" data={card} />;
-    case 'stock':
-      return <StockWidget key="stock-card" data={card} />;
-    case 'medicine':
-      return <MedicineWidget key="medicine-card" data={card} />;
-    case 'countdown':
-      return <CountdownWidget key="countdown-card" data={card} />;
-    case 'calculator':
-      return <CalculatorWidget key="calculator-card" data={card} />;
-    case 'search':
-      return <SearchWidget key="search-card" data={card} />;
+      // ── Batch 3: Intelligence & Utility Suite ──────────────────────────────
+      case 'news':
+        return <NewsWidget key="news-card" data={card} />;
+      case 'movie':
+        return <MovieWidget key="movie-card" data={card} />;
+      case 'recipe':
+        return <RecipeWidget key="recipe-card" data={card} />;
+      case 'stock':
+        return <StockWidget key="stock-card" data={card} />;
+      case 'medicine':
+        return <MedicineWidget key="medicine-card" data={card} />;
+      case 'countdown':
+        return <CountdownWidget key="countdown-card" data={card} />;
+      case 'calculator':
+        return <CalculatorWidget key="calculator-card" data={card} />;
+      case 'search':
+        return <SearchWidget key="search-card" data={card} />;
 
-    default:
-      return null;
-  }
+      default:
+        return null;
+    }
+  })();
+
+  if (!widget) return null;
+
+  // 📱 RESPONSIVE FIX: Fluid wrapper ensures no widget overflows its parent
+  return (
+    <div style={{
+      width: '100%',
+      maxWidth: '100%',
+      overflowX: 'hidden',
+      overflowY: 'visible',
+    }}>
+      {widget}
+    </div>
+  );
 };
 
 export default WidgetRenderer;
