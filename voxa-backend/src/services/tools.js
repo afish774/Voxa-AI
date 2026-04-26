@@ -26,12 +26,36 @@ const apiCache = new LRUCache({
     allowStale: false,
 });
 
+// 🛡️ OMNI-AUDIT FIX: [SEC-API-01] Strip API keys from cache keys.
+// API keys embedded in URLs (AVIATIONSTACK, CRICKET, GNEWS, etc.) were used
+// verbatim as LRU cache keys. Any logging, error trace, or monitoring tool
+// capturing cache keys would leak production credentials. This function
+// redacts known key parameters while preserving the rest of the URL for
+// cache uniqueness.
+const sanitizeCacheKey = (url) => {
+    try {
+        const u = new URL(url);
+        const sensitiveParams = ['apikey', 'api_key', 'access_key', 'token', 'key'];
+        for (const param of sensitiveParams) {
+            if (u.searchParams.has(param)) {
+                u.searchParams.set(param, 'REDACTED');
+            }
+        }
+        return u.toString();
+    } catch {
+        // Non-standard URL — strip everything after '?' as a safe fallback
+        return url.split('?')[0] || url;
+    }
+};
+
 const fetchWithCacheAndRetry = async (
     url, options = {}, ttlMs = 60000, retries = 2, timeoutMs = 8000
 ) => {
-    const cached = apiCache.get(url);
+    // 🛡️ OMNI-AUDIT FIX: [SEC-API-01] Use sanitized key for cache ops and logs
+    const cacheKey = sanitizeCacheKey(url);
+    const cached = apiCache.get(cacheKey);
     if (cached !== undefined) {
-        console.log(`⚡ [Cache Hit] 0ms latency for: ${url}`);
+        console.log(`⚡ [Cache Hit] 0ms latency for: ${cacheKey}`);
         return cached;
     }
     for (let i = 0; i <= retries; i++) {
@@ -48,7 +72,7 @@ const fetchWithCacheAndRetry = async (
             if (response.status === 451) throw new Error('GEO_BLOCKED_451');
             if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
             const data = await response.json();
-            apiCache.set(url, data, { ttl: ttlMs });
+            apiCache.set(cacheKey, data, { ttl: ttlMs }); // 🛡️ OMNI-AUDIT FIX: [SEC-API-01] sanitized key
             return data;
         } catch (error) {
             clearTimeout(timeoutId);

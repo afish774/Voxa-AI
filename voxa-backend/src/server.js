@@ -11,6 +11,26 @@ import learnRoutes from './routes/learnRoutes.js';
 
 dotenv.config();
 
+// ============================================================================
+// 🛡️ OMNI-AUDIT FIX: [MEM-LEAK-03] Global Process Safety Net
+//
+// Without these handlers, an unhandled promise rejection in a fire-and-forget
+// path (e.g., background fact extraction via PQueue, a stray .catch() miss)
+// crashes the entire Node.js process in Node 16+ where
+// --unhandled-rejections=throw is the default. This logs the error and keeps
+// the server alive for rejections, while allowing a graceful flush for truly
+// fatal uncaught exceptions.
+// ============================================================================
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('🚨 [PROCESS] Unhandled Promise Rejection:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('🚨 [PROCESS] Uncaught Exception — shutting down gracefully:', err);
+    setTimeout(() => process.exit(1), 1000);
+});
+
 connectDB();
 
 const app = express();
@@ -70,17 +90,18 @@ app.use(
 // ============================================================================
 
 /**
- * 🛠️ AUDIT FIX: [ERR-03] — Body size limit kept at 50mb for base64 image
- * uploads, but the actual payload content is validated in chatRoutes.js before
- * reaching the AI pipeline (MIME type check + 3MB decoded-size cap).
+ * 🛡️ OMNI-AUDIT FIX: [MEM-LEAK-03] — Body limit reduced from 50MB to 10MB.
  *
- * The 50mb express limit is intentionally kept generous here so that the
- * structured validation error in chatRoutes produces a clean user-facing
- * message rather than an abrupt 413 Payload Too Large from express's parser,
- * which bypasses the SSE event stream entirely.
+ * BEFORE: 50MB limit allowed a malicious user to POST 50MB × 20 req/min
+ * (per the rate limiter) = 1GB/min of body parsing memory.
+ *
+ * AFTER: 10MB — still 3× the 3MB image cap validated in chatRoutes.js,
+ * providing ample headroom for base64 overhead and metadata, while cutting
+ * the abuse surface by 80%. The structured validation error in chatRoutes
+ * still produces a clean user-facing message for payloads between 3MB–10MB.
  */
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // ============================================================================
 // 🔐 PASSPORT (Sessionless OAuth)
