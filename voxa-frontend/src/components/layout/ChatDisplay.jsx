@@ -5,6 +5,10 @@ import { QuerySlider, TypingText } from "./QueryElements";
 import WeatherCard from "../visuals/WeatherCard";
 import SportsCard from "../cards/SportsCard";
 import CryptoCard from "../cards/CryptoCard";
+// 🎨 UI PIPELINE FIX: NASA APOD premium visual card
+import NasaApodCard from "../cards/NasaApodCard";
+// 🎨 BATCH 1: Master Widget Renderer for new card types
+import WidgetRenderer from "../cards/WidgetRenderer";
 
 export default function ChatDisplay({
     theme, showGreeting, isCameraMode, greetingText, userName, handleRandomQuerySelect,
@@ -38,16 +42,12 @@ export default function ChatDisplay({
                                         {currentCard && currentCard.type === 'weather' && phase === PHASES.RESPONDING && <WeatherCard key="weather-card" data={currentCard} theme={theme} />}
                                         {currentCard && currentCard.type === 'sports' && phase === PHASES.RESPONDING && <SportsCard key="sports-card" data={currentCard} theme={theme} />}
                                         {currentCard && currentCard.type === 'crypto' && phase === PHASES.RESPONDING && <CryptoCard key="crypto-card" coin={currentCard.coin} price={currentCard.price} change={currentCard.change} theme={theme} />}
+                                        {/* 🎨 UI PIPELINE FIX: NASA APOD visual card */}
+                                        {currentCard && currentCard.type === 'apod' && phase === PHASES.RESPONDING && <NasaApodCard key="apod-card" data={currentCard} />}
 
-                                        {/* 📩 NEW RECEIPT CARD WIDGET (Reminders & Emails) */}
-                                        {currentCard && currentCard.type === 'receipt' && phase === PHASES.RESPONDING && (
-                                            <motion.div key="receipt-card" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} style={{ padding: "16px 24px", borderRadius: 16, background: "rgba(16, 185, 129, 0.1)", border: "1px solid rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", gap: 12, marginTop: 16, backdropFilter: "blur(10px)" }}>
-                                                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "rgba(16, 185, 129, 0.2)", display: "flex", alignItems: "center", justifyContent: "center", color: "#10b981", fontWeight: "bold", flexShrink: 0 }}>✓</div>
-                                                <span style={{ color: theme.text, fontSize: 15, fontWeight: 500, letterSpacing: "-0.01em" }}>
-                                                    {/* 🛠️ SURGICAL FIX: Guard against undefined message to prevent white-screen crash */}
-                                                    {(currentCard.message || 'Action completed').replace(/^RECEIPT:/i, '').split(':').slice(1).join(':').trim() || currentCard.message || 'Action completed'}
-                                                </span>
-                                            </motion.div>
+                                        {/* 🎨 ALL BATCHES: WidgetRenderer handles all 17 card types */}
+                                        {currentCard && ['briefing', 'finance', 'fitness', 'forecast', 'receipt', 'flight', 'currency', 'translate', 'timezone', 'news', 'movie', 'recipe', 'stock', 'medicine', 'countdown', 'calculator', 'search'].includes(currentCard.type) && phase === PHASES.RESPONDING && (
+                                            <WidgetRenderer key={`widget-${currentCard.type}`} card={currentCard} />
                                         )}
                                     </AnimatePresence>
 

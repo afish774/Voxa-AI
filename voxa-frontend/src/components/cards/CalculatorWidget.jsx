@@ -1,0 +1,141 @@
+import React from 'react';
+import { motion } from 'framer-motion';
+import { Calculator, Equal, ArrowRight } from 'lucide-react';
+
+// ============================================================================
+// 🧮 CalculatorWidget — Futuristic Math Solver Card
+// ============================================================================
+// Payload shape (from calculateTool):
+//   expression — "15% of 2400"
+//   result     — "360" (formatted string)
+//   rawResult  — 360 (number)
+//   formula    — "15% × 2400"
+//   steps      — ["Step 1", "Step 2", ...]
+//   type       — "percentage_value" | "arithmetic" | "bmi" | ...
+//   extras     — { ... } additional computed values
+// ============================================================================
+
+const TYPE_LABELS = {
+  arithmetic: 'Arithmetic', percentage_value: 'Percentage', percentage_what: 'Percentage',
+  tip: 'Tip Calculator', discount: 'Discount', unit_conversion: 'Unit Conversion',
+  bmi: 'BMI Calculator', compound_interest: 'Compound Interest',
+  simple_interest: 'Simple Interest', age: 'Age Calculator',
+};
+
+const CalculatorWidget = ({ data }) => {
+  const {
+    expression = '', result = '0', formula, steps = [],
+    type = 'arithmetic', extras, error,
+  } = data || {};
+
+  if (error) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[420px] rounded-[28px] p-6 mt-5"
+        style={{ background: '#0B0B0C', border: '1px solid rgba(239,68,68,0.12)' }}>
+        <span className="text-[13px] text-red-400 font-medium">{error}</span>
+      </motion.div>
+    );
+  }
+
+  const typeLabel = TYPE_LABELS[type] || 'Calculator';
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20, scale: 0.97 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
+      className="relative w-full max-w-[420px] rounded-[32px] overflow-hidden mt-5"
+      style={{
+        background: '#0B0B0C',
+        border: '1px solid rgba(139, 92, 246, 0.08)',
+        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+      }}
+    >
+      <div className="absolute inset-0 pointer-events-none" style={{
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(139, 92, 246, 0.05) 0%, transparent 60%)',
+      }} />
+
+      <div className="relative z-10 p-7">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-5">
+          <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{
+            background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.18)',
+          }}>
+            <Calculator className="w-4 h-4 text-violet-400" />
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-400/70">{typeLabel}</span>
+        </div>
+
+        {/* Expression */}
+        <div className="p-3.5 rounded-2xl mb-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <p className="text-[15px] text-[#D4D4D8] font-mono font-medium tracking-tight">{expression}</p>
+        </div>
+
+        {/* Steps */}
+        {steps.length > 0 && (
+          <div className="mb-4">
+            <p className="text-[10px] text-[#52525B] font-semibold uppercase tracking-wider mb-2">Solution Steps</p>
+            <div className="flex flex-col gap-1.5">
+              {steps.map((step, i) => (
+                <motion.div
+                  key={i}
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: 0.1 + i * 0.06 }}
+                  className="flex items-start gap-2.5 py-1.5 px-3 rounded-lg"
+                  style={{ background: i === steps.length - 1 ? 'rgba(139,92,246,0.04)' : 'transparent' }}
+                >
+                  <span className="text-[10px] font-bold text-[#3F3F46] mt-0.5 shrink-0 w-4 text-right">{i + 1}</span>
+                  <ArrowRight className="w-3 h-3 text-[#3F3F46] mt-0.5 shrink-0" />
+                  <span className="text-[13px] text-[#A1A1AA] font-mono leading-snug">{step}</span>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Formula (if different from steps) */}
+        {formula && steps.length === 0 && (
+          <div className="p-3 rounded-xl mb-4" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <p className="text-[12px] text-[#71717A] font-mono">{formula}</p>
+          </div>
+        )}
+
+        {/* Result — Hero */}
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ delay: 0.3, duration: 0.4 }}
+          className="p-5 rounded-2xl text-center"
+          style={{
+            background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.08), rgba(168, 85, 247, 0.04))',
+            border: '1px solid rgba(139, 92, 246, 0.12)',
+          }}
+        >
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <Equal className="w-4 h-4 text-violet-400/60" />
+            <span className="text-[11px] text-violet-400/60 font-semibold uppercase tracking-wider">Result</span>
+          </div>
+          <p className="text-[36px] font-bold text-violet-300 tracking-[-0.03em] leading-none font-mono">{result}</p>
+        </motion.div>
+
+        {/* Extras */}
+        {extras && Object.keys(extras).length > 0 && (
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            {Object.entries(extras).map(([key, val], i) => (
+              <div key={i} className="p-2.5 rounded-xl text-center" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
+                <p className="text-[10px] text-[#52525B] uppercase tracking-wider font-semibold mb-0.5">
+                  {key.replace(/([A-Z])/g, ' $1').trim()}
+                </p>
+                <p className="text-[14px] text-[#D4D4D8] font-semibold font-mono">{val}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </motion.div>
+  );
+};
+
+export default CalculatorWidget;

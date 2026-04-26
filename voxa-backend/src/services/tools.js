@@ -810,7 +810,10 @@ export const getNASATool = tool(
             let cardPayload;
             if (queryType === 'apod') {
                 const data = await fetchWithCacheAndRetry(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}&thumbs=true`, {}, 3600000);
-                cardPayload = JSON.stringify({ type: 'apod', title: data.title, date: data.date, explanation: (data.explanation || '').substring(0, 400) + (data.explanation?.length > 400 ? '...' : ''), imageUrl: data.media_type === 'video' ? (data.thumbnail_url || null) : data.url, hdUrl: data.hdurl || data.url, mediaType: data.media_type, copyright: data.copyright ? `© ${data.copyright.trim()}` : 'NASA/Public Domain' });
+                // 🎨 UI PIPELINE FIX: APOD gets its own dedicated card type for a
+                // premium image-centric widget on the frontend. NEO/Mars stay on NASA.
+                cardPayload = JSON.stringify({ title: data.title, date: data.date, explanation: (data.explanation || '').substring(0, 400) + (data.explanation?.length > 400 ? '...' : ''), imageUrl: data.media_type === 'video' ? (data.thumbnail_url || null) : data.url, hdUrl: data.hdurl || data.url, mediaType: data.media_type, copyright: data.copyright ? `© ${data.copyright.trim()}` : 'NASA/Public Domain' });
+                return `NASA data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:APOD:${cardPayload}||`;
             } else if (queryType === 'neo') {
                 const data = await fetchWithCacheAndRetry(`https://api.nasa.gov/neo/rest/v1/feed?start_date=${todayStr}&end_date=${todayStr}&api_key=${apiKey}`, {}, 3600000);
                 const allNeos = Object.values(data.near_earth_objects || {}).flat();
