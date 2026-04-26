@@ -29,34 +29,34 @@ const MAX_TTS_BYTES = 4800;
 const TTS_TIMEOUT_MS = 10000;
 
 export const generateSpeech = async (text, voicePref = 'female') => {
+    // 🛡️ OMNI-AUDIT FIX: [TTS-01] Truncate to byte limit at sentence boundary
+    let safeText = text || '';
+    if (Buffer.byteLength(safeText, 'utf8') > MAX_TTS_BYTES) {
+        const truncated = Buffer.from(safeText, 'utf8')
+            .subarray(0, MAX_TTS_BYTES)
+            .toString('utf8');
+        const lastSentence = Math.max(
+            truncated.lastIndexOf('. '),
+            truncated.lastIndexOf('! '),
+            truncated.lastIndexOf('? ')
+        );
+        safeText = lastSentence > 0
+            ? truncated.substring(0, lastSentence + 1)
+            : truncated;
+        console.warn(`⚠️ [TTS] Text truncated from ${Buffer.byteLength(text, 'utf8')} to ${Buffer.byteLength(safeText, 'utf8')} bytes`);
+    }
+
+    // 🚀 FIXED: Swapped to 'Neural2' which is highly reliable and universally supported
+    let voiceName = 'en-US-Neural2-F';
+    if (voicePref === 'male') voiceName = 'en-US-Neural2-D';
+
+    const request = {
+        input: { text: safeText },
+        voice: { languageCode: 'en-US', name: voiceName },
+        audioConfig: { audioEncoding: 'MP3' },
+    };
+
     try {
-        // 🛡️ OMNI-AUDIT FIX: [TTS-01] Truncate to byte limit at sentence boundary
-        let safeText = text || '';
-        if (Buffer.byteLength(safeText, 'utf8') > MAX_TTS_BYTES) {
-            const truncated = Buffer.from(safeText, 'utf8')
-                .subarray(0, MAX_TTS_BYTES)
-                .toString('utf8');
-            const lastSentence = Math.max(
-                truncated.lastIndexOf('. '),
-                truncated.lastIndexOf('! '),
-                truncated.lastIndexOf('? ')
-            );
-            safeText = lastSentence > 0
-                ? truncated.substring(0, lastSentence + 1)
-                : truncated;
-            console.warn(`⚠️ [TTS] Text truncated from ${Buffer.byteLength(text, 'utf8')} to ${Buffer.byteLength(safeText, 'utf8')} bytes`);
-        }
-
-        // 🚀 FIXED: Swapped to 'Neural2' which is highly reliable and universally supported
-        let voiceName = 'en-US-Neural2-F';
-        if (voicePref === 'male') voiceName = 'en-US-Neural2-D';
-
-        const request = {
-            input: { text: safeText },
-            voice: { languageCode: 'en-US', name: voiceName },
-            audioConfig: { audioEncoding: 'MP3' },
-        };
-
         // 🛡️ OMNI-AUDIT FIX: [IMG-03] Timeout wrapper — reject after 10s
         const [response] = await Promise.race([
             client.synthesizeSpeech(request),
@@ -66,8 +66,33 @@ export const generateSpeech = async (text, voicePref = 'female') => {
         ]);
 
         return response.audioContent.toString('base64');
-    } catch (error) {
-        console.error("❌ Google TTS Generation Error:", error.message);
-        return null;
+    } catch (initialError) {
+        console.error("⚠️ Google TTS Generation Error (Neural2):", initialError.message);
+        
+        // 🚀 DEPLOYMENT FIX: Armored Fallback to Standard tier if Neural2 throws 403 or quota error
+        try {
+            console.warn(`⚠️ [TTS] Attempting fallback to Standard tier...`);
+            let fallbackVoiceName = 'en-US-Standard-F';
+            if (voicePref === 'male') fallbackVoiceName = 'en-US-Standard-D';
+            
+            const fallbackRequest = {
+                input: { text: safeText },
+                voice: { languageCode: 'en-US', name: fallbackVoiceName },
+                audioConfig: { audioEncoding: 'MP3' },
+            };
+            
+            const [fallbackResponse] = await Promise.race([
+                client.synthesizeSpeech(fallbackRequest),
+                new Promise((_, reject) =>
+                    setTimeout(() => reject(new Error('TTS fallback timed out after 10s')), TTS_TIMEOUT_MS)
+                ),
+            ]);
+            
+            console.log(`✅ [TTS] Standard fallback succeeded.`);
+            return fallbackResponse.audioContent.toString('base64');
+        } catch (fallbackError) {
+            console.error("❌ Google TTS Fallback Error (Standard):", fallbackError.message);
+            return null;
+        }
     }
 };

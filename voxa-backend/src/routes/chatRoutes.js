@@ -209,7 +209,8 @@ router.post('/', protect, chatLimiter, async (req, res) => {
         }
 
         // ── System command fast-path (local commands bypass the AI entirely) ──
-        if (prompt) {
+        // 🚀 DEPLOYMENT FIX: Safely bypass local command execution in production cloud environments
+        if (prompt && process.env.NODE_ENV !== 'production') {
             const commandResponse = executeCommand(prompt);
             if (commandResponse) {
                 sendStreamEvent('text', { text: commandResponse });

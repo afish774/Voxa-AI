@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import passport from 'passport';
+import helmet from 'helmet'; // 🚀 DEPLOYMENT FIX: Import helmet for standard security headers
 import connectDB from './config/db.js';
 import authRoutes from './routes/authRoutes.js';
 import chatRoutes from './routes/chatRoutes.js';
@@ -34,6 +35,12 @@ process.on('uncaughtException', (err) => {
 connectDB();
 
 const app = express();
+
+// 🚀 DEPLOYMENT FIX: Trust cloud proxy (Render/Railway) to correctly read client IPs
+app.set('trust proxy', 1);
+
+// 🚀 DEPLOYMENT FIX: Apply Helmet to secure HTTP headers
+app.use(helmet());
 
 // ============================================================================
 // 🛡️ CORS CONFIGURATION

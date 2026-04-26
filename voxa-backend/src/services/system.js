@@ -17,6 +17,11 @@ const SAFE_APPS = {
 };
 
 export const executeCommand = (prompt) => {
+    // 🚀 DEPLOYMENT FIX: Double-lock safety to prevent execution in production Linux environments
+    if (process.env.NODE_ENV === 'production') {
+        return null;
+    }
+
     const text = prompt.toLowerCase();
 
     // 🌐 Web Commands — safe: URL comes from allowlist, not user input
