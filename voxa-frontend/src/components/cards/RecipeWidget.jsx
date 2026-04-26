@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChefHat, Youtube, ExternalLink, ChevronDown, Globe } from 'lucide-react';
+import { ChefHat, Play, ExternalLink, ChevronDown, Globe } from 'lucide-react';
 
 // ============================================================================
 // 🍳 RecipeWidget — Culinary Recipe Card
@@ -148,7 +148,7 @@ const RecipeWidget = ({ data }) => {
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[12px] font-semibold text-red-400 transition-colors hover:bg-red-500/10"
               style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.12)' }}
             >
-              <Youtube className="w-4 h-4" />
+              <Play className="w-4 h-4" />
               Watch Video
             </a>
           )}
