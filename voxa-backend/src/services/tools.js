@@ -363,6 +363,10 @@ export const getSportsDataTool = tool(
     specific_date,
   }) => {
     try {
+      if (temporal_intent && !["past", "live", "future", "any"].includes(temporal_intent)) {
+        temporal_intent = "any";
+      }
+
       const toIST = (date) =>
         new Date(
           new Date(date).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }),
@@ -754,7 +758,7 @@ You MUST include the ||CARD:...|| string verbatim at the end of your response.`,
         ),
       sport: z.string().describe("'cricket', 'football', or 'basketball'."),
       query: z.string().describe("User's original query verbatim."),
-      temporal_intent: z.enum(["past", "live", "future", "any"]),
+      temporal_intent: z.string(),
       tournament: z.string(),
       team_mentions: z.array(z.string()),
       specific_date: z
@@ -958,6 +962,10 @@ export const getNewsTool = tool(
 export const getMovieTool = tool(
   async ({ title, type }) => {
     try {
+        if (type && !["movie", "series"].includes(type)) {
+          type = "movie";
+        }
+
       const apiKey = process.env.OMDB_API_KEY;
       if (!apiKey) throw new Error("OMDB_API_KEY missing from .env");
       const mediaType = type === "series" ? "series" : "movie";
@@ -1014,7 +1022,7 @@ export const getMovieTool = tool(
         .string()
         .describe('Movie or show title e.g. "Oppenheimer", "Breaking Bad".'),
       type: z
-        .enum(["movie", "series"])
+        .string()
         .optional()
         .describe('"movie" or "series". Omit if unclear.'),
     }),
@@ -1106,6 +1114,10 @@ export const getCurrencyTool = tool(
 export const getRecipeTool = tool(
   async ({ query, searchType }) => {
     try {
+        if (searchType && !["name", "ingredient"].includes(searchType)) {
+          searchType = "name";
+        }
+
       let meal = null;
       if (searchType === "ingredient") {
         const fd = await fetchWithCacheAndRetry(
@@ -1182,7 +1194,7 @@ export const getRecipeTool = tool(
           'Dish name e.g. "chicken biryani" or ingredient e.g. "garlic".',
         ),
       searchType: z
-        .enum(["name", "ingredient"])
+        .string()
         .describe(
           '"name" to search by dish, "ingredient" to search by ingredient.',
         ),
@@ -1791,6 +1803,10 @@ export const createFitnessTool = (userId) =>
   tool(
     async ({ mode, exercise, duration, sets, reps, foodQuery, unit }) => {
       try {
+        if (mode && !["log_workout", "calorie_lookup", "summary"].includes(mode)) {
+          mode = "summary";
+        }
+
         if (!userId) return "SYSTEM_ERROR: User ID missing.";
         if (mode === "log_workout") {
           if (!exercise) throw new Error("Exercise name required.");
@@ -1975,7 +1991,7 @@ export const createFitnessTool = (userId) =>
           .describe(
             "Briefly explain why you are calling this tool. This parameter is mandatory to ensure stable XML generation.",
           ),
-        mode: z.enum(["log_workout", "calorie_lookup", "summary"]),
+        mode: z.string(),
         exercise: z.string().optional(),
         duration: z.number().optional(),
         sets: z.number().optional(),
@@ -1994,6 +2010,10 @@ export const createFitnessTool = (userId) =>
 export const getNASATool = tool(
   async ({ queryType }) => {
     try {
+        if (queryType && !["apod", "neo", "mars"].includes(queryType)) {
+          queryType = "apod";
+        }
+
       const apiKey = process.env.NASA_API_KEY || "DEMO_KEY";
       const todayStr = new Date().toISOString().split("T")[0];
       let cardPayload;
@@ -2106,7 +2126,7 @@ export const getNASATool = tool(
           "Briefly explain why you are calling this tool. This parameter is mandatory to ensure stable XML generation.",
         ),
       queryType: z
-        .enum(["apod", "neo", "mars"])
+        .string()
         .describe(
           'MANDATORY: The exact type of NASA data to fetch. You MUST pass the exact string "apod" for Astronomy Picture of the Day, "neo" for Near Earth Objects, or "mars" for Mars rover photos. No other values are accepted.',
         ),
@@ -2130,6 +2150,16 @@ export const createFinanceTool = (userId) =>
       period,
     }) => {
       try {
+        if (mode && !["log", "summary"].includes(mode)) {
+          mode = "summary";
+        }
+        if (transactionType && !["expense", "income"].includes(transactionType)) {
+          transactionType = "expense";
+        }
+        if (period && !["week", "month"].includes(period)) {
+          period = "month";
+        }
+
         if (!userId) return "SYSTEM_ERROR: User ID missing.";
         if (mode === "log") {
           if (!amount || amount <= 0) throw new Error("Valid amount required.");
@@ -2262,12 +2292,12 @@ export const createFinanceTool = (userId) =>
           .describe(
             "Briefly explain why you are calling this tool. This parameter is mandatory to ensure stable XML generation.",
           ),
-        mode: z.enum(["log", "summary"]),
-        transactionType: z.enum(["expense", "income"]).optional(),
+        mode: z.string(),
+        transactionType: z.string().optional(),
         amount: z.number().optional(),
         category: z.string().optional(),
         description: z.string().optional(),
-        period: z.enum(["week", "month"]).optional(),
+        period: z.string().optional(),
       }),
     },
   );
@@ -2302,6 +2332,10 @@ const wmoCodeToCondition = (code) => {
 export const getWeatherForecastTool = tool(
   async ({ location }) => {
     try {
+        if (units && !["celsius", "fahrenheit"].includes(units)) {
+          units = "celsius";
+        }
+
       // ── Step 1: Geocode city name → lat/lon via Open-Meteo geocoding API ──
       // 24h TTL — city coordinates never change
       const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location.trim())}&count=1&language=en&format=json`;
@@ -2623,6 +2657,10 @@ export const calculateTool = tool(
     unitTo,
   }) => {
     try {
+        if (operator && !["+", "-", "*", "/", "^", "sqrt"].includes(operator)) {
+          operator = "+";
+        }
+
       let result = null;
       let formula = "";
       let steps = [];
@@ -3004,7 +3042,7 @@ Supported units: kg/lbs/oz/stone, m/km/miles/ft/inches, l/ml/cups/gallons, km/h/
         .optional()
         .describe("Third number (years for interest calculations)."),
       operator: z
-        .enum(["+", "-", "*", "/", "^", "sqrt"])
+        .string()
         .optional()
         .describe("Arithmetic operator for type=arithmetic."),
       unitFrom: z
