@@ -13,117 +13,93 @@ const router = express.Router();
 // ═══════════════════════════════════════════════════════════════════════════════
 // 🛡️ TITANIUM AUTH — Backend (authRoutes.js)
 // ═══════════════════════════════════════════════════════════════════════════════
-// This file handles:
-//   1. Passport strategy configuration (Google, GitHub, Facebook)
-//   2. OAuth callback processing with sessionless JWT flow
-//   3. Standard email/password register/login
-//
-// ALL Passport strategies use { session: false }.
-// ALL callbacks redirect to the frontend with token + Base64-encoded user
-// in URL query params. The frontend's module-level boot sequence (main.jsx)
-// intercepts these synchronously before React ever mounts.
-// ═══════════════════════════════════════════════════════════════════════════════
 
-const CLIENT_URL = "https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app";
-const BACKEND_URL = "https://voxa-ai-zh5o.onrender.com";
+// 🌟 SPRINT 2 FIX: Externalize hardcoded URLs to environment variables.
+// Add CLIENT_URL and BACKEND_URL to your .env / Render dashboard.
+const CLIENT_URL = process.env.CLIENT_URL || 'https://voxa-ai-git-main-afishmv-7650s-projects.vercel.app';
+const BACKEND_URL = process.env.BACKEND_URL || 'https://voxa-ai-zh5o.onrender.com';
 
-// 🛠️ SURGICAL FIX: [V-02] Fail hard at boot if JWT_SECRET is missing — never use a guessable fallback
+// 🛠️ SURGICAL FIX: [V-02] Fail hard at boot if JWT_SECRET is missing
 if (!process.env.JWT_SECRET) {
     console.error('🚨 FATAL: JWT_SECRET environment variable is not set. Server cannot start securely.');
     process.exit(1);
 }
 
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
-};
+const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
 
 // ============================================================================
 // 🧠 PASSPORT STRATEGY CONFIGURATION
 // ============================================================================
 
-// ── Google OAuth 2.0 ──
 if (process.env.GOOGLE_CLIENT_ID) {
     passport.use(new GoogleStrategy({
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: `${BACKEND_URL}/api/auth/google/callback`,
-        proxy: true
+        callbackURL: process.env.GOOGLE_REDIRECT_URI || `${BACKEND_URL}/api/auth/google/callback`,
+        proxy: true,
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             let user = await User.findOne({ email: profile.emails[0].value });
             if (!user) {
-                user = await User.create({ name: profile.displayName, email: profile.emails[0].value, googleId: profile.id, gmailAccessToken: accessToken, gmailRefreshToken: refreshToken });
+                user = await User.create({
+                    name: profile.displayName,
+                    email: profile.emails[0].value,
+                    googleId: profile.id,
+                    gmailAccessToken: accessToken,
+                    gmailRefreshToken: refreshToken,
+                });
             } else {
-                user.googleId = profile.id; user.gmailAccessToken = accessToken; if (refreshToken) user.gmailRefreshToken = refreshToken; await user.save();
+                user.googleId = profile.id;
+                user.gmailAccessToken = accessToken;
+                if (refreshToken) user.gmailRefreshToken = refreshToken;
+                await user.save();
             }
             return done(null, user);
         } catch (error) { return done(error, null); }
     }));
 }
 
-// ── GitHub OAuth ──
 if (process.env.GITHUB_CLIENT_ID) {
     passport.use(new GitHubStrategy({
         clientID: process.env.GITHUB_CLIENT_ID,
         clientSecret: process.env.GITHUB_CLIENT_SECRET,
         callbackURL: `${BACKEND_URL}/api/auth/github/callback`,
-        proxy: true
+        proxy: true,
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.username}@github.com`;
             let user = await User.findOne({ email });
             if (!user) {
                 user = await User.create({ name: profile.displayName || profile.username, email, githubId: profile.id });
-            } else {
-                user.githubId = profile.id; await user.save();
-            }
+            } else { user.githubId = profile.id; await user.save(); }
             return done(null, user);
         } catch (error) { return done(error, null); }
     }));
 }
 
-// ── Facebook OAuth ──
 if (process.env.FACEBOOK_CLIENT_ID) {
     passport.use(new FacebookStrategy({
         clientID: process.env.FACEBOOK_CLIENT_ID,
         clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
         callbackURL: `${BACKEND_URL}/api/auth/facebook/callback`,
         profileFields: ['id', 'displayName', 'emails'],
-        proxy: true
+        proxy: true,
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const email = profile.emails ? profile.emails[0].value : `${profile.id}@facebook.com`;
             let user = await User.findOne({ email });
             if (!user) {
                 user = await User.create({ name: profile.displayName, email, facebookId: profile.id });
-            } else {
-                user.facebookId = profile.id; await user.save();
-            }
+            } else { user.facebookId = profile.id; await user.save(); }
             return done(null, user);
         } catch (error) { return done(error, null); }
     }));
 }
 
 // ============================================================================
-// 🚀 OAUTH CALLBACK HANDLER (Sessionless JWT → Redirect to Vercel SPA)
+// 🚀 OAUTH CALLBACK HANDLER (Sessionless JWT)
 // ============================================================================
 
-/**
- * processManualLogin — The core callback handler for all OAuth providers.
- *
- * Flow:
- *   1. Passport authenticates the user with { session: false }
- *   2. On success: generate a JWT, Base64-encode the user object,
- *      URI-encode the Base64 string for URL safety, and redirect
- *      to the Vercel frontend with token + user in query params.
- *   3. On failure: redirect with an error query param.
- *
- * The frontend's module-level boot sequence in main.jsx will:
- *   - Read the URL params synchronously (before any component mounts)
- *   - Decode: Base64 → decodeURIComponent → JSON.parse
- *   - Set the initial React state from the parsed user
- *   - Scrub the URL to remove tokens from the address bar
- */
 const processManualLogin = (req, res, next, provider) => {
     passport.authenticate(provider, { session: false }, (err, user, info) => {
         if (err) {
@@ -131,23 +107,12 @@ const processManualLogin = (req, res, next, provider) => {
             return res.redirect(`${CLIENT_URL}/?error=server_auth_error`);
         }
         if (!user) {
-            console.error(`🚨 ${provider} Auth Failed: No user object returned.`);
+            console.error(`🚨 ${provider} Auth Failed: No user returned.`);
             return res.redirect(`${CLIENT_URL}/?error=user_not_found_or_rejected`);
         }
-
-        // 1. Generate a sessionless JWT
         const token = generateToken(user._id);
-
-        // 2. Build the user payload (minimal, safe subset)
         const userObj = { _id: user._id, name: user.name, email: user.email };
-
-        // 3. Encode: JSON → Base64 → encodeURIComponent (belt-and-suspenders)
-        //    encodeURIComponent ensures +, /, = in Base64 don't corrupt the URL
-        const userBase64 = Buffer.from(JSON.stringify(userObj)).toString('base64');
-        const userEncoded = encodeURIComponent(userBase64);
-
-        // 4. Redirect to the Vercel SPA root with params
-        //    main.jsx will intercept these at module load time
+        const userEncoded = encodeURIComponent(Buffer.from(JSON.stringify(userObj)).toString('base64'));
         return res.redirect(`${CLIENT_URL}/?token=${token}&user=${userEncoded}`);
     })(req, res, next);
 };
@@ -156,15 +121,38 @@ const processManualLogin = (req, res, next, provider) => {
 // 🔗 OAUTH ROUTE DEFINITIONS
 // ============================================================================
 
-// ── Google ──
-router.get('/google', passport.authenticate('google', { scope: ['profile', 'email', 'https://www.googleapis.com/auth/gmail.send'], accessType: 'offline', prompt: 'consent', session: false }));
+// ── Google ─────────────────────────────────────────────────────────────────────
+// 🌟 SPRINT 2: Added calendar scope to Google OAuth.
+//
+// BEFORE: scope = ['profile', 'email', 'gmail.send']
+//   → Calendar API calls returned HTTP 403 "Insufficient Permission"
+//
+// AFTER: scope now includes 'calendar' — enables read/write access to the
+//   user's primary Google Calendar for the manage_calendar tool.
+//
+// ⚠️  EXISTING USERS must sign out and sign back in with Google to grant
+//   the new calendar permission. Their existing gmail tokens stay valid.
+//
+// prompt:'consent' + accessType:'offline' guarantees Google always issues a
+// refresh_token — required for long-lived calendar access between sessions.
+router.get('/google', passport.authenticate('google', {
+    scope: [
+        'profile',
+        'email',
+        'https://www.googleapis.com/auth/gmail.send',
+        'https://www.googleapis.com/auth/calendar', // 🌟 SPRINT 2
+    ],
+    accessType: 'offline',
+    prompt: 'consent',
+    session: false,
+}));
 router.get('/google/callback', (req, res, next) => processManualLogin(req, res, next, 'google'));
 
-// ── GitHub ──
+// ── GitHub ──────────────────────────────────────────────────────────────────────
 router.get('/github', passport.authenticate('github', { scope: ['user:email'], session: false }));
 router.get('/github/callback', (req, res, next) => processManualLogin(req, res, next, 'github'));
 
-// ── Facebook ──
+// ── Facebook ────────────────────────────────────────────────────────────────────
 router.get('/facebook', passport.authenticate('facebook', { scope: ['email'], session: false }));
 router.get('/facebook/callback', (req, res, next) => processManualLogin(req, res, next, 'facebook'));
 
