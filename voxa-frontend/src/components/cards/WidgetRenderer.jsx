@@ -10,7 +10,6 @@ import CalculatorWidget from '../cards/CalculatorWidget';
 import CalendarWidget from '../cards/CalendarWidget';
 
 // ─── Batch 2: Weather & Environment ──────────────────────────────────────────
-import WeatherWidget from '../cards/WeatherWidget';
 import ForecastWidget from '../cards/ForecastWidget';
 import NasaApodCard from '../cards/NasaApodCard';
 
