@@ -16,20 +16,10 @@ dotenv.config();
 
 const apiCache = new LRUCache({
   max: 150,
-  // 🛠️ AUDIT FIX: Removed synchronous JSON.stringify blocking the event loop.
-  // Using bounded limit `max: 150` strictly controls memory without freezing Node.js.
   ttl: 5 * 60 * 1000,
   allowStale: false,
 });
 
-// 🛠️ AUDIT FIX [CRIT-02]: Sanitized cache keys — API keys must never be stored
-// as LRU cache keys since they sit in the process heap for up to 24h and are
-// visible in heap dumps and debug logs.
-//
-// Strategy: derive a stable cache key from (path + sorted, non-secret params).
-// Secret params (access_key, apikey, token, api_key, key, appid) are stripped.
-// This preserves cache hits for the same logical request while eliminating
-// secret storage in the cache key index.
 const SECRET_PARAM_NAMES = new Set([
   'access_key', 'apikey', 'api_key', 'token', 'key', 'appid',
   'x-api-key', 'authorization', 'secret',
@@ -38,7 +28,6 @@ const SECRET_PARAM_NAMES = new Set([
 const buildCacheKey = (url) => {
   try {
     const parsed = new URL(url);
-    // Keep only non-secret query params, sorted for determinism
     const safeParams = [];
     for (const [k, v] of parsed.searchParams.entries()) {
       if (!SECRET_PARAM_NAMES.has(k.toLowerCase())) {
@@ -49,7 +38,6 @@ const buildCacheKey = (url) => {
     const qs = safeParams.length ? `?${safeParams.join('&')}` : '';
     return `${parsed.origin}${parsed.pathname}${qs}`;
   } catch {
-    // Fallback: strip everything after '?' if URL parsing fails
     return url.split('?')[0];
   }
 };
@@ -411,23 +399,31 @@ export const getFlightTool = tool(
     try {
       const apiKey = process.env.AVIATIONSTACK_API_KEY;
       if (!apiKey) throw new Error('AVIATIONSTACK_API_KEY missing from .env');
-      // 🛠️ AUDIT FIX [CRIT-05]: Strict alphanumeric validation prevents HTTP parameter
-      // injection. Without this, "AI131&limit=100" would inject extra query params.
+
       const rawFlight = flightNumber.toUpperCase().replace(/\s+/g, '');
       if (!/^[A-Z0-9]{2,8}$/.test(rawFlight)) {
         return `Invalid flight number format. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FLIGHT:${JSON.stringify({ flightNumber, status: 'Error', error: 'Invalid IATA format. Use e.g. AI131, EK202.' })}||`;
       }
       const cleanFlight = rawFlight;
-      // 🛠️ AUDIT FIX [CRIT-01]: Changed http:// to https:// — API key was transmitted in plaintext.
-      const url = `https://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${cleanFlight}&limit=1`;
+
+      // 🚀 L9 ARCHITECT FIX: Dynamic Protocol Fallback for Free Tier
+      // AviationStack blocks `https` for free users. We default to `http` unless explicitly configured.
+      const protocol = process.env.AVIATIONSTACK_HTTPS === 'true' ? 'https' : 'http';
+      const url = `${protocol}://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${cleanFlight}&limit=1`;
+
       const data = await fetchWithCacheAndRetry(url, {}, 60000);
+      if (data?.error) {
+        throw new Error(data.error.message || 'AviationStack API returned an error.');
+      }
       if (!data?.data?.length) throw new Error(`No live data found for flight ${cleanFlight}`);
+
       const f = data.data[0];
       const dep = f.departure || {}, arr = f.arrival || {};
       const statusMap = { scheduled: 'Scheduled', active: 'Airborne', landed: 'Landed', cancelled: 'Cancelled', incident: 'Incident', diverted: 'Diverted' };
       const rawStatus = (f.flight_status || 'unknown').toLowerCase();
       const status = statusMap[rawStatus] || rawStatus.charAt(0).toUpperCase() + rawStatus.slice(1);
       const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) : '--:--';
+
       const cardPayload = JSON.stringify({ flightNumber: cleanFlight, airline: f.airline?.name || 'Unknown Airline', status, origin: dep.iata || '---', originCity: dep.airport || dep.iata || '---', destination: arr.iata || '---', destinationCity: arr.airport || arr.iata || '---', scheduled: fmtTime(dep.scheduled), eta: fmtTime(arr.estimated), delay: dep.delay ? `${dep.delay} min` : 'On Time', terminal: dep.terminal || '--', gate: dep.gate || '--' });
       return `Flight data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FLIGHT:${cardPayload}||`;
     } catch (error) {
@@ -441,7 +437,6 @@ export const getFlightTool = tool(
     schema: z.object({ flightNumber: z.string().describe('IATA flight number e.g. "AI131".') }),
   }
 );
-
 // ============================================================================
 // 📰 TOOL 7: Intelligent News Briefing (GNews API)
 // ============================================================================
@@ -451,18 +446,31 @@ export const getNewsTool = tool(
     try {
       const apiKey = process.env.GNEWS_API_KEY;
       if (!apiKey) throw new Error('GNEWS_API_KEY missing from .env');
+
       const VALID_TOPICS = ['breaking-news', 'world', 'nation', 'business', 'technology', 'entertainment', 'sports', 'science', 'health'];
-      const topicMap = { tech: 'technology', finance: 'business', economy: 'business', movies: 'entertainment', bollywood: 'entertainment', cricket: 'sports', football: 'sports', ipl: 'sports', india: 'nation', politics: 'nation', space: 'science', climate: 'science', covid: 'health', medical: 'health' };
+      const topicMap = { tech: 'technology', finance: 'business', economy: 'business', money: 'business', movies: 'entertainment', bollywood: 'entertainment', cricket: 'sports', football: 'sports', ipl: 'sports', india: 'nation', politics: 'nation', space: 'science', climate: 'science', covid: 'health', medical: 'health' };
+
       const rawCategory = (category || query || '').toLowerCase();
       let topic = 'breaking-news';
-      for (const [key, val] of Object.entries(topicMap)) { if (rawCategory.includes(key)) { topic = val; break; } }
+      for (const [key, val] of Object.entries(topicMap)) {
+        if (rawCategory.includes(key)) { topic = val; break; }
+      }
       if (VALID_TOPICS.includes(rawCategory)) topic = rawCategory;
-      const url = (query && query.length > 3 && !VALID_TOPICS.includes(query.toLowerCase()))
+
+      const url = query && query.length > 3 && !VALID_TOPICS.includes(query.toLowerCase())
         ? `https://gnews.io/api/v4/search?q=${encodeURIComponent(query)}&token=${apiKey}&lang=en&max=5&sortby=publishedAt`
         : `https://gnews.io/api/v4/top-headlines?topic=${topic}&token=${apiKey}&lang=en&max=5`;
+
       const data = await fetchWithCacheAndRetry(url, {}, 600000);
       if (!data?.articles?.length) throw new Error('No articles returned from GNews');
-      const articles = data.articles.slice(0, 5).map(a => ({ title: (a.title || '').substring(0, 100), source: a.source?.name || 'Unknown', url: a.url || '', publishedAt: a.publishedAt ? new Date(a.publishedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST' : 'Recently', description: (a.description || '').substring(0, 120) }));
+
+      const articles = data.articles.slice(0, 5).map((a) => ({
+        title: (a.title || 'No Title').substring(0, 100),
+        source: a.source?.name || 'Unknown',
+        url: a.url || '',
+        publishedAt: a.publishedAt ? new Date(a.publishedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST' : 'Recently'
+      }));
+
       const cardPayload = JSON.stringify({ category: topic.replace('-', ' ').replace(/\b\w/g, c => c.toUpperCase()), articles });
       return `News fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:NEWS:${cardPayload}||`;
     } catch (error) {
@@ -472,8 +480,11 @@ export const getNewsTool = tool(
   },
   {
     name: 'get_news',
-    description: 'Fetches latest headlines by category or search query. Do NOT use for daily briefings — use get_daily_briefing instead.',
-    schema: z.object({ query: z.string().describe("Search query or topic keyword."), category: z.string().optional() }),
+    description: 'Fetches latest news headlines by category or specific search query.',
+    schema: z.object({
+      query: z.string().describe("Search query or topic keyword."),
+      category: z.string().optional().describe("News category: technology, sports, business, health, entertainment, world, nation, science."),
+    }),
   }
 );
 
@@ -486,12 +497,27 @@ export const getMovieTool = tool(
     try {
       const apiKey = process.env.OMDB_API_KEY;
       if (!apiKey) throw new Error('OMDB_API_KEY missing from .env');
-      let data = await fetchWithCacheAndRetry(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${apiKey}&plot=short&type=${type === 'series' ? 'series' : 'movie'}`, {}, 86400000);
+
+      let mediaType = "movie";
+      if (type && ['movie', 'series'].includes(type.toLowerCase())) mediaType = type.toLowerCase();
+
+      let data = await fetchWithCacheAndRetry(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${apiKey}&plot=short&type=${mediaType}`, {}, 86400000);
+
       if (data?.Response === 'False' || !data?.Title) {
         data = await fetchWithCacheAndRetry(`https://www.omdbapi.com/?t=${encodeURIComponent(title)}&apikey=${apiKey}&plot=short`, {}, 86400000);
         if (data?.Response === 'False' || !data?.Title) throw new Error(`"${title}" not found in OMDB`);
       }
-      const cardPayload = JSON.stringify({ title: data.Title, year: data.Year, type: data.Type === 'series' ? 'TV Series' : 'Movie', imdbRating: data.imdbRating !== 'N/A' ? data.imdbRating : null, rottenTomatoes: data.Ratings?.find(r => r.Source === 'Rotten Tomatoes')?.Value || null, metascore: data.Metascore !== 'N/A' ? data.Metascore : null, genre: data.Genre || 'Unknown', director: data.Director !== 'N/A' ? data.Director : null, cast: data.Actors !== 'N/A' ? data.Actors : null, runtime: data.Runtime !== 'N/A' ? data.Runtime : null, plot: data.Plot !== 'N/A' ? data.Plot : null, poster: data.Poster !== 'N/A' ? data.Poster : null, rated: data.Rated !== 'N/A' ? data.Rated : null, awards: data.Awards !== 'N/A' ? data.Awards : null });
+
+      const cardPayload = JSON.stringify({
+        title: data.Title, year: data.Year, type: data.Type === 'series' ? 'TV Series' : 'Movie',
+        imdbRating: data.imdbRating !== 'N/A' ? data.imdbRating : null,
+        rottenTomatoes: data.Ratings?.find((r) => r.Source === 'Rotten Tomatoes')?.Value || null,
+        metascore: data.Metascore !== 'N/A' ? data.Metascore : null,
+        genre: data.Genre || 'Unknown', director: data.Director !== 'N/A' ? data.Director : null,
+        cast: data.Actors !== 'N/A' ? data.Actors : null, runtime: data.Runtime !== 'N/A' ? data.Runtime : null,
+        plot: data.Plot !== 'N/A' ? data.Plot : null, poster: data.Poster !== 'N/A' ? data.Poster : null,
+        rated: data.Rated !== 'N/A' ? data.Rated : null, awards: data.Awards !== 'N/A' ? data.Awards : null,
+      });
       return `Movie data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MOVIE:${cardPayload}||`;
     } catch (error) {
       console.error('[Movie Error]:', error.message);
@@ -500,26 +526,34 @@ export const getMovieTool = tool(
   },
   {
     name: 'get_movie_info',
-    description: 'Fetches IMDb/RT ratings, cast, plot, director, runtime for any movie or TV show.',
-    schema: z.object({ title: z.string().describe('Movie or show title.'), type: z.enum(['movie', 'series']).optional() }),
+    description: 'Fetches IMDb rating, Rotten Tomatoes score, cast, plot, director, and runtime for any movie or TV show.',
+    schema: z.object({
+      title: z.string().describe('Movie or show title.'),
+      type: z.string().optional().describe('"movie" or "series".'),
+    }),
   }
 );
 
 // ============================================================================
-// 💱 TOOL 9: Universal Currency Converter (Frankfurter.app — no key)
+// 💱 TOOL 9: Universal Currency Converter
 // ============================================================================
 
 export const getCurrencyTool = tool(
   async ({ amount, fromCurrency, toCurrency }) => {
     try {
-      const from = fromCurrency.toUpperCase().trim(), to = toCurrency.toUpperCase().trim();
+      const from = fromCurrency.toUpperCase().trim();
+      const to = toCurrency.toUpperCase().trim();
       const amt = parseFloat(amount) || 1;
+
       const data = await fetchWithCacheAndRetry(`https://api.frankfurter.app/latest?amount=${amt}&from=${from}&to=${to}`, {}, 3600000);
       if (!data?.rates?.[to]) throw new Error(`Could not convert ${from} to ${to}`);
+
       const converted = parseFloat(data.rates[to]);
       const rate = parseFloat((converted / amt).toFixed(6));
       const flags = { USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', INR: '🇮🇳', JPY: '🇯🇵', CNY: '🇨🇳', AUD: '🇦🇺', CAD: '🇨🇦', CHF: '🇨🇭', SGD: '🇸🇬', AED: '🇦🇪', SAR: '🇸🇦', MYR: '🇲🇾', THB: '🇹🇭', BDT: '🇧🇩', PKR: '🇵🇰' };
-      return `Currency converted. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CURRENCY:${JSON.stringify({ from, to, inputAmount: amt, convertedAmount: parseFloat(converted.toFixed(4)), rate, fromFlag: flags[from] || '💱', toFlag: flags[to] || '💱', timestamp: data.date, source: 'European Central Bank' })}||`;
+
+      const cardPayload = JSON.stringify({ from, to, inputAmount: amt, convertedAmount: parseFloat(converted.toFixed(4)), rate, fromFlag: flags[from] || '💱', toFlag: flags[to] || '💱', timestamp: data.date, source: 'European Central Bank' });
+      return `Currency converted. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CURRENCY:${cardPayload}||`;
     } catch (error) {
       console.error('[Currency Error]:', error.message);
       return `Conversion failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CURRENCY:${JSON.stringify({ from: fromCurrency, to: toCurrency, error: error.message })}||`;
@@ -527,20 +561,27 @@ export const getCurrencyTool = tool(
   },
   {
     name: 'get_currency_rate',
-    description: 'Converts amounts between world currencies using live ECB rates.',
-    schema: z.object({ amount: z.number(), fromCurrency: z.string(), toCurrency: z.string() }),
+    description: 'Converts amounts between world currencies using live ECB rates. No API key required.',
+    schema: z.object({
+      amount: z.number().describe('Amount to convert.'),
+      fromCurrency: z.string().describe('Source currency ISO code.'),
+      toCurrency: z.string().describe('Target currency ISO code.'),
+    }),
   }
 );
 
 // ============================================================================
-// 🍳 TOOL 10: Smart Recipe Finder (TheMealDB — no key)
+// 🍳 TOOL 10: Smart Recipe Finder
 // ============================================================================
 
 export const getRecipeTool = tool(
   async ({ query, searchType }) => {
     try {
+      let type = "name";
+      if (searchType && ['name', 'ingredient'].includes(searchType.toLowerCase())) type = searchType.toLowerCase();
       let meal = null;
-      if (searchType === 'ingredient') {
+
+      if (type === 'ingredient') {
         const fd = await fetchWithCacheAndRetry(`https://www.themealdb.com/api/json/v1/1/filter.php?i=${encodeURIComponent(query)}`, {}, 86400000);
         if (!fd?.meals?.length) throw new Error(`No recipes with ingredient: ${query}`);
         const ld = await fetchWithCacheAndRetry(`https://www.themealdb.com/api/json/v1/1/lookup.php?i=${fd.meals[0].idMeal}`, {}, 86400000);
@@ -548,12 +589,22 @@ export const getRecipeTool = tool(
       } else {
         const sd = await fetchWithCacheAndRetry(`https://www.themealdb.com/api/json/v1/1/search.php?s=${encodeURIComponent(query)}`, {}, 86400000);
         meal = sd?.meals?.[0];
-        if (!meal) { const rd = await fetchWithCacheAndRetry(`https://www.themealdb.com/api/json/v1/1/random.php`, {}, 300000); meal = rd?.meals?.[0]; }
+        if (!meal) {
+          const rd = await fetchWithCacheAndRetry(`https://www.themealdb.com/api/json/v1/1/random.php`, {}, 300000);
+          meal = rd?.meals?.[0];
+        }
       }
+
       if (!meal) throw new Error('No recipe found');
+
       const ingredients = [];
-      for (let i = 1; i <= 20; i++) { const ing = meal[`strIngredient${i}`], msr = meal[`strMeasure${i}`]; if (ing?.trim()) ingredients.push(`${msr ? msr.trim() + ' ' : ''}${ing.trim()}`); }
-      return `Recipe found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECIPE:${JSON.stringify({ name: meal.strMeal, category: meal.strCategory || 'Main Course', area: meal.strArea || 'International', thumbnail: meal.strMealThumb || null, ingredients: ingredients.slice(0, 12), instructions: (meal.strInstructions || 'See full recipe.').substring(0, 600), youtubeUrl: meal.strYoutube || null, sourceUrl: meal.strSource || `https://www.themealdb.com/meal/${meal.idMeal}` })}||`;
+      for (let i = 1; i <= 20; i++) {
+        const ing = meal[`strIngredient${i}`], msr = meal[`strMeasure${i}`];
+        if (ing?.trim()) ingredients.push(`${msr ? msr.trim() + ' ' : ''}${ing.trim()}`);
+      }
+
+      const cardPayload = JSON.stringify({ name: meal.strMeal, category: meal.strCategory || 'Main Course', area: meal.strArea || 'International', thumbnail: meal.strMealThumb || null, ingredients: ingredients.slice(0, 12), instructions: (meal.strInstructions || 'See full recipe.').substring(0, 600), youtubeUrl: meal.strYoutube || null, sourceUrl: meal.strSource || `https://www.themealdb.com/meal/${meal.idMeal}` });
+      return `Recipe found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECIPE:${cardPayload}||`;
     } catch (error) {
       console.error('[Recipe Error]:', error.message);
       return `Recipe search failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECIPE:${JSON.stringify({ name: query, error: error.message })}||`;
@@ -562,29 +613,44 @@ export const getRecipeTool = tool(
   {
     name: 'get_recipe',
     description: 'Finds a recipe by dish name or main ingredient.',
-    schema: z.object({ query: z.string(), searchType: z.enum(['name', 'ingredient']) }),
+    schema: z.object({
+      query: z.string().describe('Dish name or ingredient.'),
+      searchType: z.string().optional().describe('"name" or "ingredient".'),
+    }),
   }
 );
 
 // ============================================================================
-// 📈 TOOL 11: Live Stock Market Tracker (Yahoo Finance — no key)
+// 📈 TOOL 11: Live Stock Market Tracker
 // ============================================================================
 
 export const getStockTool = tool(
   async ({ symbol, companyName }) => {
     try {
-      const symbolMap = { 'nifty': '^NSEI', 'nifty 50': '^NSEI', 'nifty50': '^NSEI', 'sensex': '^BSESN', 'bse': '^BSESN', 'reliance': 'RELIANCE.NS', 'tcs': 'TCS.NS', 'infosys': 'INFY.NS', 'infy': 'INFY.NS', 'wipro': 'WIPRO.NS', 'hdfc': 'HDFCBANK.NS', 'hdfcbank': 'HDFCBANK.NS', 'icici': 'ICICIBANK.NS', 'icicibank': 'ICICIBANK.NS', 'sbi': 'SBIN.NS', 'airtel': 'BHARTIARTL.NS', 'bajaj': 'BAJFINANCE.NS', 'titan': 'TITAN.NS', 'adani': 'ADANIENT.NS', 'hcl': 'HCLTECH.NS', 'hcltech': 'HCLTECH.NS', 'zomato': 'ZOMATO.NS', 'swiggy': 'SWIGGY.NS', 'apple': 'AAPL', 'google': 'GOOGL', 'alphabet': 'GOOGL', 'microsoft': 'MSFT', 'amazon': 'AMZN', 'tesla': 'TSLA', 'meta': 'META', 'facebook': 'META', 'nvidia': 'NVDA', 'netflix': 'NFLX', 'uber': 'UBER', 'spotify': 'SPOT', 'dow jones': '^DJI', 'sp500': '^GSPC', 's&p 500': '^GSPC', 'nasdaq': '^IXIC', 'ftse': '^FTSE', 'nikkei': '^N225', 'hang seng': '^HSI' };
+      const symbolMap = { nifty: '^NSEI', 'nifty 50': '^NSEI', sensex: '^BSESN', bse: '^BSESN', reliance: 'RELIANCE.NS', tcs: 'TCS.NS', infosys: 'INFY.NS', infy: 'INFY.NS', wipro: 'WIPRO.NS', hdfc: 'HDFCBANK.NS', hdfcbank: 'HDFCBANK.NS', icici: 'ICICIBANK.NS', sbi: 'SBIN.NS', airtel: 'BHARTIARTL.NS', bajaj: 'BAJFINANCE.NS', titan: 'TITAN.NS', adani: 'ADANIENT.NS', hcl: 'HCLTECH.NS', zomato: 'ZOMATO.NS', swiggy: 'SWIGGY.NS', apple: 'AAPL', google: 'GOOGL', alphabet: 'GOOGL', microsoft: 'MSFT', amazon: 'AMZN', tesla: 'TSLA', meta: 'META', facebook: 'META', nvidia: 'NVDA', netflix: 'NFLX', uber: 'UBER', spotify: 'SPOT', 'dow jones': '^DJI', sp500: '^GSPC', 's&p 500': '^GSPC', nasdaq: '^IXIC', ftse: '^FTSE', nikkei: '^N225', 'hang seng': '^HSI' };
       const lookupKey = (companyName || symbol || '').toLowerCase().trim();
       let resolvedSymbol = symbolMap[lookupKey] || symbol?.toUpperCase()?.trim();
-      if (!resolvedSymbol) return `I couldn't find a stock symbol for "${companyName || symbol}". Some companies like OpenAI are not publicly traded. Please try a ticker like "AAPL" or "RELIANCE.NS".`;
+
+      if (!resolvedSymbol) return `I couldn't find a stock symbol for "${companyName || symbol}". Please try a ticker like "AAPL" or "RELIANCE.NS".`;
+
       const data = await fetchWithCacheAndRetry(`https://query1.finance.yahoo.com/v8/finance/chart/${resolvedSymbol}?interval=1d&range=1d&includePrePost=false`, { headers: { Accept: 'application/json' } }, 30000);
       const meta = data?.chart?.result?.[0]?.meta;
       if (!meta) throw new Error(`No data returned for ${resolvedSymbol}`);
+
       const price = meta.regularMarketPrice, prevClose = meta.previousClose || meta.chartPreviousClose;
       const change = prevClose ? parseFloat((price - prevClose).toFixed(2)) : 0;
       const changePct = prevClose ? parseFloat(((change / prevClose) * 100).toFixed(2)) : 0;
-      const fmtCap = (cap) => { if (!cap) return null; if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`; if (cap >= 1e9) return `$${(cap / 1e9).toFixed(2)}B`; if (cap >= 1e7) return `₹${(cap / 1e7).toFixed(2)}Cr`; return `${cap}`; };
-      return `Stock data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:STOCK:${JSON.stringify({ symbol: resolvedSymbol, name: meta.shortName || meta.longName || resolvedSymbol, price: parseFloat(price.toFixed(2)), change, changePercent: changePct, currency: meta.currency || 'USD', exchange: meta.exchangeName || '', high: meta.regularMarketDayHigh ? parseFloat(meta.regularMarketDayHigh.toFixed(2)) : null, low: meta.regularMarketDayLow ? parseFloat(meta.regularMarketDayLow.toFixed(2)) : null, high52: meta.fiftyTwoWeekHigh ? parseFloat(meta.fiftyTwoWeekHigh.toFixed(2)) : null, low52: meta.fiftyTwoWeekLow ? parseFloat(meta.fiftyTwoWeekLow.toFixed(2)) : null, marketCap: fmtCap(meta.marketCap), isMarketOpen: meta.marketState === 'REGULAR', marketState: meta.marketState || 'CLOSED' })}||`;
+
+      const fmtCap = (cap) => {
+        if (!cap) return null;
+        if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`;
+        if (cap >= 1e9) return `$${(cap / 1e9).toFixed(2)}B`;
+        if (cap >= 1e7) return `₹${(cap / 1e7).toFixed(2)}Cr`;
+        return `${cap}`;
+      };
+
+      const cardPayload = JSON.stringify({ symbol: resolvedSymbol, name: meta.shortName || meta.longName || resolvedSymbol, price: parseFloat(price.toFixed(2)), change, changePercent: changePct, currency: meta.currency || 'USD', exchange: meta.exchangeName || '', high: meta.regularMarketDayHigh ? parseFloat(meta.regularMarketDayHigh.toFixed(2)) : null, low: meta.regularMarketDayLow ? parseFloat(meta.regularMarketDayLow.toFixed(2)) : null, high52: meta.fiftyTwoWeekHigh ? parseFloat(meta.fiftyTwoWeekHigh.toFixed(2)) : null, low52: meta.fiftyTwoWeekLow ? parseFloat(meta.fiftyTwoWeekLow.toFixed(2)) : null, marketCap: fmtCap(meta.marketCap), isMarketOpen: meta.marketState === 'REGULAR', marketState: meta.marketState || 'CLOSED' });
+      return `Stock data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:STOCK:${cardPayload}||`;
     } catch (error) {
       console.error('[Stock Error]:', error.message);
       return `Stock lookup failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:STOCK:${JSON.stringify({ symbol, name: companyName, error: error.message })}||`;
@@ -592,28 +658,43 @@ export const getStockTool = tool(
   },
   {
     name: 'get_stock_price',
-    description: 'Fetches live prices for Indian/global stocks and indices like Nifty 50, Sensex, S&P 500.',
-    schema: z.object({ symbol: z.string().optional(), companyName: z.string().optional() }),
+    description: 'Fetches live prices for Indian (NSE/BSE) and global stocks, and market indices.',
+    schema: z.object({
+      symbol: z.string().optional().describe('Ticker symbol e.g. "AAPL".'),
+      companyName: z.string().optional().describe('Company name e.g. "Apple".'),
+    }),
   }
 );
 
 // ============================================================================
-// 💊 TOOL 12: Medicine & Drug Intelligence (OpenFDA — no key)
+// 💊 TOOL 12: Medicine & Drug Intelligence
 // ============================================================================
 
 export const getMedicineTool = tool(
   async ({ medicineName }) => {
     try {
       const enc = encodeURIComponent(medicineName.toLowerCase().trim());
-      const endpoints = [`https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${enc}"&limit=1`, `https://api.fda.gov/drug/label.json?search=openfda.brand_name:"${enc}"&limit=1`, `https://api.fda.gov/drug/label.json?search=openfda.substance_name:"${enc}"&limit=1`];
+      const endpoints = [
+        `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${enc}"&limit=1`,
+        `https://api.fda.gov/drug/label.json?search=openfda.brand_name:"${enc}"&limit=1`,
+        `https://api.fda.gov/drug/label.json?search=openfda.substance_name:"${enc}"&limit=1`
+      ];
       let labelData = null;
-      for (const ep of endpoints) { try { const r = await fetchWithCacheAndRetry(ep, {}, 86400000); if (r?.results?.length) { labelData = r.results[0]; break; } } catch { continue; } }
+      for (const ep of endpoints) {
+        try { const r = await fetchWithCacheAndRetry(ep, {}, 86400000); if (r?.results?.length) { labelData = r.results[0]; break; } } catch { continue; }
+      }
       if (!labelData) throw new Error(`No FDA data found for "${medicineName}"`);
+
       const extract = (arr, max = 200) => { if (!arr?.length) return null; const t = arr[0].replace(/\n/g, ' ').replace(/\s+/g, ' ').trim(); return t.length > max ? t.substring(0, max) + '...' : t; };
       const brandNames = labelData.openfda?.brand_name?.slice(0, 3) || [];
       const genericNames = labelData.openfda?.generic_name?.slice(0, 2) || [];
-      let warnings = []; if (labelData.boxed_warning) warnings.push(extract(labelData.boxed_warning, 150)); if (labelData.warnings) warnings.push(extract(labelData.warnings, 150)); warnings = warnings.filter(Boolean).slice(0, 2);
-      return `Medicine data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MEDICINE:${JSON.stringify({ name: brandNames[0] || genericNames[0] || medicineName, genericName: genericNames[0] || null, brandNames: brandNames.slice(0, 3), purpose: extract(labelData.indications_and_usage, 200), dosage: extract(labelData.dosage_and_administration, 180), warnings, interactions: extract(labelData.drug_interactions, 200), adverseReactions: extract(labelData.adverse_reactions, 180), manufacturer: labelData.openfda?.manufacturer_name?.[0] || null, hasBlackBoxWarning: Boolean(labelData.boxed_warning), disclaimer: 'Not medical advice. Consult a qualified healthcare professional.' })}||`;
+      let warnings = [];
+      if (labelData.boxed_warning) warnings.push(extract(labelData.boxed_warning, 150));
+      if (labelData.warnings) warnings.push(extract(labelData.warnings, 150));
+      warnings = warnings.filter(Boolean).slice(0, 2);
+
+      const cardPayload = JSON.stringify({ name: brandNames[0] || genericNames[0] || medicineName, genericName: genericNames[0] || null, brandNames: brandNames.slice(0, 3), purpose: extract(labelData.indications_and_usage, 200), dosage: extract(labelData.dosage_and_administration, 180), warnings, interactions: extract(labelData.drug_interactions, 200), adverseReactions: extract(labelData.adverse_reactions, 180), manufacturer: labelData.openfda?.manufacturer_name?.[0] || null, hasBlackBoxWarning: Boolean(labelData.boxed_warning), disclaimer: 'Not medical advice.' });
+      return `Medicine data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MEDICINE:${cardPayload}||`;
     } catch (error) {
       console.error('[Medicine Error]:', error.message);
       return `Medicine lookup failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MEDICINE:${JSON.stringify({ name: medicineName, error: error.message, disclaimer: 'Not medical advice.' })}||`;
@@ -621,25 +702,34 @@ export const getMedicineTool = tool(
   },
   {
     name: 'get_medicine_info',
-    description: 'Fetches FDA drug information: purpose, dosage, warnings, side effects, interactions.',
-    schema: z.object({ medicineName: z.string() }),
+    description: 'Fetches FDA drug information: purpose, dosage, warnings, side effects, and drug interactions.',
+    schema: z.object({ medicineName: z.string().describe('Medicine name (brand or generic).') }),
   }
 );
 
 // ============================================================================
-// 🌐 TOOL 13: Real-Time Language Translator (MyMemory — no key)
+// 🌐 TOOL 13: Real-Time Language Translator
 // ============================================================================
 
 export const getTranslateTool = tool(
   async ({ text, fromLanguage, toLanguage }) => {
     try {
+      // 🚀 L9 ARCHITECT FIX: [SEC-API-03] Force length bound to prevent 414 URI Too Long.
+      // MyMemory enforces a strict 500 byte limit for free users.
+      const safeText = text.length > 500 ? text.substring(0, 497) + '...' : text;
+
       const langCodes = { english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it', portuguese: 'pt', dutch: 'nl', russian: 'ru', arabic: 'ar', hindi: 'hi', bengali: 'bn', urdu: 'ur', malayalam: 'ml', tamil: 'ta', telugu: 'te', kannada: 'kn', marathi: 'mr', gujarati: 'gu', punjabi: 'pa', japanese: 'ja', korean: 'ko', chinese: 'zh', mandarin: 'zh', thai: 'th', vietnamese: 'vi', turkish: 'tr', polish: 'pl', swedish: 'sv', danish: 'da', norwegian: 'no', finnish: 'fi', greek: 'el', hebrew: 'iw', indonesian: 'id', malay: 'ms', swahili: 'sw', persian: 'fa', farsi: 'fa' };
       const fromCode = langCodes[fromLanguage?.toLowerCase()] || fromLanguage?.toLowerCase()?.slice(0, 2) || 'en';
       const toCode = langCodes[toLanguage?.toLowerCase()] || toLanguage?.toLowerCase()?.slice(0, 2) || 'hi';
-      const data = await fetchWithCacheAndRetry(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${fromCode}|${toCode}`, {}, 3600000);
+
+      const data = await fetchWithCacheAndRetry(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(safeText)}&langpair=${fromCode}|${toCode}`, {}, 3600000);
       if (!data?.responseData?.translatedText) throw new Error('Translation failed');
+
       const langNames = Object.fromEntries(Object.entries(langCodes).map(([name, code]) => [code, name.charAt(0).toUpperCase() + name.slice(1)]));
-      return `Translation complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:TRANSLATE:${JSON.stringify({ original: text, translated: data.responseData.translatedText, fromLanguage: langNames[fromCode] || fromLanguage, toLanguage: langNames[toCode] || toLanguage, fromCode, toCode, needsRomanization: ['ar', 'hi', 'bn', 'ml', 'ta', 'te', 'kn', 'mr', 'gu', 'pa', 'ja', 'ko', 'zh', 'th', 'fa', 'iw'].includes(toCode), quality: data.responseData.match ? `${Math.round(data.responseData.match * 100)}%` : null, poweredBy: 'MyMemory Translation API' })}||`;
+      const needsRomanization = ['ar', 'hi', 'bn', 'ml', 'ta', 'te', 'kn', 'mr', 'gu', 'pa', 'ja', 'ko', 'zh', 'th', 'fa', 'iw'].includes(toCode);
+
+      const cardPayload = JSON.stringify({ original: safeText, translated: data.responseData.translatedText, fromLanguage: langNames[fromCode] || fromLanguage, toLanguage: langNames[toCode] || toLanguage, fromCode, toCode, needsRomanization, quality: data.responseData.match ? `${Math.round(data.responseData.match * 100)}%` : null, poweredBy: 'MyMemory Translation API' });
+      return `Translation complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:TRANSLATE:${cardPayload}||`;
     } catch (error) {
       console.error('[Translate Error]:', error.message);
       return `Translation failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:TRANSLATE:${JSON.stringify({ original: text, error: error.message })}||`;
@@ -647,13 +737,17 @@ export const getTranslateTool = tool(
   },
   {
     name: 'translate_text',
-    description: 'Translates any text into 30+ languages including Hindi, Arabic, Japanese, Tamil, Malayalam.',
-    schema: z.object({ text: z.string(), fromLanguage: z.string(), toLanguage: z.string() }),
+    description: 'Translates any text into 30+ languages.',
+    schema: z.object({
+      text: z.string().describe('The text to translate.'),
+      fromLanguage: z.string().describe('Source language name or code e.g. "English", "en".'),
+      toLanguage: z.string().describe('Target language name or code e.g. "Arabic", "ar".'),
+    }),
   }
 );
 
 // ============================================================================
-// 📅 TOOL 14: Smart Countdown Intelligence (Pure JS — no API)
+// 📅 TOOL 14: Smart Countdown Intelligence
 // ============================================================================
 
 export const getCountdownTool = tool(
@@ -663,17 +757,21 @@ export const getCountdownTool = tool(
       const target = new Date(targetDate + 'T00:00:00+05:30');
       const nowIST = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
       if (isNaN(target.getTime())) throw new Error('Could not parse the target date.');
+
       const diffMs = target.getTime() - nowIST.getTime();
       const isPast = diffMs < 0, abs = Math.abs(diffMs);
       const totalDays = Math.floor(abs / 86400000), totalHours = Math.floor(abs / 3600000);
       const weeks = Math.floor(totalDays / 7), remainingDays = totalDays % 7;
       const months = Math.floor(totalDays / 30.44), years = Math.floor(totalDays / 365.25);
+
       const dayOfWeek = target.toLocaleDateString('en-US', { weekday: 'long', timeZone: 'Asia/Kolkata' });
       const formattedDate = target.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
       const yearStart = new Date(`${target.getFullYear()}-01-01T00:00:00+05:30`);
       const yearEnd = new Date(`${target.getFullYear() + 1}-01-01T00:00:00+05:30`);
       const yearProgress = Math.round(((target - yearStart) / (yearEnd - yearStart)) * 100);
-      return `Countdown calculated. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:COUNTDOWN:${JSON.stringify({ label: label || (isPast ? 'Past Event' : 'Upcoming Event'), targetDate, formattedDate, dayOfWeek, isPast, totalDays, weeks, remainingDays, totalHours, months, years, yearProgress })}||`;
+
+      const cardPayload = JSON.stringify({ label: label || (isPast ? 'Past Event' : 'Upcoming Event'), targetDate, formattedDate, dayOfWeek, isPast, totalDays, weeks, remainingDays, totalHours, months, years, yearProgress });
+      return `Countdown calculated. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:COUNTDOWN:${cardPayload}||`;
     } catch (error) {
       console.error('[Countdown Error]:', error.message);
       return `Countdown failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:COUNTDOWN:${JSON.stringify({ label: label || 'Event', error: error.message })}||`;
@@ -681,13 +779,16 @@ export const getCountdownTool = tool(
   },
   {
     name: 'get_countdown',
-    description: 'Calculates exact days/weeks/hours until or since any date.',
-    schema: z.object({ targetDate: z.string().describe('Date in YYYY-MM-DD (IST).'), label: z.string().optional(), isPastQuery: z.boolean().optional() }),
+    description: 'Calculates exact days, weeks, hours until or since any date.',
+    schema: z.object({
+      targetDate: z.string().describe('Date in YYYY-MM-DD format (IST).'),
+      label: z.string().optional().describe('Event name e.g. "Board Exam".'),
+      isPastQuery: z.boolean().optional(),
+    }),
   }
 );
-
 // ============================================================================
-// 🕐 TOOL 15: Global Timezone Concierge (Pure JS Intl — no API)
+// 🕐 TOOL 15: Global Timezone Concierge
 // ============================================================================
 
 export const getTimezoneTool = tool(
@@ -695,6 +796,7 @@ export const getTimezoneTool = tool(
     try {
       const cityToTZ = { mumbai: 'Asia/Kolkata', delhi: 'Asia/Kolkata', bangalore: 'Asia/Kolkata', bengaluru: 'Asia/Kolkata', chennai: 'Asia/Kolkata', kolkata: 'Asia/Kolkata', hyderabad: 'Asia/Kolkata', pune: 'Asia/Kolkata', india: 'Asia/Kolkata', ist: 'Asia/Kolkata', kochi: 'Asia/Kolkata', thrissur: 'Asia/Kolkata', 'new york': 'America/New_York', nyc: 'America/New_York', 'los angeles': 'America/Los_Angeles', la: 'America/Los_Angeles', chicago: 'America/Chicago', 'san francisco': 'America/Los_Angeles', sf: 'America/Los_Angeles', seattle: 'America/Los_Angeles', washington: 'America/New_York', boston: 'America/New_York', miami: 'America/New_York', toronto: 'America/Toronto', canada: 'America/Toronto', vancouver: 'America/Vancouver', 'sao paulo': 'America/Sao_Paulo', brazil: 'America/Sao_Paulo', 'mexico city': 'America/Mexico_City', mexico: 'America/Mexico_City', london: 'Europe/London', uk: 'Europe/London', paris: 'Europe/Paris', berlin: 'Europe/Berlin', germany: 'Europe/Berlin', amsterdam: 'Europe/Amsterdam', rome: 'Europe/Rome', italy: 'Europe/Rome', madrid: 'Europe/Madrid', spain: 'Europe/Madrid', moscow: 'Europe/Moscow', russia: 'Europe/Moscow', istanbul: 'Europe/Istanbul', dubai: 'Asia/Dubai', uae: 'Asia/Dubai', riyadh: 'Asia/Riyadh', 'saudi arabia': 'Asia/Riyadh', doha: 'Asia/Qatar', qatar: 'Asia/Qatar', kuwait: 'Asia/Kuwait', bahrain: 'Asia/Bahrain', tokyo: 'Asia/Tokyo', japan: 'Asia/Tokyo', seoul: 'Asia/Seoul', korea: 'Asia/Seoul', beijing: 'Asia/Shanghai', china: 'Asia/Shanghai', shanghai: 'Asia/Shanghai', singapore: 'Asia/Singapore', 'hong kong': 'Asia/Hong_Kong', bangkok: 'Asia/Bangkok', thailand: 'Asia/Bangkok', jakarta: 'Asia/Jakarta', 'kuala lumpur': 'Asia/Kuala_Lumpur', malaysia: 'Asia/Kuala_Lumpur', karachi: 'Asia/Karachi', pakistan: 'Asia/Karachi', dhaka: 'Asia/Dhaka', bangladesh: 'Asia/Dhaka', colombo: 'Asia/Colombo', 'sri lanka': 'Asia/Colombo', kathmandu: 'Asia/Kathmandu', nepal: 'Asia/Kathmandu', sydney: 'Australia/Sydney', melbourne: 'Australia/Melbourne', brisbane: 'Australia/Brisbane', australia: 'Australia/Sydney', perth: 'Australia/Perth', cairo: 'Africa/Cairo', egypt: 'Africa/Cairo', nairobi: 'Africa/Nairobi', lagos: 'Africa/Lagos' };
       const now = new Date();
+
       const getTimeInCity = (cityName) => {
         const key = cityName.toLowerCase().trim();
         const tz = cityToTZ[key] || (key.includes('/') ? key : null);
@@ -702,14 +804,17 @@ export const getTimezoneTool = tool(
         const timeStr = now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
         const dateStr = now.toLocaleDateString('en-US', { timeZone: tz, weekday: 'short', month: 'short', day: 'numeric' });
         const hour = parseInt(now.toLocaleTimeString('en-US', { timeZone: tz, hour: '2-digit', hour12: false }));
-        const status = (hour < 6 || hour >= 23) ? 'sleeping' : (hour >= 9 && hour < 18) ? 'business' : 'awake';
+        const status = hour < 6 || hour >= 23 ? 'sleeping' : hour >= 9 && hour < 18 ? 'business' : 'awake';
         const istMs = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' })).getTime();
         const tgtMs = new Date(now.toLocaleString('en-US', { timeZone: tz })).getTime();
         const diffH = (tgtMs - istMs) / 3600000;
-        return { city: cityName.charAt(0).toUpperCase() + cityName.slice(1), time: timeStr, date: dateStr, timezone: tz, status, offsetFromIST: diffH >= 0 ? `+${diffH.toFixed(1)}h from IST` : `${diffH.toFixed(1)}h from IST` };
+        const offsetFromIST = diffH >= 0 ? `+${diffH.toFixed(1)}h from IST` : `${diffH.toFixed(1)}h from IST`;
+        return { city: cityName.charAt(0).toUpperCase() + cityName.slice(1), time: timeStr, date: dateStr, timezone: tz, status, offsetFromIST };
       };
+
       const results = cities.map(getTimeInCity).filter(Boolean);
       if (!results.length) throw new Error('Could not resolve any city names to timezones.');
+
       return `Timezone data ready. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:TIMEZONE:${JSON.stringify({ cities: results, generatedAt: now.toISOString() })}||`;
     } catch (error) {
       console.error('[Timezone Error]:', error.message);
@@ -718,52 +823,80 @@ export const getTimezoneTool = tool(
   },
   {
     name: 'get_timezone',
-    description: 'Gets current local time in one or multiple cities worldwide. Handles multi-city conversions.',
-    schema: z.object({ cities: z.array(z.string()).describe('Array of city names.') }),
+    description: 'Gets current local time in one or multiple cities.',
+    schema: z.object({ cities: z.array(z.string()).describe('Array of city names e.g. ["London", "New York"].') }),
   }
 );
 
 // ============================================================================
-// 🏋️ TOOL 16: Voice Fitness & Calorie Coach (CalorieNinjas + MongoDB)
+// 🏋️ TOOL 16: Voice Fitness & Calorie Coach
 // ============================================================================
 
 export const createFitnessTool = (userId) =>
   tool(
     async ({ mode, exercise, duration, sets, reps, foodQuery, unit }) => {
       try {
+        let activeMode = "summary";
+        if (mode && ['log_workout', 'calorie_lookup', 'summary'].includes(mode)) activeMode = mode;
         if (!userId) return 'SYSTEM_ERROR: User ID missing.';
-        if (mode === 'log_workout') {
+
+        if (activeMode === 'log_workout') {
           if (!exercise) throw new Error('Exercise name required.');
           const calPerMin = { running: 11, jogging: 9, cycling: 8, swimming: 10, walking: 4, yoga: 3, hiit: 12, 'weight training': 6, 'strength training': 6, pushups: 7, 'push-ups': 7, situps: 5, 'sit-ups': 5, pullups: 8, squats: 6, plank: 4, jumping: 9, dancing: 6, badminton: 7, tennis: 8, basketball: 8, football: 9, cricket: 5 };
           const cpm = calPerMin[exercise.toLowerCase().trim()] || 6;
           const mins = duration || (sets && reps ? Math.ceil((sets * reps) / 15) : 10);
           const caloriesBurned = Math.round(cpm * mins);
+
           await WorkoutLog.create({ user: userId, exercise, duration: mins, caloriesBurned, sets: sets || null, reps: reps || null });
           const logs = await WorkoutLog.find({ user: userId }).sort({ date: -1 }).lean();
-          let streak = 0; const today = new Date(); today.setHours(0, 0, 0, 0); const seen = new Set();
-          for (const w of logs) { const d = new Date(w.date); d.setHours(0, 0, 0, 0); const k = d.toDateString(); if (!seen.has(k)) { seen.add(k); const exp = new Date(today); exp.setDate(today.getDate() - streak); if (d.toDateString() === exp.toDateString()) streak++; else break; } }
+
+          let streak = 0;
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const seen = new Set();
+
+          for (const w of logs) {
+            const d = new Date(w.date); d.setHours(0, 0, 0, 0);
+            const k = d.toDateString();
+            if (!seen.has(k)) {
+              seen.add(k);
+              const exp = new Date(today); exp.setDate(today.getDate() - streak);
+              if (d.toDateString() === exp.toDateString()) streak++; else break;
+            }
+          }
+
           const wa = new Date(); wa.setDate(wa.getDate() - 7);
           const wl = await WorkoutLog.find({ user: userId, date: { $gte: wa } }).lean();
           const weeklyStats = { workouts: wl.length, minutes: wl.reduce((s, w) => s + (w.duration || 0), 0), calories: wl.reduce((s, w) => s + (w.caloriesBurned || 0), 0) };
-          return `Workout logged. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${JSON.stringify({ mode: 'log', exercise, duration: mins, caloriesBurned, sets: sets || null, reps: reps || null, streak, weeklyStats, streakLabel: streak >= 7 ? '🔥 Week Streak!' : streak >= 3 ? '⚡ On a Roll!' : `${streak} Day Streak` })}||`;
+          const cardPayload = JSON.stringify({ mode: 'log', exercise, duration: mins, caloriesBurned, sets: sets || null, reps: reps || null, streak, weeklyStats, streakLabel: streak >= 7 ? '🔥 Week Streak!' : streak >= 3 ? '⚡ On a Roll!' : `${streak} Day Streak` });
+
+          return `Workout logged. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${cardPayload}||`;
         }
-        if (mode === 'calorie_lookup') {
+
+        if (activeMode === 'calorie_lookup') {
           const apiKey = process.env.CALORIENINJAS_API_KEY;
           if (!apiKey) throw new Error('CALORIENINJAS_API_KEY missing from .env');
           const q = foodQuery || exercise;
           if (!q) throw new Error('Food query required.');
+
           const data = await fetchWithCacheAndRetry(`https://api.calorieninjas.com/v1/nutrition?query=${encodeURIComponent(q)}`, { headers: { 'X-Api-Key': apiKey } }, 86400000);
           if (!data?.items?.length) throw new Error(`No nutrition data for "${q}"`);
+
           const t = data.items.reduce((a, i) => ({ calories: a.calories + i.calories, protein: a.protein + i.protein_g, carbs: a.carbs + i.carbohydrates_total_g, fat: a.fat + i.fat_total_g, fiber: a.fiber + (i.fiber_g || 0), sodium: a.sodium + (i.sodium_mg || 0) }), { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sodium: 0 });
           const r1 = (n) => parseFloat(n.toFixed(1));
-          return `Nutrition data fetched. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${JSON.stringify({ mode: 'nutrition', query: q, servingSize: unit || 'standard serving', calories: r1(t.calories), protein: r1(t.protein), carbs: r1(t.carbs), fat: r1(t.fat), fiber: r1(t.fiber), sodium: r1(t.sodium), items: data.items.map(i => ({ name: i.name, calories: r1(i.calories) })) })}||`;
+
+          const cardPayload = JSON.stringify({ mode: 'nutrition', query: q, servingSize: unit || 'standard serving', calories: r1(t.calories), protein: r1(t.protein), carbs: r1(t.carbs), fat: r1(t.fat), fiber: r1(t.fiber), sodium: r1(t.sodium), items: data.items.map((i) => ({ name: i.name, calories: r1(i.calories) })) });
+          return `Nutrition data fetched. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${cardPayload}||`;
         }
-        if (mode === 'summary') {
+
+        if (activeMode === 'summary') {
           const wa = new Date(); wa.setDate(wa.getDate() - 7);
           const workouts = await WorkoutLog.find({ user: userId, date: { $gte: wa } }).sort({ date: -1 }).lean();
-          if (!workouts.length) return `No workouts logged this week. Tell user to say "log my workout" to start. CRITICAL: DO NOT APPEND A CARD STRING.`;
-          return `Fitness summary ready. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${JSON.stringify({ mode: 'summary', period: 'This Week', totalWorkouts: workouts.length, totalMinutes: workouts.reduce((s, w) => s + (w.duration || 0), 0), totalCalories: workouts.reduce((s, w) => s + (w.caloriesBurned || 0), 0), exercises: [...new Set(workouts.map(w => w.exercise))], recentWorkouts: workouts.slice(0, 5).map(w => ({ exercise: w.exercise, duration: w.duration, calories: w.caloriesBurned, date: new Date(w.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' }) })) })}||`;
+          if (!workouts.length) return `No workouts logged this week. Explain naturally. CRITICAL: DO NOT APPEND A CARD STRING.`;
+
+          const cardPayload = JSON.stringify({ mode: 'summary', period: 'This Week', totalWorkouts: workouts.length, totalMinutes: workouts.reduce((s, w) => s + (w.duration || 0), 0), totalCalories: workouts.reduce((s, w) => s + (w.caloriesBurned || 0), 0), exercises: [...new Set(workouts.map((w) => w.exercise))], recentWorkouts: workouts.slice(0, 5).map((w) => ({ exercise: w.exercise, duration: w.duration, calories: w.caloriesBurned, date: new Date(w.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: 'numeric', month: 'short' }) })) });
+          return `Fitness summary ready. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FITNESS:${cardPayload}||`;
         }
+
         throw new Error('Invalid mode.');
       } catch (error) {
         console.error('[Fitness Error]:', error.message);
@@ -772,91 +905,158 @@ export const createFitnessTool = (userId) =>
     },
     {
       name: 'log_fitness',
-      description: 'Three-mode fitness tool. log_workout: logs exercise and tracks streaks. calorie_lookup: nutrition data. summary: weekly stats.',
-      schema: z.object({ mode: z.enum(['log_workout', 'calorie_lookup', 'summary']), exercise: z.string().optional(), duration: z.number().optional(), sets: z.number().optional(), reps: z.number().optional(), foodQuery: z.string().optional(), unit: z.string().optional() }),
+      description: 'log_workout: logs exercise. calorie_lookup: nutrition data. summary: weekly workout stats.',
+      schema: z.object({
+        mode: z.string().describe('log_workout, calorie_lookup, or summary'),
+        exercise: z.string().optional(),
+        duration: z.number().optional(),
+        sets: z.number().optional(),
+        reps: z.number().optional(),
+        foodQuery: z.string().optional(),
+        unit: z.string().optional(),
+      }),
     }
   );
 
 // ============================================================================
-// 🛸 TOOL 17: NASA Space Intelligence (NASA Open APIs)
+// 🛸 TOOL 17: NASA Space Intelligence
 // ============================================================================
 
 export const getNASATool = tool(
-  async ({ queryType }) => {
+  async ({ data_type }) => {
     try {
-      const apiKey = process.env.NASA_API_KEY || 'DEMO_KEY';
-      const todayStr = new Date().toISOString().split('T')[0];
+      // 🛡️ DEFENSIVE MAPPING: Catch the verbose strings the LLM hallucinates
+      let activeQuery = (data_type || "apod").toLowerCase();
+
+      if (activeQuery.includes("astronomy") || activeQuery === "apod") {
+        activeQuery = "apod";
+      } else if (activeQuery.includes("asteroid") || activeQuery.includes("neo") || activeQuery.includes("near_earth")) {
+        activeQuery = "neo";
+      } else if (activeQuery.includes("mars")) {
+        activeQuery = "mars";
+      } else {
+        activeQuery = "apod";
+      }
+
+      const apiKey = process.env.NASA_API_KEY || "DEMO_KEY";
+      const todayStr = new Date().toISOString().split("T")[0];
       let cardPayload;
-      if (queryType === 'apod') {
+
+      if (activeQuery === "apod") {
         const data = await fetchWithCacheAndRetry(`https://api.nasa.gov/planetary/apod?api_key=${apiKey}&thumbs=true`, {}, 3600000);
-        cardPayload = JSON.stringify({ type: 'apod', title: data.title, date: data.date, explanation: (data.explanation || '').substring(0, 400) + (data.explanation?.length > 400 ? '...' : ''), imageUrl: data.media_type === 'video' ? (data.thumbnail_url || null) : data.url, hdUrl: data.hdurl || data.url, mediaType: data.media_type, copyright: data.copyright ? `© ${data.copyright.trim()}` : 'NASA/Public Domain' });
-      } else if (queryType === 'neo') {
+        cardPayload = JSON.stringify({
+          type: "apod",
+          title: data.title,
+          date: data.date,
+          explanation: (data.explanation || "").substring(0, 400) + (data.explanation?.length > 400 ? "..." : ""),
+          imageUrl: data.media_type === "video" ? data.thumbnail_url || null : data.url,
+          hdUrl: data.hdurl || data.url,
+          mediaType: data.media_type,
+          copyright: data.copyright ? `© ${data.copyright.trim()}` : "NASA/Public Domain",
+        });
+        return `NASA data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:APOD:${cardPayload}||`;
+
+      } else if (activeQuery === "neo") {
         const data = await fetchWithCacheAndRetry(`https://api.nasa.gov/neo/rest/v1/feed?start_date=${todayStr}&end_date=${todayStr}&api_key=${apiKey}`, {}, 3600000);
         const allNeos = Object.values(data.near_earth_objects || {}).flat();
-        const closest = allNeos.sort((a, b) => parseFloat(a.close_approach_data?.[0]?.miss_distance?.kilometers || Infinity) - parseFloat(b.close_approach_data?.[0]?.miss_distance?.kilometers || Infinity)).slice(0, 5).map(neo => ({ name: neo.name.replace(/[()]/g, ''), diameter: `${parseFloat(neo.estimated_diameter?.meters?.estimated_diameter_min || 0).toFixed(0)}–${parseFloat(neo.estimated_diameter?.meters?.estimated_diameter_max || 0).toFixed(0)}m`, missDistance: `${(parseFloat(neo.close_approach_data?.[0]?.miss_distance?.kilometers || 0) / 1000).toFixed(0)}k km`, velocity: `${parseFloat(neo.close_approach_data?.[0]?.relative_velocity?.kilometers_per_hour || 0).toFixed(0)} km/h`, isPotentiallyHazardous: neo.is_potentially_hazardous_asteroid }));
-        cardPayload = JSON.stringify({ type: 'neo', date: todayStr, totalCount: allNeos.length, hazardousCount: allNeos.filter(n => n.is_potentially_hazardous_asteroid).length, asteroids: closest });
-      } else if (queryType === 'mars') {
+        const closest = allNeos.sort((a, b) => parseFloat(a.close_approach_data?.[0]?.miss_distance?.kilometers || Infinity) - parseFloat(b.close_approach_data?.[0]?.miss_distance?.kilometers || Infinity)).slice(0, 5).map((neo) => ({
+          name: neo.name.replace(/[()]/g, ""),
+          diameter: `${parseFloat(neo.estimated_diameter?.meters?.estimated_diameter_min || 0).toFixed(0)}–${parseFloat(neo.estimated_diameter?.meters?.estimated_diameter_max || 0).toFixed(0)}m`,
+          missDistance: `${(parseFloat(neo.close_approach_data?.[0]?.miss_distance?.kilometers || 0) / 1000).toFixed(0)}k km`,
+          velocity: `${parseFloat(neo.close_approach_data?.[0]?.relative_velocity?.kilometers_per_hour || 0).toFixed(0)} km/h`,
+          isPotentiallyHazardous: neo.is_potentially_hazardous_asteroid,
+        }));
+        cardPayload = JSON.stringify({ type: "neo", date: todayStr, totalCount: allNeos.length, hazardousCount: allNeos.filter((n) => n.is_potentially_hazardous_asteroid).length, asteroids: closest });
+
+      } else if (activeQuery === "mars") {
         const data = await fetchWithCacheAndRetry(`https://api.nasa.gov/mars-photos/api/v1/rovers/curiosity/latest_photos?api_key=${apiKey}&page=1`, {}, 3600000);
-        const photos = (data.latest_photos || []).slice(0, 6).map(p => ({ id: p.id, sol: p.sol, camera: p.camera?.full_name || 'Unknown', imageUrl: p.img_src, earthDate: p.earth_date }));
-        cardPayload = JSON.stringify({ type: 'mars', rover: 'Curiosity', latestSol: data.latest_photos?.[0]?.sol, earthDate: data.latest_photos?.[0]?.earth_date, totalPhotos: data.latest_photos?.length || 0, photos });
-      } else throw new Error('Invalid queryType.');
+        const photos = (data.latest_photos || []).slice(0, 6).map((p) => ({ id: p.id, sol: p.sol, camera: p.camera?.full_name || p.camera?.name || "Unknown", imageUrl: p.img_src, earthDate: p.earth_date }));
+        cardPayload = JSON.stringify({ type: "mars", rover: "Curiosity", latestSol: data.latest_photos?.[0]?.sol, earthDate: data.latest_photos?.[0]?.earth_date, totalPhotos: data.latest_photos?.length || 0, photos });
+      }
+
       return `NASA data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:NASA:${cardPayload}||`;
     } catch (error) {
-      console.error('[NASA Error]:', error.message);
-      return `NASA fetch failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:NASA:${JSON.stringify({ queryType, error: error.message })}||`;
+      console.error("[NASA Error]:", error.message);
+      return `NASA data fetch failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:NASA:${JSON.stringify({ type: data_type, error: error.message })}||`;
     }
   },
   {
-    name: 'get_nasa_data',
-    description: 'NASA space data. "apod"=Astronomy Picture of the Day, "neo"=Near Earth Asteroids, "mars"=Mars Rover photos.',
-    schema: z.object({ queryType: z.enum(['apod', 'neo', 'mars']) }),
+    name: "get_nasa_data",
+    description: 'Fetches NASA space data. Use for astronomy picture of the day, near earth asteroids, or mars photos.',
+    schema: z.object({
+      data_type: z.string().describe('The exact type of NASA data to fetch. e.g. "astronomy_picture_of_the_day".'),
+    }),
   }
 );
 
 // ============================================================================
-// 💰 TOOL 18: Voice-Powered Personal Finance Logger (MongoDB)
+// 💰 TOOL 18: Voice-Powered Personal Finance Logger
 // ============================================================================
 
 export const createFinanceTool = (userId) =>
   tool(
     async ({ mode, transactionType, amount, category, description, period }) => {
       try {
+        let activeMode = "summary";
+        if (mode && ['log', 'summary'].includes(mode.toLowerCase())) activeMode = mode.toLowerCase();
+
+        let tType = "expense";
+        if (transactionType && ['expense', 'income'].includes(transactionType.toLowerCase())) tType = transactionType.toLowerCase();
+
+        let pDays = 30;
+        if (period && period.toLowerCase() === 'week') pDays = 7;
+
         if (!userId) return 'SYSTEM_ERROR: User ID missing.';
-        if (mode === 'log') {
+
+        if (activeMode === 'log') {
           if (!amount || amount <= 0) throw new Error('Valid amount required.');
           if (!description) throw new Error('Description required.');
-          const type = transactionType === 'income' ? 'income' : 'expense';
+
           const validCats = ['Food', 'Transport', 'Entertainment', 'Health', 'Shopping', 'Utilities', 'Rent', 'Salary', 'Freelance', 'Travel', 'Education', 'Investment', 'Other'];
-          const normCat = validCats.find(c => c.toLowerCase() === (category || '').toLowerCase()) || 'Other';
-          const tx = await Transaction.create({ user: userId, type, amount, category: normCat, description });
-          return `Transaction logged. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${JSON.stringify({ mode: 'receipt', transactionId: tx._id.toString().slice(-6).toUpperCase(), type, amount, category: normCat, description, date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }), time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }), typeLabel: type === 'income' ? '💰 Income' : '💸 Expense' })}||`;
+          const normCat = validCats.find((c) => c.toLowerCase() === (category || '').toLowerCase()) || 'Other';
+
+          const tx = await Transaction.create({ user: userId, type: tType, amount, category: normCat, description });
+          const cardPayload = JSON.stringify({ mode: 'receipt', transactionId: tx._id.toString().slice(-6).toUpperCase(), type: tType, amount, category: normCat, description, date: new Date().toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', year: 'numeric' }), time: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }), typeLabel: tType === 'income' ? '💰 Income' : '💸 Expense' });
+          return `Transaction logged. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${cardPayload}||`;
         }
-        if (mode === 'summary') {
-          const periodDays = period === 'week' ? 7 : 30;
-          const since = new Date(); since.setDate(since.getDate() - periodDays);
+
+        if (activeMode === 'summary') {
+          const since = new Date(); since.setDate(since.getDate() - pDays);
           const txs = await Transaction.find({ user: userId, date: { $gte: since } }).sort({ date: -1 }).lean();
-          if (!txs.length) return `No transactions for the past ${periodDays} days. Tell user to log expenses first. CRITICAL: DO NOT APPEND A CARD STRING.`;
-          const income = txs.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-          const expenses = txs.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
-          const catMap = {}; txs.filter(t => t.type === 'expense').forEach(t => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
+
+          if (!txs.length) return `No transactions for the past ${pDays} days. CRITICAL: DO NOT APPEND A CARD STRING.`;
+
+          const income = txs.filter((t) => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+          const expenses = txs.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+          const catMap = {};
+          txs.filter((t) => t.type === 'expense').forEach((t) => { catMap[t.category] = (catMap[t.category] || 0) + t.amount; });
+
           const topCategories = Object.entries(catMap).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amt]) => ({ name, amount: parseFloat(amt.toFixed(2)), percent: Math.round((amt / expenses) * 100) || 0 }));
-          return `Finance summary ready. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${JSON.stringify({ mode: 'summary', period: period === 'week' ? 'This Week' : 'This Month', totalIncome: parseFloat(income.toFixed(2)), totalExpenses: parseFloat(expenses.toFixed(2)), balance: parseFloat((income - expenses).toFixed(2)), transactionCount: txs.length, topCategories, recentTransactions: txs.slice(0, 5).map(t => ({ desc: t.description, amount: t.type === 'expense' ? -t.amount : t.amount, category: t.category, date: new Date(t.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }) })), healthStatus: (income - expenses) > 0 ? 'surplus' : (income - expenses) < 0 ? 'deficit' : 'break-even' })}||`;
+          const cardPayload = JSON.stringify({ mode: 'summary', period: pDays === 7 ? 'This Week' : 'This Month', totalIncome: parseFloat(income.toFixed(2)), totalExpenses: parseFloat(expenses.toFixed(2)), balance: parseFloat((income - expenses).toFixed(2)), transactionCount: txs.length, topCategories, recentTransactions: txs.slice(0, 5).map((t) => ({ desc: t.description, amount: t.type === 'expense' ? -t.amount : t.amount, category: t.category, date: new Date(t.date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short' }) })), healthStatus: income - expenses > 0 ? 'surplus' : income - expenses < 0 ? 'deficit' : 'break-even' });
+          return `Finance summary ready. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${cardPayload}||`;
         }
-        throw new Error('Invalid mode.');
+        throw new Error('Invalid mode. Use "log" or "summary".');
       } catch (error) {
         console.error('[Finance Error]:', error.message);
-        return `Finance tool error. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${JSON.stringify({ mode, error: error.message })}||`;
+        return `Finance tool error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FINANCE:${JSON.stringify({ mode, error: error.message })}||`;
       }
     },
     {
       name: 'log_finance',
-      description: 'Two-mode finance tool. log: records expense/income. summary: spending report for week or month.',
-      schema: z.object({ mode: z.enum(['log', 'summary']), transactionType: z.enum(['expense', 'income']).optional(), amount: z.number().optional(), category: z.string().optional(), description: z.string().optional(), period: z.enum(['week', 'month']).optional() }),
+      description: 'log: records expense/income. summary: shows spending report for week or month.',
+      schema: z.object({
+        mode: z.string().describe('"log" or "summary"'),
+        transactionType: z.string().optional().describe('"expense" or "income"'),
+        amount: z.number().optional(),
+        category: z.string().optional(),
+        description: z.string().optional(),
+        period: z.string().optional().describe('"week" or "month"'),
+      }),
     }
   );
 
 // ============================================================================
-// 🌤️ TOOL 19: 7-Day Weather Forecast (Open-Meteo — no key)
+// 🌤️ TOOL 19: 7-Day Weather Forecast & 🧮 TOOL 20: Advanced Calculator
 // ============================================================================
 
 const wmoCodeToCondition = (code) => {
@@ -880,20 +1080,38 @@ const wmoCodeToCondition = (code) => {
 export const getWeatherForecastTool = tool(
   async ({ location }) => {
     try {
-      const geoData = await fetchWithCacheAndRetry(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location.trim())}&count=1&language=en&format=json`, {}, 86400000);
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location.trim())}&count=1&language=en&format=json`;
+      const geoData = await fetchWithCacheAndRetry(geoUrl, {}, 86400000);
       if (!geoData?.results?.length) throw new Error(`City "${location}" not found.`);
+
       const { latitude, longitude, timezone, name: cityName, country_code } = geoData.results[0];
       const resolvedTZ = timezone || 'Asia/Kolkata';
-      const forecastUrl = [`https://api.open-meteo.com/v1/forecast`, `?latitude=${latitude}`, `&longitude=${longitude}`, `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,weathercode,windspeed_10m_max`, `&current_weather=true`, `&timezone=${encodeURIComponent(resolvedTZ)}`, `&forecast_days=7`].join('');
+
+      const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,weathercode,windspeed_10m_max&current_weather=true&timezone=${encodeURIComponent(resolvedTZ)}&forecast_days=7`;
       const forecastData = await fetchWithCacheAndRetry(forecastUrl, {}, 3600000);
-      if (!forecastData?.daily?.time?.length) throw new Error('No forecast data returned.');
+      if (!forecastData?.daily?.time?.length) throw new Error('Open-Meteo returned no forecast data.');
+
       const daily = forecastData.daily;
       const days = daily.time.map((dateStr, idx) => {
         const dayDate = new Date(dateStr + 'T12:00:00');
-        return { day: dayDate.toLocaleDateString('en-US', { weekday: 'short' }), date: dayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }), high: Math.round(daily.temperature_2m_max[idx] ?? 0), low: Math.round(daily.temperature_2m_min[idx] ?? 0), condition: wmoCodeToCondition(daily.weathercode[idx] ?? 0), rain: daily.precipitation_probability_max[idx] ?? 0, uv: daily.uv_index_max[idx] !== undefined ? parseFloat(daily.uv_index_max[idx].toFixed(1)) : null, windMax: daily.windspeed_10m_max[idx] !== undefined ? `${Math.round(daily.windspeed_10m_max[idx])} km/h` : '--' };
+        return {
+          day: dayDate.toLocaleDateString('en-US', { weekday: 'short' }),
+          date: dayDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }),
+          high: Math.round(daily.temperature_2m_max[idx] ?? 0),
+          low: Math.round(daily.temperature_2m_min[idx] ?? 0),
+          condition: wmoCodeToCondition(daily.weathercode[idx] ?? 0),
+          rain: daily.precipitation_probability_max[idx] ?? 0,
+          uv: daily.uv_index_max[idx] !== undefined ? parseFloat(daily.uv_index_max[idx].toFixed(1)) : null,
+          windMax: daily.windspeed_10m_max[idx] !== undefined ? `${Math.round(daily.windspeed_10m_max[idx])} km/h` : '--',
+        };
       });
+
       const cw = forecastData.current_weather;
-      return `7-day forecast fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FORECAST:${JSON.stringify({ location: cityName || location, countryCode: country_code || '', timezone: resolvedTZ, currentTemp: cw ? Math.round(cw.temperature) : days[0]?.high || '--', currentCondition: cw ? wmoCodeToCondition(cw.weathercode) : days[0]?.condition || 'Unknown', days })}||`;
+      const currentCondition = cw ? wmoCodeToCondition(cw.weathercode) : days[0]?.condition || 'Unknown';
+      const currentTemp = cw ? Math.round(cw.temperature) : days[0]?.high || '--';
+
+      const cardPayload = JSON.stringify({ location: cityName || location, countryCode: country_code || '', timezone: resolvedTZ, currentTemp, currentCondition, days });
+      return `7-day forecast fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FORECAST:${cardPayload}||`;
     } catch (error) {
       console.error('[Forecast Error]:', error.message);
       return `Forecast fetch failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FORECAST:${JSON.stringify({ location, error: error.message })}||`;
@@ -901,14 +1119,10 @@ export const getWeatherForecastTool = tool(
   },
   {
     name: 'get_weather_forecast',
-    description: 'Fetches a 7-day forecast. Use when user asks about forecast, this week\'s weather, tomorrow\'s weather, or "will it rain on [day]". For CURRENT conditions use get_weather.',
-    schema: z.object({ location: z.string().describe('City name for the 7-day forecast.') }),
+    description: 'Fetches a 7-day weather forecast for any city.',
+    schema: z.object({ location: z.string().describe('City name.') }),
   }
 );
-
-// ============================================================================
-// 🧮 TOOL 20: Advanced Calculator & Unit Converter (Pure JS)
-// ============================================================================
 
 const fmtNum = (n) => {
   if (!isFinite(n) || isNaN(n)) return 'Error';
@@ -920,20 +1134,18 @@ const fmtNum = (n) => {
 };
 
 const UNITS = {
-  weight: { kg: 1, kilogram: 1, kilograms: 1, g: 0.001, gram: 0.001, grams: 0.001, mg: 0.000001, lb: 0.453592, lbs: 0.453592, pound: 0.453592, pounds: 0.453592, oz: 0.0283495, ounce: 0.0283495, ounces: 0.0283495, stone: 6.35029, tonne: 1000, ton: 907.185 },
-  length: { m: 1, meter: 1, meters: 1, cm: 0.01, mm: 0.001, km: 1000, kilometer: 1000, kilometers: 1000, mile: 1609.34, miles: 1609.34, ft: 0.3048, foot: 0.3048, feet: 0.3048, inch: 0.0254, inches: 0.0254, yard: 0.9144, yards: 0.9144, yd: 0.9144 },
-  volume: { l: 1, liter: 1, litre: 1, ml: 0.001, cup: 0.236588, cups: 0.236588, gallon: 3.78541, gallons: 3.78541, tbsp: 0.0147868, tsp: 0.00492892, pint: 0.473176, quart: 0.946353 },
-  speed: { 'km/h': 1, kph: 1, kmph: 1, mph: 1.60934, 'm/s': 3.6, knot: 1.852, knots: 1.852 },
-  area: { 'm2': 1, 'sq m': 1, 'km2': 1e6, 'ft2': 0.092903, 'sq ft': 0.092903, 'square foot': 0.092903, 'square feet': 0.092903, acre: 4046.86, acres: 4046.86, hectare: 10000, hectares: 10000 },
-  data: { byte: 1, bytes: 1, kb: 1024, kilobyte: 1024, mb: 1048576, megabyte: 1048576, gb: 1073741824, gigabyte: 1073741824, tb: 1099511627776, terabyte: 1099511627776 },
-  energy: { j: 1, joule: 1, kj: 1000, cal: 4.184, calorie: 4.184, calories: 4.184, kcal: 4184, wh: 3600, kwh: 3600000 },
+  weight: { kg: 1, kilogram: 1, g: 0.001, gram: 0.001, mg: 0.000001, lb: 0.453592, lbs: 0.453592, pound: 0.453592, oz: 0.0283495, ounce: 0.0283495, stone: 6.35029, tonne: 1000, ton: 907.185 },
+  length: { m: 1, meter: 1, cm: 0.01, centimeter: 0.01, mm: 0.001, millimeter: 0.001, km: 1000, kilometer: 1000, mile: 1609.34, miles: 1609.34, ft: 0.3048, foot: 0.3048, feet: 0.3048, inch: 0.0254, inches: 0.0254, '"': 0.0254, "'": 0.3048, yard: 0.9144, yd: 0.9144, nautical_mile: 1852 },
+  volume: { l: 1, liter: 1, ml: 0.001, milliliter: 0.001, cup: 0.236588, cups: 0.236588, gallon: 3.78541, gallons: 3.78541, 'fl oz': 0.0295735, tbsp: 0.0147868, tsp: 0.00492892, pint: 0.473176, quart: 0.946353 },
+  speed: { 'km/h': 1, kph: 1, mph: 1.60934, 'm/s': 3.6, knot: 1.852, 'ft/s': 1.09728 },
+  area: { m2: 1, 'sq m': 1, sqm: 1, km2: 1e6, ft2: 0.092903, 'sq ft': 0.092903, acre: 4046.86, hectare: 10000 },
+  data: { byte: 1, b: 1, kb: 1024, mb: 1048576, gb: 1073741824, tb: 1099511627776 },
+  energy: { j: 1, joule: 1, kj: 1000, cal: 4.184, kcal: 4184, wh: 3600, kwh: 3600000 },
 };
 
 const resolveUnit = (unitStr) => {
   const key = unitStr.toLowerCase().trim();
-  for (const [category, table] of Object.entries(UNITS)) {
-    if (table[key] !== undefined) return { category, factor: table[key] };
-  }
+  for (const [category, table] of Object.entries(UNITS)) { if (table[key] !== undefined) return { category, factor: table[key] }; }
   return null;
 };
 
@@ -942,11 +1154,11 @@ const convertTemperature = (value, from, to) => {
   const t = to.toLowerCase().replace('°', '').trim();
   let celsius;
   if (f === 'c' || f === 'celsius') celsius = value;
-  else if (f === 'f' || f === 'fahrenheit') celsius = (value - 32) * 5 / 9;
+  else if (f === 'f' || f === 'fahrenheit') celsius = ((value - 32) * 5) / 9;
   else if (f === 'k' || f === 'kelvin') celsius = value - 273.15;
   else throw new Error(`Unknown temperature unit: ${from}`);
   if (t === 'c' || t === 'celsius') return celsius;
-  if (t === 'f' || t === 'fahrenheit') return (celsius * 9 / 5) + 32;
+  if (t === 'f' || t === 'fahrenheit') return (celsius * 9) / 5 + 32;
   if (t === 'k' || t === 'kelvin') return celsius + 273.15;
   throw new Error(`Unknown target temperature unit: ${to}`);
 };
@@ -954,42 +1166,85 @@ const convertTemperature = (value, from, to) => {
 export const calculateTool = tool(
   async ({ calculationType, expression, num1, num2, num3, operator, unitFrom, unitTo }) => {
     try {
+      let activeOperator = "+";
+      if (operator && ['+', '-', '*', '/', '^', 'sqrt'].includes(operator)) activeOperator = operator;
+
       let result = null, formula = '', steps = [], extras = {}, displayType = calculationType;
+
       switch (calculationType) {
-        case 'arithmetic': {
+        case 'arithmetic':
           if (num1 === undefined || num1 === null) throw new Error('num1 is required.');
-          const opSymbols = { '+': '+', '-': '−', '*': '×', '/': '÷', '^': '^', 'sqrt': '√' };
-          if (operator === 'sqrt') { if (num1 < 0) throw new Error('Cannot take square root of a negative number.'); result = Math.sqrt(num1); formula = `√${num1} = ${fmtNum(result)}`; steps = [`Square root of ${num1}`, `= ${fmtNum(result)}`]; }
-          else { if (num2 === undefined || num2 === null) throw new Error('num2 required.'); if (operator === '/' && num2 === 0) throw new Error('Division by zero is undefined.'); if (operator === '+') result = num1 + num2; else if (operator === '-') result = num1 - num2; else if (operator === '*') result = num1 * num2; else if (operator === '/') result = num1 / num2; else if (operator === '^') result = Math.pow(num1, num2); else throw new Error(`Unknown operator: ${operator}`); formula = `${num1} ${opSymbols[operator] || operator} ${num2} = ${fmtNum(result)}`; steps = [`${fmtNum(num1)} ${opSymbols[operator] || operator} ${fmtNum(num2)}`, `= ${fmtNum(result)}`]; }
+          const opSymbols = { '+': '+', '-': '−', '*': '×', '/': '÷', '^': '^', sqrt: '√' };
+          if (activeOperator === 'sqrt') {
+            if (num1 < 0) throw new Error('Cannot take square root of a negative number.');
+            result = Math.sqrt(num1); formula = `√${num1} = ${fmtNum(result)}`; steps = [`Square root of ${num1}`, `= ${fmtNum(result)}`];
+          } else {
+            if (num2 === undefined || num2 === null) throw new Error('num2 is required.');
+            if (activeOperator === '/' && num2 === 0) throw new Error('Division by zero.');
+            if (activeOperator === '+') result = num1 + num2; else if (activeOperator === '-') result = num1 - num2; else if (activeOperator === '*') result = num1 * num2; else if (activeOperator === '/') result = num1 / num2; else if (activeOperator === '^') result = Math.pow(num1, num2);
+            formula = `${num1} ${opSymbols[activeOperator]} ${num2} = ${fmtNum(result)}`; steps = [`${fmtNum(num1)} ${opSymbols[activeOperator]} ${fmtNum(num2)}`, `= ${fmtNum(result)}`];
+          }
           break;
-        }
-        case 'percentage_value': { if (num1 === undefined || num2 === undefined) throw new Error('num1(%) and num2(base) required.'); result = (num1 / 100) * num2; formula = `${num1}% of ${fmtNum(num2)} = ${fmtNum(result)}`; steps = [`Convert ${num1}% → decimal: ${num1 / 100}`, `Multiply: ${num1 / 100} × ${fmtNum(num2)}`, `Result: ${fmtNum(result)}`]; displayType = 'percentage'; break; }
-        case 'percentage_what': { if (num1 === undefined || num2 === undefined) throw new Error('num1(part) and num2(whole) required.'); if (num2 === 0) throw new Error('Cannot divide by zero.'); result = (num1 / num2) * 100; formula = `(${fmtNum(num1)} ÷ ${fmtNum(num2)}) × 100 = ${fmtNum(result)}%`; steps = [`Divide: ${fmtNum(num1)} ÷ ${fmtNum(num2)} = ${fmtNum(num1 / num2)}`, `Multiply by 100: ${fmtNum(result)}%`]; displayType = 'percentage'; break; }
-        case 'tip': { if (num1 === undefined || num2 === undefined) throw new Error('num1(tip%) and num2(bill) required.'); const tipAmt = (num1 / 100) * num2; const totalAmt = num2 + tipAmt; result = tipAmt; formula = `${num1}% tip on ${fmtNum(num2)}`; steps = [`Tip: ${fmtNum(num2)} × ${num1 / 100} = ${fmtNum(tipAmt)}`, `Total: ${fmtNum(num2)} + ${fmtNum(tipAmt)} = ${fmtNum(totalAmt)}`]; extras = { tipAmount: fmtNum(tipAmt), totalWithTip: fmtNum(totalAmt) }; break; }
-        case 'discount': { if (num1 === undefined || num2 === undefined) throw new Error('num1(discount%) and num2(original price) required.'); const discAmt = (num1 / 100) * num2; const finalPrice = num2 - discAmt; result = finalPrice; formula = `${num2} − ${num1}% = ${fmtNum(finalPrice)}`; steps = [`Discount: ${fmtNum(num2)} × ${num1 / 100} = ${fmtNum(discAmt)}`, `Final price: ${fmtNum(num2)} − ${fmtNum(discAmt)} = ${fmtNum(finalPrice)}`]; extras = { discount: fmtNum(discAmt), finalPrice: fmtNum(finalPrice) }; break; }
-        case 'unit_conversion': {
-          if (!unitFrom || !unitTo) throw new Error('unitFrom and unitTo required.'); if (num1 === undefined) throw new Error('num1 required.');
+        case 'percentage_value':
+          if (num1 === undefined || num2 === undefined) throw new Error('num1 (%) and num2 (base) required.');
+          result = (num1 / 100) * num2; formula = `${num1}% of ${fmtNum(num2)} = ${fmtNum(result)}`; steps = [`Convert ${num1}% → decimal: ${num1 / 100}`, `Multiply: ${num1 / 100} × ${fmtNum(num2)}`, `Result: ${fmtNum(result)}`]; displayType = 'percentage';
+          break;
+        case 'percentage_what':
+          if (num1 === undefined || num2 === undefined || num2 === 0) throw new Error('Valid num1 and num2 required.');
+          result = (num1 / num2) * 100; formula = `(${fmtNum(num1)} ÷ ${fmtNum(num2)}) × 100 = ${fmtNum(result)}%`; steps = [`Divide: ${fmtNum(num1)} ÷ ${fmtNum(num2)} = ${fmtNum(num1 / num2)}`, `Multiply by 100: ${fmtNum(result)}%`]; displayType = 'percentage';
+          break;
+        case 'tip':
+          if (num1 === undefined || num2 === undefined) throw new Error('tip% and bill amount required.');
+          const tipAmt = (num1 / 100) * num2; const totalAmt = num2 + tipAmt; result = tipAmt; formula = `${num1}% tip on ${fmtNum(num2)}`; steps = [`Tip: ${fmtNum(num2)} × ${num1 / 100} = ${fmtNum(tipAmt)}`, `Total: ${fmtNum(num2)} + ${fmtNum(tipAmt)} = ${fmtNum(totalAmt)}`]; extras = { tipAmount: fmtNum(tipAmt), totalWithTip: fmtNum(totalAmt) };
+          break;
+        case 'discount':
+          if (num1 === undefined || num2 === undefined) throw new Error('discount% and original price required.');
+          const discAmt = (num1 / 100) * num2; const finalPrice = num2 - discAmt; result = finalPrice; formula = `${num2} − ${num1}% = ${fmtNum(finalPrice)}`; steps = [`Discount: ${fmtNum(num2)} × ${num1 / 100} = ${fmtNum(discAmt)}`, `Final price: ${fmtNum(num2)} − ${fmtNum(discAmt)} = ${fmtNum(finalPrice)}`]; extras = { discount: fmtNum(discAmt), finalPrice: fmtNum(finalPrice), savings: fmtNum(discAmt) };
+          break;
+        case 'unit_conversion':
+          if (!unitFrom || !unitTo || num1 === undefined) throw new Error('units and value required.');
           const tempKeys = ['c', 'f', 'k', 'celsius', 'fahrenheit', 'kelvin', '°c', '°f', '°k'];
           const fromKey = unitFrom.toLowerCase().replace('°', '').trim(), toKey = unitTo.toLowerCase().replace('°', '').trim();
-          if (tempKeys.some(k => fromKey.includes(k)) || tempKeys.some(k => toKey.includes(k))) {
+          if (tempKeys.some((k) => fromKey.includes(k)) || tempKeys.some((k) => toKey.includes(k))) {
             const converted = convertTemperature(num1, fromKey, toKey); result = converted;
             const toLabel = toKey === 'f' || toKey === 'fahrenheit' ? '°F' : toKey === 'k' || toKey === 'kelvin' ? 'K' : '°C';
             const fromLabel = fromKey === 'f' || fromKey === 'fahrenheit' ? '°F' : fromKey === 'k' || fromKey === 'kelvin' ? 'K' : '°C';
-            formula = `${num1}${fromLabel} = ${fmtNum(converted)}${toLabel}`; steps = [`Convert ${num1}${fromLabel} to ${toLabel}`, `Result: ${fmtNum(converted)}${toLabel}`]; break;
+            formula = `${num1}${fromLabel} = ${fmtNum(converted)}${toLabel}`; steps = [`Convert ${num1}${fromLabel} to ${toLabel}`, `Result: ${fmtNum(converted)}${toLabel}`];
+            break;
           }
           const fromUnit = resolveUnit(unitFrom), toUnit = resolveUnit(unitTo);
-          if (!fromUnit) throw new Error(`Unrecognised unit: "${unitFrom}".`); if (!toUnit) throw new Error(`Unrecognised unit: "${unitTo}".`);
-          if (fromUnit.category !== toUnit.category) throw new Error(`Cannot convert ${unitFrom} (${fromUnit.category}) to ${unitTo} (${toUnit.category}).`);
+          if (!fromUnit || !toUnit || fromUnit.category !== toUnit.category) throw new Error(`Invalid or mismatched units: ${unitFrom} to ${unitTo}.`);
           const inSI = num1 * fromUnit.factor, converted = inSI / toUnit.factor; result = converted;
-          formula = `${num1} ${unitFrom} = ${fmtNum(converted)} ${unitTo}`; steps = [`${num1} ${unitFrom} → SI: ${fmtNum(inSI)}`, `÷ ${toUnit.factor} → ${fmtNum(converted)} ${unitTo}`]; break;
-        }
-        case 'bmi': { if (num1 === undefined || num2 === undefined) throw new Error('num1(weight kg) and num2(height cm) required.'); const heightM = num2 > 3 ? num2 / 100 : num2; const bmi = num1 / (heightM * heightM); let category, advice; if (bmi < 18.5) { category = 'Underweight'; advice = 'Consider consulting a nutritionist.'; } else if (bmi < 25) { category = 'Normal Weight'; advice = 'Great — maintain your healthy lifestyle!'; } else if (bmi < 30) { category = 'Overweight'; advice = 'Light exercise and diet adjustments can help.'; } else if (bmi < 35) { category = 'Obese Class I'; advice = 'Consult a healthcare provider.'; } else { category = 'Obese Class II+'; advice = 'Medical consultation recommended.'; } result = parseFloat(bmi.toFixed(1)); formula = `BMI = ${num1} kg ÷ (${heightM.toFixed(2)} m)² = ${result}`; steps = [`Weight: ${num1} kg`, `Height: ${heightM.toFixed(2)} m`, `BMI = ${num1} ÷ ${(heightM * heightM).toFixed(4)} = ${result}`, `Classification: ${category}`]; extras = { category, advice, weightKg: num1, heightCm: Math.round(heightM * 100), normalRange: '18.5 – 24.9' }; displayType = 'bmi'; break; }
-        case 'compound_interest': { if (num1 === undefined || num2 === undefined || num3 === undefined) throw new Error('num1(principal), num2(rate%), num3(years) required.'); const amount = num1 * Math.pow(1 + num2 / 100, num3); const interest = amount - num1; result = parseFloat(amount.toFixed(2)); formula = `A = ${fmtNum(num1)} × (1 + ${num2}%)^${num3}`; steps = [`Principal: ${fmtNum(num1)}`, `Rate: ${num2}% per year`, `Time: ${num3} years`, `Interest earned: ${fmtNum(interest)}`, `Total: ${fmtNum(amount)}`]; extras = { principal: fmtNum(num1), interestEarned: fmtNum(interest), totalAmount: fmtNum(amount), years: num3, rate: `${num2}%` }; displayType = 'compound_interest'; break; }
-        case 'simple_interest': { if (num1 === undefined || num2 === undefined || num3 === undefined) throw new Error('num1(principal), num2(rate%), num3(years) required.'); const si = (num1 * num2 * num3) / 100; const total = num1 + si; result = parseFloat(si.toFixed(2)); formula = `SI = (${fmtNum(num1)} × ${num2} × ${num3}) ÷ 100`; steps = [`SI = (P × R × T) / 100`, `SI = ${fmtNum(si)}`, `Total = ${fmtNum(num1)} + ${fmtNum(si)} = ${fmtNum(total)}`]; extras = { simpleInterest: fmtNum(si), totalAmount: fmtNum(total) }; displayType = 'simple_interest'; break; }
-        case 'age': { if (num1 === undefined) throw new Error('num1(birth year) required.'); const age = new Date().getFullYear() - Math.round(num1); result = age; formula = `${new Date().getFullYear()} − ${Math.round(num1)} = ${age} years`; steps = [`Current year: ${new Date().getFullYear()}`, `Birth year: ${Math.round(num1)}`, `Age: ${age} years`]; displayType = 'age'; break; }
+          formula = `${num1} ${unitFrom} = ${fmtNum(converted)} ${unitTo}`; steps = [`${num1} ${unitFrom} → SI base: ${fmtNum(inSI)}`, `÷ ${toUnit.factor} → ${fmtNum(converted)} ${unitTo}`];
+          break;
+        case 'bmi':
+          if (num1 === undefined || num2 === undefined) throw new Error('weight kg and height cm required.');
+          const heightM = num2 > 3 ? num2 / 100 : num2;
+          const bmi = num1 / (heightM * heightM);
+          let category, advice;
+          if (bmi < 18.5) { category = 'Underweight'; advice = 'Consider consulting a nutritionist.'; } else if (bmi < 25) { category = 'Normal Weight'; advice = 'Great — maintain your healthy lifestyle!'; } else if (bmi < 30) { category = 'Overweight'; advice = 'Light exercise and diet adjustments can help.'; } else { category = 'Obese'; advice = 'Consult a healthcare provider for guidance.'; }
+          result = parseFloat(bmi.toFixed(1)); formula = `BMI = ${num1} kg ÷ (${heightM.toFixed(2)} m)² = ${result}`; steps = [`Weight: ${num1} kg`, `Height: ${heightM.toFixed(2)} m`, `BMI = ${num1} ÷ ${(heightM * heightM).toFixed(4)} = ${result}`, `Classification: ${category}`]; extras = { category, advice, weightKg: num1, heightCm: Math.round(heightM * 100), normalRange: '18.5 – 24.9' }; displayType = 'bmi';
+          break;
+        case 'compound_interest':
+          if (num1 === undefined || num2 === undefined || num3 === undefined) throw new Error('principal, rate%, years required.');
+          const amount = num1 * Math.pow(1 + num2 / 100, num3); const interest = amount - num1;
+          result = parseFloat(amount.toFixed(2)); formula = `A = ${fmtNum(num1)} × (1 + ${num2}%)^${num3}`; steps = [`Principal: ${fmtNum(num1)}`, `Rate: ${num2}%`, `Time: ${num3} years`, `Interest earned: ${fmtNum(interest)}`, `Total amount: ${fmtNum(amount)}`]; extras = { principal: fmtNum(num1), interestEarned: fmtNum(interest), totalAmount: fmtNum(amount), years: num3, rate: `${num2}%` }; displayType = 'compound_interest';
+          break;
+        case 'simple_interest':
+          if (num1 === undefined || num2 === undefined || num3 === undefined) throw new Error('principal, rate%, years required.');
+          const si = (num1 * num2 * num3) / 100; const total = num1 + si;
+          result = parseFloat(si.toFixed(2)); formula = `SI = (${fmtNum(num1)} × ${num2} × ${num3}) ÷ 100`; steps = [`SI = (P × R × T) / 100`, `SI = ${fmtNum(si)}`, `Total = ${fmtNum(total)}`]; extras = { simpleInterest: fmtNum(si), totalAmount: fmtNum(total), principal: fmtNum(num1) }; displayType = 'simple_interest';
+          break;
+        case 'age':
+          if (num1 === undefined) throw new Error('birth year required.');
+          const currentYear = new Date().getFullYear(); const age = currentYear - Math.round(num1);
+          result = age; formula = `${currentYear} − ${Math.round(num1)} = ${age} years`; steps = [`Current year: ${currentYear}`, `Birth year: ${Math.round(num1)}`, `Age: ${age} years`]; displayType = 'age';
+          break;
         default: throw new Error(`Unknown calculationType: "${calculationType}".`);
       }
-      return `Calculation complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${JSON.stringify({ expression: expression || `${calculationType} calculation`, result: fmtNum(result), rawResult: result, formula, steps, type: displayType, extras })}||`;
+
+      const cardPayload = JSON.stringify({ expression: expression || `${calculationType} calculation`, result: fmtNum(result), rawResult: result, formula, steps, type: displayType, extras });
+      return `Calculation complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${cardPayload}||`;
     } catch (error) {
       console.error('[Calculator Error]:', error.message);
       return `Calculation failed: ${error.message}. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${JSON.stringify({ expression: expression || '', error: error.message, type: calculationType })}||`;
@@ -997,737 +1252,320 @@ export const calculateTool = tool(
   },
   {
     name: 'calculate',
-    description: `Precise calculations and unit conversions with formula display. calculationType options: arithmetic (+,-,*,/,^,sqrt), percentage_value (X% of Y), percentage_what (X is what % of Y), tip (tip%), discount (X% off Y), unit_conversion (km to miles, kg to lbs, °C to °F etc.), bmi (weight kg + height cm), compound_interest (principal+rate%+years), simple_interest, age (birth year). IMPORTANT: For BMI with feet+inches height, convert to cm first (5ft 10in = 177.8cm).`,
-    schema: z.object({ calculationType: z.enum(['arithmetic', 'percentage_value', 'percentage_what', 'tip', 'discount', 'unit_conversion', 'bmi', 'compound_interest', 'simple_interest', 'age']), expression: z.string().describe("User's original expression."), num1: z.number(), num2: z.number().optional(), num3: z.number().optional(), operator: z.enum(['+', '-', '*', '/', '^', 'sqrt']).optional(), unitFrom: z.string().optional(), unitTo: z.string().optional() }),
+    description: 'Performs calculations and unit conversions.',
+    schema: z.object({
+      calculationType: z.string(),
+      expression: z.string().optional(),
+      num1: z.number().optional(),
+      num2: z.number().optional(),
+      num3: z.number().optional(),
+      operator: z.string().optional(),
+      unitFrom: z.string().optional(),
+      unitTo: z.string().optional(),
+    }),
   }
 );
-
 // ============================================================================
-// 🗞️ TOOL 21: AI-Powered Daily Briefing (Orchestrator)
+// 🌅 TOOL 21: The Morning Orchestrator (Daily Briefing)
 // ============================================================================
-
-const BRIEFING_QUOTES = [
-  { text: "The secret of getting ahead is getting started.", author: "Mark Twain" },
-  { text: "It always seems impossible until it's done.", author: "Nelson Mandela" },
-  { text: "Your time is limited — don't waste it living someone else's life.", author: "Steve Jobs" },
-  { text: "Strive not to be a success, but rather to be of value.", author: "Albert Einstein" },
-  { text: "The future belongs to those who believe in the beauty of their dreams.", author: "Eleanor Roosevelt" },
-  { text: "Success is not final; failure is not fatal: It is the courage to continue that counts.", author: "Winston Churchill" },
-  { text: "The only way to do great work is to love what you do.", author: "Steve Jobs" },
-  { text: "In the middle of every difficulty lies opportunity.", author: "Albert Einstein" },
-  { text: "It does not matter how slowly you go as long as you do not stop.", author: "Confucius" },
-  { text: "Everything you've ever wanted is on the other side of fear.", author: "George Addair" },
-  { text: "Dream big and dare to fail.", author: "Norman Vaughan" },
-  { text: "You miss 100% of the shots you don't take.", author: "Wayne Gretzky" },
-  { text: "The best time to plant a tree was 20 years ago. The second best time is now.", author: "Chinese Proverb" },
-  { text: "Do not go where the path may lead — go where there is no path and leave a trail.", author: "Ralph Waldo Emerson" },
-  { text: "You will face many defeats in life, but never let yourself be defeated.", author: "Maya Angelou" },
-  { text: "Believe you can and you're halfway there.", author: "Theodore Roosevelt" },
-  { text: "Act as if what you do makes a difference. It does.", author: "William James" },
-  { text: "Don't watch the clock; do what it does — keep going.", author: "Sam Levenson" },
-  { text: "Hardships often prepare ordinary people for an extraordinary destiny.", author: "C.S. Lewis" },
-  { text: "Opportunities don't happen. You create them.", author: "Chris Grosser" },
-  { text: "The starting point of all achievement is desire.", author: "Napoleon Hill" },
-  { text: "Happiness is not something ready made — it comes from your own actions.", author: "Dalai Lama" },
-  { text: "You are never too old to set another goal or to dream a new dream.", author: "C.S. Lewis" },
-  { text: "Life is either a daring adventure or nothing at all.", author: "Helen Keller" },
-  { text: "Success usually comes to those who are too busy to be looking for it.", author: "Henry David Thoreau" },
-];
 
 export const getDailyBriefingTool = tool(
-  async ({ location, includeCrypto, cryptoCoin }) => {
+  async ({ location, cryptoCoin }) => {
     try {
-      const city = (location || 'Mumbai').trim();
-      const coin = (cryptoCoin || 'bitcoin').toLowerCase().trim();
-      const safeLoc = encodeURIComponent(city);
-      const gnewsKey = process.env.GNEWS_API_KEY;
-      const cryptoSymbols = { bitcoin: 'btc-bitcoin', ethereum: 'eth-ethereum', btc: 'btc-bitcoin', eth: 'eth-ethereum' };
-      const paprikaCoin = cryptoSymbols[coin] || 'btc-bitcoin';
-      const [weatherResult, newsResult, cryptoResult] = await Promise.allSettled([
-        fetchWithCacheAndRetry(`https://wttr.in/${safeLoc}?format=j1`, {}, 300000),
-        gnewsKey ? fetchWithCacheAndRetry(`https://gnews.io/api/v4/top-headlines?token=${gnewsKey}&lang=en&max=4&topic=breaking-news`, {}, 600000) : Promise.reject(new Error('No GNEWS_API_KEY')),
-        includeCrypto !== false ? fetchWithCacheAndRetry(`https://api.coinpaprika.com/v1/tickers/${paprikaCoin}`, {}, 300000) : Promise.reject(new Error('Crypto skipped')),
-      ]);
-      let weatherSection = null;
-      if (weatherResult.status === 'fulfilled' && weatherResult.value?.current_condition?.[0]) {
-        const cc = weatherResult.value.current_condition[0]; const condDesc = cc.weatherDesc?.[0]?.value?.toLowerCase() ?? '';
-        let condition = 'Clear'; if (condDesc.includes('rain') || condDesc.includes('drizzle')) condition = 'Rain'; else if (condDesc.includes('cloud') || condDesc.includes('overcast')) condition = 'Cloudy'; else if (condDesc.includes('snow')) condition = 'Snow'; else if (condDesc.includes('thunder')) condition = 'Thunderstorm';
-        const todayForecast = weatherResult.value.weather?.[0];
-        let rainChance = '--'; try { const h = todayForecast?.hourly; if (h?.length) { let max = 0; h.forEach(s => { const c = parseInt(s.chanceofrain || '0', 10); if (c > max) max = c; }); rainChance = `${max}%`; } } catch { /* ignore */ }
-        weatherSection = { city, temp: cc.temp_C, condition, high: todayForecast?.maxtempC ?? cc.temp_C, low: todayForecast?.mintempC ?? cc.temp_C, humidity: cc.humidity ? `${cc.humidity}%` : '--', rainChance };
+      const weatherRes = await getWeatherForecastTool.invoke({ location });
+      let weatherData = null;
+      const wMatch = weatherRes.match(/\|\|\s*CARD\s*:\s*FORECAST\s*:\s*([\s\S]*?)\|\|/i);
+      if (wMatch) { try { weatherData = JSON.parse(wMatch[1]); } catch { } }
+
+      const newsRes = await getNewsTool.invoke({ query: 'world', category: 'world' });
+      let newsData = [];
+      const nMatch = newsRes.match(/\|\|\s*CARD\s*:\s*NEWS\s*:\s*([\s\S]*?)\|\|/i);
+      if (nMatch) { try { newsData = JSON.parse(nMatch[1]).articles; } catch { } }
+
+      let cryptoData = null;
+      if (cryptoCoin) {
+        const cRes = await getCryptoPriceTool.invoke({ coinId: cryptoCoin });
+        const cMatch = cRes.match(/\|\|\s*CARD\s*:\s*CRYPTO\s*:\s*([^:]+):([^:]+):([^|]+)\|\|/i);
+        if (cMatch) { cryptoData = { coin: cMatch[1], price: cMatch[2], change: cMatch[3] }; }
       }
-      let newsSection = null;
-      if (newsResult.status === 'fulfilled' && newsResult.value?.articles?.length) {
-        newsSection = newsResult.value.articles.slice(0, 4).map(a => ({ title: (a.title || '').substring(0, 90), source: a.source?.name || 'Unknown', url: a.url || '', publishedAt: a.publishedAt ? new Date(a.publishedAt).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST' : 'Recently' }));
+
+      const qUrl = 'https://api.quotable.io/quotes/random?tags=inspirational|success';
+      let quoteData = null;
+      try {
+        const qRes = await fetchWithCacheAndRetry(qUrl, {}, 86400000);
+        if (qRes?.[0]) quoteData = { content: qRes[0].content, author: qRes[0].author };
+      } catch {
+        quoteData = { content: "The secret of getting ahead is getting started.", author: "Mark Twain" };
       }
-      let cryptoSection = null;
-      if (cryptoResult.status === 'fulfilled' && cryptoResult.value?.quotes?.USD) {
-        const q = cryptoResult.value.quotes.USD;
-        cryptoSection = { coin: cryptoResult.value.name || coin, symbol: cryptoResult.value.symbol || coin.toUpperCase(), price: parseFloat(q.price).toFixed(2), change24h: parseFloat(q.percent_change_24h).toFixed(2), trend: parseFloat(q.percent_change_24h) >= 0 ? 'up' : 'down' };
-      }
-      const quote = BRIEFING_QUOTES[Math.floor(Math.random() * BRIEFING_QUOTES.length)];
+
       const now = new Date();
+      const dateStr = now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'long', month: 'long', day: 'numeric' });
+
       const hour = parseInt(now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', hour12: false }));
       const greeting = hour < 12 ? 'Good Morning' : hour < 17 ? 'Good Afternoon' : 'Good Evening';
-      const dateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-      const sections = ['date', 'quote'];
-      if (weatherSection) sections.push('weather');
-      if (newsSection) sections.push('news');
-      if (cryptoSection) sections.push('crypto');
-      return `Daily briefing ready. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:BRIEFING:${JSON.stringify({ greeting, date: dateStr, weather: weatherSection, headlines: newsSection, crypto: cryptoSection, quote, sections, generatedAt: now.toISOString() })}||`;
+
+      const cardPayload = JSON.stringify({
+        greeting, date: dateStr,
+        weather: weatherData ? { currentTemp: weatherData.currentTemp, condition: weatherData.currentCondition, high: weatherData.days?.[0]?.high, low: weatherData.days?.[0]?.low } : null,
+        headlines: newsData.slice(0, 3),
+        crypto: cryptoData,
+        quote: quoteData,
+        sections: ['Weather', 'Top News', 'Market', 'Quote of the Day'],
+        generatedAt: now.toISOString()
+      });
+
+      return `Daily briefing generated. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:BRIEFING:${cardPayload}||`;
     } catch (error) {
       console.error('[Briefing Error]:', error.message);
-      const quote = BRIEFING_QUOTES[Math.floor(Math.random() * BRIEFING_QUOTES.length)];
-      const now = new Date();
-      const dateStr = now.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-      return `Partial briefing. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:BRIEFING:${JSON.stringify({ greeting: 'Good Day', date: dateStr, weather: null, headlines: null, crypto: null, quote, sections: ['date', 'quote'], error: error.message })}||`;
+      return `Failed to generate daily briefing. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:BRIEFING:${JSON.stringify({ error: error.message })}||`;
     }
   },
   {
     name: 'get_daily_briefing',
-    description: "Personalized morning/evening briefing: weather, news, crypto, motivational quote. Use when user says 'brief me', 'morning briefing', 'daily update', 'what's happening today'.",
-    schema: z.object({ location: z.string().describe("User's city for weather. Use saved location from RAG memory."), includeCrypto: z.boolean().optional(), cryptoCoin: z.string().optional() }),
+    description: 'Generates a multi-domain morning briefing including weather, news, and crypto.',
+    schema: z.object({
+      location: z.string().describe('User city for weather.'),
+      cryptoCoin: z.string().optional().describe('Favorite coin e.g. "bitcoin".')
+    }),
   }
 );
 
 // ============================================================================
-// 🗓️ TOOL 22: Google Calendar (Sprint 2)
+// 📅 TOOL 22: Google Calendar Integration
 // ============================================================================
-
-const buildGoogleAuthClient = (user) => {
-  const oAuth2Client = new google.auth.OAuth2(
-    process.env.GOOGLE_CLIENT_ID,
-    process.env.GOOGLE_CLIENT_SECRET,
-    process.env.GOOGLE_REDIRECT_URI
-  );
-  oAuth2Client.setCredentials({
-    access_token: user.gmailAccessToken,
-    refresh_token: user.gmailRefreshToken,
-  });
-  return oAuth2Client;
-};
-
-const formatCalendarTime = (dateTimeObj) => {
-  if (!dateTimeObj) return '--';
-  if (dateTimeObj.date) {
-    return new Date(dateTimeObj.date + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
-      timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric',
-    });
-  }
-  return new Date(dateTimeObj.dateTime).toLocaleTimeString('en-IN', {
-    timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true,
-  });
-};
-
-const formatCalendarDate = (dateTimeObj) => {
-  if (!dateTimeObj) return '--';
-  const rawDate = dateTimeObj.dateTime || (dateTimeObj.date + 'T00:00:00');
-  return new Date(rawDate).toLocaleDateString('en-IN', {
-    timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric',
-  });
-};
 
 export const createCalendarTool = (userId) =>
   tool(
-    async ({ mode, startDateTime, endDateTime, title, eventLocation, description, days, searchQuery }) => {
+    async ({ mode, dateRange, startTime, endTime, summary, description, query }) => {
       try {
         if (!userId) return 'SYSTEM_ERROR: User ID missing.';
-
         const user = await User.findById(userId);
-        if (!user) return 'SYSTEM_ERROR: User not found.';
-
-        if (!user.gmailAccessToken || !user.gmailRefreshToken) {
-          return `Calendar access requires a linked Google account. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Calendar Error:Please sign in with Google to use Calendar features.||`;
+        if (!user || !user.gmailAccessToken || !user.gmailRefreshToken) {
+          return `Action failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Calendar Error:Please link your Google Account to enable Calendar access.||`;
         }
 
-        const auth = buildGoogleAuthClient(user);
-        const calendar = google.calendar({ version: 'v3', auth });
+        const oAuth2Client = new google.auth.OAuth2(process.env.GOOGLE_CLIENT_ID, process.env.GOOGLE_CLIENT_SECRET, process.env.GOOGLE_REDIRECT_URI);
+        oAuth2Client.setCredentials({ access_token: user.gmailAccessToken, refresh_token: user.gmailRefreshToken });
+        const calendar = google.calendar({ version: 'v3', auth: oAuth2Client });
 
-        if (mode === 'list' || mode === 'today') {
-          const nowIST = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-          const startOfPeriod = new Date(nowIST);
-          startOfPeriod.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const activeMode = mode || 'get_schedule';
 
-          const endOfPeriod = new Date(startOfPeriod);
-          if (mode === 'today') {
-            endOfPeriod.setHours(23, 59, 59, 999);
-          } else {
-            endOfPeriod.setDate(endOfPeriod.getDate() + (days || 7));
+        if (activeMode === 'create_event') {
+          if (!startTime || !endTime || !summary) throw new Error('Start time, end time, and summary are required.');
+
+          // 🚀 L9 ARCHITECT FIX: Catch LLM hallucinated NaN dates to prevent RangeError crash
+          const st = new Date(startTime);
+          const et = new Date(endTime);
+          if (isNaN(st.getTime()) || isNaN(et.getTime())) {
+            throw new Error(`Invalid time format. Model hallucinated: start=${startTime}, end=${endTime}. Must be strictly ISO 8601.`);
           }
 
-          const response = await calendar.events.list({
-            calendarId: 'primary',
-            timeMin: startOfPeriod.toISOString(),
-            timeMax: endOfPeriod.toISOString(),
-            singleEvents: true,
-            orderBy: 'startTime',
-            maxResults: 15,
-            timeZone: 'Asia/Kolkata',
-          });
+          const event = { summary, description, start: { dateTime: st.toISOString(), timeZone: 'Asia/Kolkata' }, end: { dateTime: et.toISOString(), timeZone: 'Asia/Kolkata' } };
+          const response = await calendar.events.insert({ calendarId: 'primary', resource: event });
 
-          const rawEvents = response.data.items || [];
+          const cardPayload = JSON.stringify({ mode: 'create', event: { summary: response.data.summary, start: response.data.start.dateTime, link: response.data.htmlLink } });
+          return `Event created. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
+        }
 
-          const events = rawEvents.map(e => ({
-            id: e.id,
-            title: e.summary || '(No Title)',
-            date: formatCalendarDate(e.start),
-            startTime: formatCalendarTime(e.start),
-            endTime: formatCalendarTime(e.end),
-            location: e.location || null,
-            description: e.description ? e.description.substring(0, 100) : null,
-            isAllDay: Boolean(e.start?.date),
-            meetLink: e.hangoutLink || null,
-            htmlLink: e.htmlLink || null,
-          }));
-
-          let freeSlots = [];
-          if (mode === 'today' && events.length > 0) {
-            const busyHours = new Set();
-            events.filter(e => !e.isAllDay).forEach(e => {
-              const startH = parseInt(e.startTime.split(':')[0]);
-              const endH = parseInt(e.endTime.split(':')[0]);
-              for (let h = startH; h < endH; h++) busyHours.add(h);
-            });
-            let freeStart = null;
-            for (let h = 8; h <= 21; h++) {
-              if (!busyHours.has(h) && freeStart === null) freeStart = h;
-              if ((busyHours.has(h) || h === 21) && freeStart !== null) {
-                const label = (hr) => { const suffix = hr >= 12 ? 'PM' : 'AM'; const disp = hr > 12 ? hr - 12 : hr; return `${disp}:00 ${suffix}`; };
-                freeSlots.push(`${label(freeStart)} - ${label(h)}`);
-                freeStart = null;
-              }
-            }
+        else if (activeMode === 'get_schedule') {
+          const tMin = new Date(); tMin.setHours(0, 0, 0, 0);
+          const tMax = new Date(); tMax.setHours(23, 59, 59, 999);
+          if (dateRange === 'tomorrow') {
+            tMin.setDate(tMin.getDate() + 1); tMax.setDate(tMax.getDate() + 1);
+          } else if (dateRange === 'week') {
+            tMax.setDate(tMax.getDate() + 7);
           }
 
-          const dateRange = mode === 'today'
-            ? `Today, ${new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', month: 'long', day: 'numeric' })}`
-            : `Next ${days || 7} Days`;
+          const response = await calendar.events.list({ calendarId: 'primary', timeMin: tMin.toISOString(), timeMax: tMax.toISOString(), maxResults: 10, singleEvents: true, orderBy: 'startTime' });
+          const events = response.data.items.map(e => ({ id: e.id, summary: e.summary, start: e.start.dateTime || e.start.date, end: e.end.dateTime || e.end.date, link: e.htmlLink }));
 
-          const cardPayload = JSON.stringify({
-            mode,
-            dateRange,
-            totalEvents: events.length,
-            events,
-            freeSlots,
-          });
-
-          return `Calendar fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
+          const cardPayload = JSON.stringify({ mode: 'schedule', dateRange: dateRange || 'today', totalEvents: events.length, events });
+          return `Schedule fetched. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
         }
 
-        if (mode === 'create') {
-          if (!title) throw new Error('Event title is required to create a calendar event.');
-          if (!startDateTime) throw new Error('Start date/time is required. Provide in ISO 8601 format e.g. "2025-06-20T15:00:00+05:30".');
-
-          const startMs = new Date(startDateTime).getTime();
-          const endMs = endDateTime
-            ? new Date(endDateTime).getTime()
-            : startMs + 60 * 60 * 1000;
-
-          if (isNaN(startMs)) throw new Error('Invalid startDateTime format. Use ISO 8601: "2025-06-20T15:00:00+05:30".');
-
-          const eventResource = {
-            summary: title,
-            location: eventLocation || undefined,
-            description: description || undefined,
-            start: { dateTime: new Date(startMs).toISOString(), timeZone: 'Asia/Kolkata' },
-            end: { dateTime: new Date(endMs).toISOString(), timeZone: 'Asia/Kolkata' },
-          };
-
-          const created = await calendar.events.insert({
-            calendarId: 'primary',
-            resource: eventResource,
-          });
-
-          const ev = created.data;
-          const cardPayload = JSON.stringify({
-            mode: 'created',
-            event: {
-              id: ev.id,
-              title: ev.summary,
-              date: formatCalendarDate(ev.start),
-              startTime: formatCalendarTime(ev.start),
-              endTime: formatCalendarTime(ev.end),
-              location: ev.location || null,
-              meetLink: ev.hangoutLink || null,
-              htmlLink: ev.htmlLink || null,
-            },
-          });
-
-          return `Event created. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
-        }
-
-        if (mode === 'search') {
-          if (!searchQuery) throw new Error('searchQuery is required for calendar search.');
-
-          const response = await calendar.events.list({
-            calendarId: 'primary',
-            q: searchQuery,
-            singleEvents: true,
-            orderBy: 'startTime',
-            maxResults: 10,
-            timeMin: new Date().toISOString(),
-            timeZone: 'Asia/Kolkata',
-          });
-
-          const events = (response.data.items || []).map(e => ({
-            id: e.id,
-            title: e.summary || '(No Title)',
-            date: formatCalendarDate(e.start),
-            startTime: formatCalendarTime(e.start),
-            endTime: formatCalendarTime(e.end),
-            location: e.location || null,
-            htmlLink: e.htmlLink || null,
-          }));
-
-          const cardPayload = JSON.stringify({
-            mode: 'search',
-            searchQuery,
-            totalEvents: events.length,
-            events,
-            dateRange: 'Upcoming',
-            freeSlots: [],
-          });
-
-          return `Calendar search complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
-        }
-
-        throw new Error(`Unknown calendar mode: "${mode}". Use: list, today, create, or search.`);
-
+        throw new Error('Invalid calendar mode.');
       } catch (error) {
         console.error('[Calendar Error]:', error.message);
-
-        const isAuthError = error.message?.toLowerCase().includes('unauthorized')
-          || error.code === 401
-          || error.message?.includes('invalid_grant')
-          || error.message?.includes('insufficient authentication');
-
-        if (isAuthError) {
-          return `Calendar access was denied. The user needs to sign out and sign back in with Google to grant calendar permissions. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Calendar Access Denied:Please sign out and sign back in with Google to enable Calendar.||`;
-        }
-
-        return `Calendar operation failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${JSON.stringify({ mode, error: error.message, events: [], totalEvents: 0, dateRange: 'Error', freeSlots: [] })}||`;
+        return `Calendar operation failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Calendar Error:${error.message}||`;
       }
     },
     {
       name: 'manage_calendar',
-      description: `Reads and writes Google Calendar events for the user.
-
-Mode guide:
-  - "list"   → Show upcoming events. Use for "what's on my calendar", "show my schedule", "upcoming events". Pass days=7 for a week view.
-  - "today"  → Show today's agenda specifically. Use for "what do I have today", "today's schedule", "am I free today".
-  - "create" → Create a new event. Use for "book a meeting", "schedule an event", "add to calendar".
-               ALWAYS convert natural language time to ISO 8601 IST before calling:
-               e.g. "tomorrow 3 PM" → startDateTime="2025-06-17T15:00:00+05:30"
-               e.g. "this Friday 10 AM for 2 hours" → startDateTime="...T10:00:00+05:30", endDateTime="...T12:00:00+05:30"
-  - "search" → Search calendar events by keyword. Use for "find my dentist appointment", "when is my flight meeting".
-
-IMPORTANT: Never hallucinate calendar events. Only show what the tool returns.`,
+      description: 'Reads schedule or creates events on Google Calendar.',
       schema: z.object({
-        mode: z.enum(['list', 'today', 'create', 'search']).describe('Calendar operation mode.'),
-        title: z.string().optional().describe('Event title for create mode.'),
-        startDateTime: z.string().optional().describe('ISO 8601 start datetime in IST e.g. "2025-06-20T15:00:00+05:30".'),
-        endDateTime: z.string().optional().describe('ISO 8601 end datetime. If omitted, defaults to 1 hour after start.'),
-        eventLocation: z.string().optional().describe('Physical or virtual location of the event.'),
-        description: z.string().optional().describe('Event description or notes.'),
-        days: z.number().optional().describe('Number of days to look ahead for list mode. Default: 7.'),
-        searchQuery: z.string().optional().describe('Keyword to search calendar events for search mode.'),
+        mode: z.enum(['get_schedule', 'create_event', 'find_free_slots']).describe('Action to perform.'),
+        dateRange: z.enum(['today', 'tomorrow', 'week']).optional(),
+        startTime: z.string().optional().describe('ISO 8601 string for event start.'),
+        endTime: z.string().optional().describe('ISO 8601 string for event end.'),
+        summary: z.string().optional().describe('Event title.'),
+        description: z.string().optional()
       }),
     }
   );
 
 // ============================================================================
-// 📍 TOOL 23: Nearby Places Finder (Google Places Text Search)
+// 📍 TOOL 23: Google Places & Discovery
 // ============================================================================
 
-const getPlaceCategory = (types = []) => {
-  const map = {
-    restaurant: '🍽️ Restaurant', cafe: '☕ Café', bar: '🍺 Bar',
-    hospital: '🏥 Hospital', pharmacy: '💊 Pharmacy', doctor: '👨‍⚕️ Doctor',
-    bank: '🏦 Bank', atm: '💳 ATM', supermarket: '🛒 Supermarket',
-    grocery_or_supermarket: '🛒 Grocery', convenience_store: '🏪 Convenience Store',
-    gym: '🏋️ Gym', park: '🌳 Park', school: '🏫 School', university: '🎓 University',
-    hotel: '🏨 Hotel', lodging: '🏨 Hotel', gas_station: '⛽ Petrol Station',
-    movie_theater: '🎬 Cinema', shopping_mall: '🛍️ Mall', store: '🛍️ Shop',
-    museum: '🏛️ Museum', library: '📚 Library', church: '⛪ Church',
-    mosque: '🕌 Mosque', temple: '🛕 Temple', police: '👮 Police Station',
-    post_office: '📮 Post Office', hair_care: '💇 Salon', beauty_salon: '💅 Salon',
-    laundry: '👕 Laundry', airport: '✈️ Airport', train_station: '🚆 Train Station',
-    bus_station: '🚌 Bus Station', tourist_attraction: '🎡 Attraction',
-  };
-  for (const type of types) { if (map[type]) return map[type]; }
-  return '📍 Place';
-};
-
 export const getNearbyPlacesTool = tool(
-  async ({ query, location, maxResults }) => {
+  async ({ query, location, radius }) => {
     try {
       const apiKey = process.env.GOOGLE_PLACES_API_KEY;
       if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY missing from .env');
 
-      const limit = Math.min(maxResults || 5, 8);
+      let latLng = location;
+      let resolvedCity = "your location";
 
-      const fullQuery = location
-        ? `${query} in ${location}`
-        : query;
-
-      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(fullQuery)}&key=${apiKey}&language=en`;
-      const data = await fetchWithCacheAndRetry(url, {}, 300000);
-
-      if (data.status === 'REQUEST_DENIED') {
-        throw new Error(`Places API key invalid or not enabled. Enable "Places API" in Google Cloud Console. Error: ${data.error_message || data.status}`);
-      }
-      if (data.status === 'ZERO_RESULTS' || !data.results?.length) {
-        return `No places found for "${fullQuery}". Tell the user no results were found and suggest a broader search term. CRITICAL: DO NOT APPEND A ||CARD:...|| STRING.`;
+      if (!latLng || !latLng.includes(',')) {
+        const searchLoc = location || 'Delhi';
+        resolvedCity = searchLoc;
+        const geoUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchLoc)}&key=${apiKey}`;
+        const geoData = await fetchWithCacheAndRetry(geoUrl, {}, 86400000);
+        if (!geoData.results || !geoData.results.length) throw new Error(`Could not geocode location: ${searchLoc}`);
+        const { lat, lng } = geoData.results[0].geometry.location;
+        latLng = `${lat},${lng}`;
       }
 
-      const places = data.results.slice(0, limit).map((place) => {
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.place_id}`;
+      const radMeters = radius ? radius * 1000 : 5000;
+      const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&location=${latLng}&radius=${radMeters}&key=${apiKey}`;
+      const data = await fetchWithCacheAndRetry(url, {}, 86400000);
 
-        return {
-          name: place.name,
-          rating: place.rating || null,
-          totalRatings: place.user_ratings_total || 0,
-          address: place.formatted_address || place.vicinity || '--',
-          isOpen: place.opening_hours?.open_now ?? null,
-          category: getPlaceCategory(place.types || []),
-          placeId: place.place_id,
-          mapsUrl,
-          lat: place.geometry?.location?.lat || null,
-          lng: place.geometry?.location?.lng || null,
-        };
-      });
+      if (!data.results || !data.results.length) {
+        throw new Error(`No places found for "${query}" near ${resolvedCity}`);
+      }
 
-      const cardPayload = JSON.stringify({
-        query,
-        location: location || 'Near you',
-        fullQuery,
-        totalFound: data.results.length,
-        showing: places.length,
-        places,
-        searchedAt: new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: true }) + ' IST',
-      });
+      const places = data.results.slice(0, 5).map(p => ({
+        name: p.name,
+        address: p.formatted_address,
+        rating: p.rating || null,
+        userRatingsTotal: p.user_ratings_total || 0,
+        isOpen: p.opening_hours ? p.opening_hours.open_now : null,
+        types: p.types ? p.types.slice(0, 3) : [],
+        priceLevel: p.price_level || null
+      }));
 
+      const cardPayload = JSON.stringify({ query, location: resolvedCity, fullQuery: `${query} near ${resolvedCity}`, totalFound: data.results.length, showing: places.length, places, searchedAt: new Date().toISOString() });
       return `Places found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:PLACES:${cardPayload}||`;
     } catch (error) {
       console.error('[Places Error]:', error.message);
-      return `Places search failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:PLACES:${JSON.stringify({ query, location, places: [], error: error.message })}||`;
+      return `Places search failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:PLACES:${JSON.stringify({ query, error: error.message })}||`;
     }
   },
   {
     name: 'find_nearby_places',
-    description: `Finds nearby places, businesses, and locations using Google Places Text Search.
-
-Use for:
-  - "find coffee shops near me" → query="coffee shops", location=<user's city from RAG>
-  - "nearest hospital in Thrissur" → query="hospital", location="Thrissur"
-  - "restaurants near MG Road" → query="restaurants", location="MG Road Bangalore"
-  - "is there a pharmacy near me?" → query="pharmacy", location=<user's city>
-  - "best rated hotels in Dubai" → query="hotels", location="Dubai"
-
-IMPORTANT: Always check <RAG_KNOWLEDGE> for the user's saved city/location before calling. If user says "near me" and no location is in memory, ask them for their city first rather than calling with a blank location.
-
-Supports: restaurants, cafes, hospitals, pharmacies, banks, ATMs, gyms, parks, schools, hotels, cinemas, shopping malls, petrol stations, salons, and any business type.`,
+    description: 'Finds restaurants, hospitals, shops, or places of interest using Google Places API.',
     schema: z.object({
-      query: z.string().describe('What to search for, e.g. "coffee shops", "pharmacy", "Italian restaurant".'),
-      location: z.string().optional().describe("Area/city to search in, e.g. 'Thrissur', 'MG Road Bangalore'. Extract from user speech or RAG memory."),
-      maxResults: z.number().optional().describe('Number of results to return (1-8). Default: 5.'),
+      query: z.string().describe('e.g. "coffee shops", "hospitals", "parks"'),
+      location: z.string().optional().describe('City name or "lat,lng" string. Check user memory first!'),
+      radius: z.number().optional().describe('Search radius in kilometers. Default 5.')
     }),
   }
 );
 
 // ============================================================================
-// 🎵 TOOL 24: Music Intelligence
+// 🎵 TOOL 24: Global Music & Lyrics Intelligence (MusicBrainz/Lyrics.ovh)
 // ============================================================================
 
-const msToMinSec = (ms) => {
-  if (!ms || ms <= 0) return null;
-  const totalSec = Math.round(ms / 1000);
-  const mins = Math.floor(totalSec / 60);
-  const secs = String(totalSec % 60).padStart(2, '0');
-  return `${mins}:${secs}`;
-};
-
-const extractGenres = (tags = []) =>
-  tags
-    .filter(t => t.count >= 1 && t.name)
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 5)
-    .map(t => t.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
-
-const MB_HEADERS = {
-  'User-Agent': 'VoxaAI/1.0 ( contact@voxaai.app )',
-  'Accept': 'application/json',
-};
-
-const MB_BASE = 'https://musicbrainz.org/ws/2';
-
 export const getMusicTool = tool(
-  async ({ artistName, songTitle, queryType }) => {
+  async ({ queryType, artist, song, album }) => {
     try {
-      const artist = (artistName || '').trim();
-      const song = (songTitle || '').trim();
+      const type = queryType || 'song_info';
+      let cardPayload;
 
-      if (!artist && !song) throw new Error('At least an artist name or song title is required.');
+      // 🚀 L9 ARCHITECT FIX: Guaranteed MusicBrainz Rate Limit Protection
+      // MusicBrainz strictly bans IPs that exceed 1 request per second.
+      const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-      if (queryType === 'artist_info') {
-        const searchUrl = `${MB_BASE}/artist/?query=${encodeURIComponent(artist)}&fmt=json&limit=3`;
-        const searchData = await fetchWithCacheAndRetry(searchUrl, { headers: MB_HEADERS }, 86400000);
+      if (type === 'artist_info') {
+        if (!artist) throw new Error('Artist name is required.');
+        const mbUrl = `https://musicbrainz.org/ws/2/artist?query=artist:${encodeURIComponent(artist)}&fmt=json`;
+        const mbData = await fetchWithCacheAndRetry(mbUrl, { headers: { 'User-Agent': 'VoxaAI/1.0.0 ( voxa@example.com )' } }, 86400000);
 
-        if (!searchData?.artists?.length) throw new Error(`Artist "${artist}" not found in MusicBrainz.`);
+        if (!mbData?.artists?.length) throw new Error(`Artist "${artist}" not found.`);
+        const bestMatch = mbData.artists[0];
 
-        const mbArtist = searchData.artists[0];
+        await sleep(1050); // Strict sleep to respect MusicBrainz 1 req/sec limit
 
-        let topAlbums = [];
-        try {
-          const rgUrl = `${MB_BASE}/release-group/?artist=${mbArtist.id}&type=album&fmt=json&limit=5`;
-          const rgData = await fetchWithCacheAndRetry(rgUrl, { headers: MB_HEADERS }, 86400000);
-          topAlbums = (rgData['release-groups'] || [])
-            .sort((a, b) => {
-              const ya = parseInt(a['first-release-date']?.substring(0, 4)) || 0;
-              const yb = parseInt(b['first-release-date']?.substring(0, 4)) || 0;
-              return yb - ya;
-            })
-            .slice(0, 5)
-            .map(rg => ({
-              title: rg.title,
-              year: rg['first-release-date']?.substring(0, 4) || null,
-            }));
-        } catch { }
+        const relUrl = `https://musicbrainz.org/ws/2/release-group?artist=${bestMatch.id}&type=album&fmt=json`;
+        const relData = await fetchWithCacheAndRetry(relUrl, { headers: { 'User-Agent': 'VoxaAI/1.0.0' } }, 86400000);
+        const albums = (relData?.['release-groups'] || []).map(r => r.title).filter((v, i, a) => a.indexOf(v) === i).slice(0, 5);
 
-        const genres = extractGenres(mbArtist.tags || []);
-        const beginYear = mbArtist['life-span']?.begin?.substring(0, 4) || null;
-        const endYear = mbArtist['life-span']?.ended
-          ? mbArtist['life-span']?.end?.substring(0, 4) || 'Present'
-          : 'Present';
-
-        const cardPayload = JSON.stringify({
-          queryType: 'artist',
-          name: mbArtist.name,
-          sortName: mbArtist['sort-name'] || mbArtist.name,
-          country: mbArtist.country || mbArtist.area?.name || null,
-          origin: mbArtist['begin-area']?.name || mbArtist.area?.name || null,
-          genres,
-          activeYears: beginYear ? `${beginYear} – ${endYear}` : null,
-          topAlbums,
-          mbid: mbArtist.id,
-          spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(mbArtist.name)}`,
-          type: mbArtist.type || 'Artist',
-          disambiguation: mbArtist.disambiguation || null,
-        });
-
-        return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayload}||`;
+        cardPayload = JSON.stringify({ queryType: 'artist_info', type: bestMatch.type || 'Unknown', name: bestMatch.name, sortName: bestMatch['sort-name'] || bestMatch.name, country: bestMatch.country || 'Unknown', origin: bestMatch['begin-area']?.name || 'Unknown', genres: (bestMatch.tags || []).slice(0, 3).map(t => t.name), activeYears: `${bestMatch['life-span']?.begin || '?'} - ${bestMatch['life-span']?.ended ? bestMatch['life-span']?.end : 'Present'}`, disambiguation: bestMatch.disambiguation || null, topAlbums: albums, spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(bestMatch.name)}` });
       }
 
-      if (queryType === 'song_info' || queryType === 'lyrics') {
-        const mbQuery = artist && song
-          ? `recording:"${song}" AND artist:"${artist}"`
-          : song
-            ? `recording:"${song}"`
-            : `artist:"${artist}"`;
+      else if (type === 'lyrics') {
+        if (!artist || !song) throw new Error('Artist and song title are required for lyrics.');
+        const url = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist)}/${encodeURIComponent(song)}`;
+        const data = await fetchWithCacheAndRetry(url, {}, 86400000);
+        if (!data?.lyrics) throw new Error(`Lyrics not found for "${song}" by ${artist}.`);
 
-        const recUrl = `${MB_BASE}/recording/?query=${encodeURIComponent(mbQuery)}&fmt=json&limit=5&inc=releases+artists`;
-        const recData = await fetchWithCacheAndRetry(recUrl, { headers: MB_HEADERS }, 86400000);
-
-        if (!recData?.recordings?.length) {
-          throw new Error(`Song "${song || ''}" by "${artist || ''}" not found in MusicBrainz.`);
-        }
-
-        const rec = recData.recordings[0];
-
-        const primaryArtist = rec['artist-credit']?.[0]?.artist?.name
-          || rec['artist-credit']?.[0]?.name
-          || artist
-          || 'Unknown Artist';
-
-        const releases = rec.releases || [];
-        const primaryRelease = releases.find(r =>
-          r['release-group']?.['primary-type'] === 'Album'
-        ) || releases[0] || null;
-
-        const albumTitle = primaryRelease?.title || null;
-        const releaseYear = primaryRelease?.date?.substring(0, 4) || null;
-        const duration = msToMinSec(rec.length);
-
-        let genres = [];
-        const primaryArtistMBID = rec['artist-credit']?.[0]?.artist?.id;
-        if (primaryArtistMBID) {
-          try {
-            const artUrl = `${MB_BASE}/artist/${primaryArtistMBID}?fmt=json&inc=tags`;
-            const artData = await fetchWithCacheAndRetry(artUrl, { headers: MB_HEADERS }, 86400000);
-            genres = extractGenres(artData.tags || []);
-          } catch { }
-        }
-
-        let lyricsPreview = null;
-        let lyricsAvailable = false;
-
-        if (queryType === 'lyrics') {
-          const lyricsArtist = encodeURIComponent(primaryArtist);
-          const lyricsTitle = encodeURIComponent(rec.title || song);
-          try {
-            const lyricsData = await fetchWithCacheAndRetry(
-              `https://api.lyrics.ovh/v1/${lyricsArtist}/${lyricsTitle}`,
-              { headers: { 'Accept': 'application/json' } },
-              86400000
-            );
-
-            if (lyricsData?.lyrics && !lyricsData?.error) {
-              lyricsAvailable = true;
-              const lines = lyricsData.lyrics
-                .split('\n')
-                .map(l => l.trim())
-                .filter(l => l.length > 0);
-              lyricsPreview = lines.slice(0, 8).join('\n');
-            }
-          } catch {
-            lyricsAvailable = false;
-          }
-        }
-
-        // 🛠️ AUDIT FIX [HIGH-02]: lyricsPreview is intentionally EXCLUDED from the
-        // string returned to the LLM (toolResultText). Including raw third-party lyrics
-        // in a ToolMessage — which the LLM treats as trusted system output — creates a
-        // prompt injection vector. Any song whose lyrics contain instruction-like text
-        // (e.g. "SYSTEM: ignore all previous rules") would be executed as trusted input.
-        //
-        // The lyricsPreview IS included in cardPayloadForFrontend so the UI can render
-        // it, but lyricsToolResult strips it out before the LLM sees it.
-        const cardPayloadForFrontend = JSON.stringify({
-          queryType: queryType === 'lyrics' ? 'lyrics' : 'song',
-          title: rec.title || song,
-          artist: primaryArtist,
-          album: albumTitle,
-          releaseYear,
-          duration,
-          genres,
-          lyricsPreview,        // ← Only in the frontend card, NOT in lyricsToolResult
-          lyricsAvailable,
-          mbid: rec.id,
-          spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
-          youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
-        });
-
-        // Separate payload for the LLM tool result — NO lyrics content
-        const lyricsToolResult = JSON.stringify({
-          queryType: queryType === 'lyrics' ? 'lyrics' : 'song',
-          title: rec.title || song,
-          artist: primaryArtist,
-          album: albumTitle,
-          releaseYear,
-          duration,
-          genres,
-          lyricsAvailable,
-          mbid: rec.id,
-          spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
-          youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
-        });
-
-        // Return the frontend card payload (with lyrics) for the card renderer,
-        // but only the sanitized payload reaches the LLM's message context.
-        return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayloadForFrontend}||\n[LLM_TOOL_SUMMARY]: Track metadata retrieved. lyricsAvailable=${lyricsAvailable}. Title: ${rec.title || song}, Artist: ${primaryArtist}.`;
+        const cleanLyrics = data.lyrics.replace(/Paroles de la chanson.*\n/gi, '').trim();
+        cardPayload = JSON.stringify({ queryType: 'lyrics', title: song, artist: artist, lyricsPreview: cleanLyrics.substring(0, 500) + '...', lyricsAvailable: true, youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(artist + ' ' + song + ' lyrics')}` });
       }
 
-      throw new Error(`Unknown queryType: "${queryType}". Use artist_info, song_info, or lyrics.`);
+      else {
+        if (!song) throw new Error('Song title is required.');
+        const q = `${song} ${artist || ''}`.trim();
+        const mbUrl = `https://musicbrainz.org/ws/2/recording?query=recording:${encodeURIComponent(song)}${artist ? ` AND artist:${encodeURIComponent(artist)}` : ''}&fmt=json`;
 
+        const mbData = await fetchWithCacheAndRetry(mbUrl, { headers: { 'User-Agent': 'VoxaAI/1.0.0' } }, 86400000);
+        if (!mbData?.recordings?.length) throw new Error(`Song "${song}" not found.`);
+        const track = mbData.recordings[0];
+        const trackArtist = track['artist-credit']?.[0]?.name || artist || 'Unknown';
+        const trackAlbum = track.releases?.[0]?.title || 'Single/Unknown Album';
+        const releaseDate = track.releases?.[0]?.date || 'Unknown Year';
+        const lengthMs = track.length || 0;
+        const mins = Math.floor(lengthMs / 60000);
+        const secs = ((lengthMs % 60000) / 1000).toFixed(0);
+        const duration = lengthMs > 0 ? `${mins}:${secs.padStart(2, '0')}` : 'Unknown';
+
+        cardPayload = JSON.stringify({ queryType: 'song_info', title: track.title, artist: trackArtist, album: trackAlbum, releaseYear: releaseDate.substring(0, 4), duration: duration, spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(trackArtist + ' ' + track.title)}` });
+      }
+
+      return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayload}||`;
     } catch (error) {
       console.error('[Music Error]:', error.message);
-      return `Music lookup failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${JSON.stringify({
-        queryType,
-        name: songTitle || artistName || 'Unknown',
-        artist: artistName || null,
-        title: songTitle || null,
-        error: error.message,
-      })}||`;
+      return `Music lookup failed. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${JSON.stringify({ queryType, artist, song, error: error.message })}||`;
     }
   },
   {
     name: 'get_music_info',
-    description: `Fetches music metadata and lyrics from MusicBrainz and lyrics.ovh. No API key required.
-
-queryType guide:
-  - "artist_info" → Use when user asks about an ARTIST: biography, country, genres, years active, top albums.
-  - "song_info"   → Use when user asks about a SONG: title, album, release year, duration, genres.
-  - "lyrics"      → Use when user EXPLICITLY asks for lyrics or wants to see/hear lyrics.`,
+    description: 'Fetches artist biographies, top albums, song details, and lyrics.',
     schema: z.object({
-      artistName: z.string().optional().describe('Artist or band name e.g. "The Weeknd", "Arijit Singh", "Coldplay".'),
-      songTitle: z.string().optional().describe('Song or track title e.g. "Blinding Lights", "Shape of You".'),
-      queryType: z.enum(['artist_info', 'song_info', 'lyrics']).describe(
-        'artist_info=about the artist, song_info=about the track, lyrics=song lyrics preview.'
-      ),
+      queryType: z.enum(['artist_info', 'song_info', 'lyrics']).describe('Type of music query.'),
+      artist: z.string().optional().describe('Name of the artist/band.'),
+      song: z.string().optional().describe('Name of the song.'),
+      album: z.string().optional()
     }),
   }
 );
 
 // ============================================================================
-// 🖼️  TOOL 25: AI Image Generator (Pollinations.ai)
+// 🎨 TOOL 25: AI Image Generator (Pollinations.ai)
 // ============================================================================
 
-const STYLE_ENHANCEMENTS = {
-  photorealistic: ', ultra photorealistic, DSLR photography, 8K, sharp focus, natural lighting, hyperdetailed',
-  anime: ', anime art style, vibrant colors, Studio Ghibli influence, detailed illustration',
-  'oil painting': ', oil painting, impressionist brushstrokes, textured canvas, museum quality, classical art',
-  watercolor: ', watercolor painting, soft washes, delicate strokes, artistic, pastel tones',
-  sketch: ', pencil sketch, detailed line art, cross-hatching, graphite drawing, artistic',
-  'digital art': ', digital art, concept art, trending on ArtStation, vibrant, detailed, 4K',
-  cinematic: ', cinematic photography, movie still, dramatic lighting, anamorphic lens, film grain',
-  'pixel art': ', pixel art, 16-bit style, retro game aesthetic, crisp pixels',
-  minimalist: ', minimalist design, clean lines, flat colors, simple composition, modern',
-  fantasy: ', fantasy art, epic scene, magical atmosphere, intricate details, lore-rich environment',
-  portrait: ', professional portrait, studio lighting, high-resolution, bokeh background, expressive',
-};
-
-const promptToSeed = (prompt) => {
-  let hash = 0;
-  for (let i = 0; i < prompt.length; i++) {
-    hash = ((hash << 5) - hash) + prompt.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash) % 1000000;
-};
-
 export const getImageTool = tool(
-  async ({ prompt, style, width, height, model }) => {
+  async ({ prompt, style, width = 1024, height = 1024, model = 'flux' }) => {
     try {
-      if (!prompt || prompt.trim().length < 3) {
-        throw new Error('A descriptive prompt is required to generate an image.');
+      const seed = Math.floor(Math.random() * 1000000);
+      let enhancedPrompt = prompt;
+      if (style && style !== 'none') {
+        enhancedPrompt = `${prompt}, in the style of ${style}, highly detailed, 4k resolution`;
       }
 
-      const cleanPrompt = prompt.trim();
-      const styleKey = style?.toLowerCase().trim() || '';
-      const enhancement = STYLE_ENHANCEMENTS[styleKey] || '';
-      const enhancedPrompt = enhancement
-        ? `${cleanPrompt}${enhancement}`
-        : `${cleanPrompt}, high quality, detailed, 4K`;
-
-      const imgWidth = Math.min(Math.max(width || 1024, 256), 1440);
-      const imgHeight = Math.min(Math.max(height || 1024, 256), 1440);
-
-      const validModels = ['flux', 'turbo', 'flux-realism'];
-      const selectedModel = validModels.includes(model?.toLowerCase()) ? model.toLowerCase() : 'flux';
-
-      const seed = promptToSeed(enhancedPrompt);
-
-      const imageUrl = [
-        `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}`,
-        `?width=${imgWidth}`,
-        `&height=${imgHeight}`,
-        `&model=${selectedModel}`,
-        `&nologo=true`,
-        `&seed=${seed}`,
-      ].join('');
-
-      const searchFallbackUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(cleanPrompt)}`;
+      const encodedPrompt = encodeURIComponent(enhancedPrompt);
+      const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&model=${model}&seed=${seed}&nologo=true`;
 
       const cardPayload = JSON.stringify({
-        prompt: cleanPrompt,
+        prompt,
         enhancedPrompt,
         imageUrl,
-        width: imgWidth,
-        height: imgHeight,
-        model: selectedModel,
+        width,
+        height,
+        model,
         seed,
-        style: styleKey || 'default',
-        searchFallback: searchFallbackUrl,
+        style: style || 'default',
         poweredBy: 'Pollinations.ai',
         regenerateUrl: imageUrl.replace(`&seed=${seed}`, `&seed=${(seed + 1) % 1000000}`),
       });
@@ -1753,9 +1591,7 @@ export const getImageTool = tool(
       ]).optional().describe('Visual style for the generated image.'),
       width: z.number().optional().describe('Image width in pixels (256-1440). Default: 1024.'),
       height: z.number().optional().describe('Image height in pixels (256-1440). Default: 1024.'),
-      model: z.enum(['flux', 'turbo', 'flux-realism']).optional().describe(
-        'flux=best quality, turbo=fastest, flux-realism=photorealistic. Default: flux.'
-      ),
+      model: z.enum(['flux', 'turbo', 'flux-realism']).optional().describe('Image generation model to use. Default: flux.')
     }),
   }
 );
