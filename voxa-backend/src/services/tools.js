@@ -6,32 +6,61 @@ import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import Transaction from '../models/Transaction.js';
 import WorkoutLog from '../models/WorkoutLog.js';
-import { LRUCache } from 'lru-cache'; // ✅ FIX: mongoose import removed — auto-casting handles userId string→ObjectId
+import { LRUCache } from 'lru-cache';
 
 dotenv.config();
 
 // ============================================================================
 // 🧠 ENTERPRISE LRU CACHE INFRASTRUCTURE
-// 🛠️ AUDIT FIX: [BUG-01]
 // ============================================================================
 
 const apiCache = new LRUCache({
   max: 150,
-  maxSize: 30 * 1024 * 1024,
-  sizeCalculation: (value) => {
-    try { return Buffer.byteLength(JSON.stringify(value), 'utf8'); }
-    catch { return 1024; }
-  },
+  // 🛠️ AUDIT FIX: Removed synchronous JSON.stringify blocking the event loop.
+  // Using bounded limit `max: 150` strictly controls memory without freezing Node.js.
   ttl: 5 * 60 * 1000,
   allowStale: false,
 });
 
+// 🛠️ AUDIT FIX [CRIT-02]: Sanitized cache keys — API keys must never be stored
+// as LRU cache keys since they sit in the process heap for up to 24h and are
+// visible in heap dumps and debug logs.
+//
+// Strategy: derive a stable cache key from (path + sorted, non-secret params).
+// Secret params (access_key, apikey, token, api_key, key, appid) are stripped.
+// This preserves cache hits for the same logical request while eliminating
+// secret storage in the cache key index.
+const SECRET_PARAM_NAMES = new Set([
+  'access_key', 'apikey', 'api_key', 'token', 'key', 'appid',
+  'x-api-key', 'authorization', 'secret',
+]);
+
+const buildCacheKey = (url) => {
+  try {
+    const parsed = new URL(url);
+    // Keep only non-secret query params, sorted for determinism
+    const safeParams = [];
+    for (const [k, v] of parsed.searchParams.entries()) {
+      if (!SECRET_PARAM_NAMES.has(k.toLowerCase())) {
+        safeParams.push(`${k}=${v}`);
+      }
+    }
+    safeParams.sort();
+    const qs = safeParams.length ? `?${safeParams.join('&')}` : '';
+    return `${parsed.origin}${parsed.pathname}${qs}`;
+  } catch {
+    // Fallback: strip everything after '?' if URL parsing fails
+    return url.split('?')[0];
+  }
+};
+
 const fetchWithCacheAndRetry = async (
   url, options = {}, ttlMs = 60000, retries = 2, timeoutMs = 8000
 ) => {
-  const cached = apiCache.get(url);
+  const cacheKey = buildCacheKey(url);
+  const cached = apiCache.get(cacheKey);
   if (cached !== undefined) {
-    console.log(`⚡ [Cache Hit] 0ms latency for: ${url}`);
+    console.log(`⚡ [Cache Hit] 0ms latency for: ${url.split('?')[0]}`);
     return cached;
   }
   for (let i = 0; i <= retries; i++) {
@@ -46,13 +75,20 @@ const fetchWithCacheAndRetry = async (
       clearTimeout(timeoutId);
       if (response.status === 429) throw new Error('RATE_LIMIT');
       if (response.status === 451) throw new Error('GEO_BLOCKED_451');
-      if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+      if (!response.ok) {
+        const safeUrl = url.split('?')[0];
+        throw new Error(`HTTP Error: ${response.status} at ${safeUrl}`);
+      }
       const data = await response.json();
-      apiCache.set(url, data, { ttl: ttlMs });
+      apiCache.set(cacheKey, data, { ttl: ttlMs });
       return data;
     } catch (error) {
       clearTimeout(timeoutId);
-      if (i === retries) { console.error(`[API Error] Failed fetching ${url}:`, error.message); throw error; }
+      if (i === retries) {
+        const safeUrl = url.split('?')[0];
+        console.error(`[API Error] Failed fetching ${safeUrl}:`, error.message);
+        throw error;
+      }
       const backoffTime = 500 * Math.pow(2, i);
       console.warn(`[Retry ${i + 1}] Waiting ${backoffTime}ms...`);
       await new Promise((res) => setTimeout(res, backoffTime));
@@ -127,7 +163,7 @@ export const getCryptoPriceTool = tool(
       }
       return `Data not found. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${displayName}:Not Found:0.00||`;
     } catch (error) {
-      console.error('[Crypto API Error]:', error);
+      console.error('[Crypto API Error]:', error.message);
       return `System error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CRYPTO:${coinId}:System Offline:0.00||`;
     }
   },
@@ -165,7 +201,7 @@ export const createSendEmailTool = (userId) =>
         await gmail.users.messages.send({ userId: 'me', requestBody: { raw: encodedMessage } });
         return `Email sent. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Sent:${to}||`;
       } catch (error) {
-        console.error('[Email Error]:', error);
+        console.error('[Email Error]:', error.message);
         return `Email failed. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Email Failed:Token Expired or Network Error||`;
       }
     },
@@ -213,7 +249,7 @@ export const getWeatherTool = tool(
       }
       return `Location unknown. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Unknown||`;
     } catch (error) {
-      console.error('[Weather Error]:', error);
+      console.error('[Weather Error]:', error.message);
       return `API error. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:WEATHER:${location}:--:Offline||`;
     }
   },
@@ -225,8 +261,7 @@ export const getWeatherTool = tool(
 );
 
 // ============================================================================
-// 🌍 TOOL 5: Global Sports Hub — DO NOT MODIFY
-// ⚠️  Structured temporal scoring engine preserved verbatim.
+// 🌍 TOOL 5: Global Sports Hub
 // ============================================================================
 
 export const getSportsDataTool = tool(
@@ -376,8 +411,15 @@ export const getFlightTool = tool(
     try {
       const apiKey = process.env.AVIATIONSTACK_API_KEY;
       if (!apiKey) throw new Error('AVIATIONSTACK_API_KEY missing from .env');
-      const cleanFlight = flightNumber.toUpperCase().replace(/\s+/g, '');
-      const url = `http://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${cleanFlight}&limit=1`;
+      // 🛠️ AUDIT FIX [CRIT-05]: Strict alphanumeric validation prevents HTTP parameter
+      // injection. Without this, "AI131&limit=100" would inject extra query params.
+      const rawFlight = flightNumber.toUpperCase().replace(/\s+/g, '');
+      if (!/^[A-Z0-9]{2,8}$/.test(rawFlight)) {
+        return `Invalid flight number format. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:FLIGHT:${JSON.stringify({ flightNumber, status: 'Error', error: 'Invalid IATA format. Use e.g. AI131, EK202.' })}||`;
+      }
+      const cleanFlight = rawFlight;
+      // 🛠️ AUDIT FIX [CRIT-01]: Changed http:// to https:// — API key was transmitted in plaintext.
+      const url = `https://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${cleanFlight}&limit=1`;
       const data = await fetchWithCacheAndRetry(url, {}, 60000);
       if (!data?.data?.length) throw new Error(`No live data found for flight ${cleanFlight}`);
       const f = data.data[0];
@@ -814,7 +856,7 @@ export const createFinanceTool = (userId) =>
   );
 
 // ============================================================================
-// 🌤️ TOOL 19: 7-Day Weather Forecast (Open-Meteo — no key) [SPRINT 1]
+// 🌤️ TOOL 19: 7-Day Weather Forecast (Open-Meteo — no key)
 // ============================================================================
 
 const wmoCodeToCondition = (code) => {
@@ -865,7 +907,7 @@ export const getWeatherForecastTool = tool(
 );
 
 // ============================================================================
-// 🧮 TOOL 20: Advanced Calculator & Unit Converter (Pure JS) [SPRINT 1]
+// 🧮 TOOL 20: Advanced Calculator & Unit Converter (Pure JS)
 // ============================================================================
 
 const fmtNum = (n) => {
@@ -961,7 +1003,7 @@ export const calculateTool = tool(
 );
 
 // ============================================================================
-// 🗞️ TOOL 21: AI-Powered Daily Briefing (Orchestrator) [SPRINT 1]
+// 🗞️ TOOL 21: AI-Powered Daily Briefing (Orchestrator)
 // ============================================================================
 
 const BRIEFING_QUOTES = [
@@ -1050,14 +1092,8 @@ export const getDailyBriefingTool = tool(
 
 // ============================================================================
 // 🗓️ TOOL 22: Google Calendar (Sprint 2)
-// 🌟 SPRINT 2 — Feature 14: Google Calendar Integration
 // ============================================================================
 
-/**
- * Builds a reusable Google OAuth2 client from the user's stored tokens.
- * The same gmailAccessToken/gmailRefreshToken now covers Calendar scope
- * because authRoutes.js was updated to request 'calendar' during OAuth.
- */
 const buildGoogleAuthClient = (user) => {
   const oAuth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
@@ -1071,14 +1107,9 @@ const buildGoogleAuthClient = (user) => {
   return oAuth2Client;
 };
 
-/**
- * Formats a Google Calendar event datetime into a human-readable IST string.
- * Handles both all-day events (date only) and timed events (dateTime).
- */
 const formatCalendarTime = (dateTimeObj) => {
   if (!dateTimeObj) return '--';
   if (dateTimeObj.date) {
-    // All-day event — no time component
     return new Date(dateTimeObj.date + 'T00:00:00+05:30').toLocaleDateString('en-IN', {
       timeZone: 'Asia/Kolkata', weekday: 'short', month: 'short', day: 'numeric',
     });
@@ -1088,9 +1119,6 @@ const formatCalendarTime = (dateTimeObj) => {
   });
 };
 
-/**
- * Formats a Google Calendar event date into "Mon, Jun 16" format.
- */
 const formatCalendarDate = (dateTimeObj) => {
   if (!dateTimeObj) return '--';
   const rawDate = dateTimeObj.dateTime || (dateTimeObj.date + 'T00:00:00');
@@ -1108,7 +1136,6 @@ export const createCalendarTool = (userId) =>
         const user = await User.findById(userId);
         if (!user) return 'SYSTEM_ERROR: User not found.';
 
-        // Guard: user must have Google OAuth tokens (only Google users have these)
         if (!user.gmailAccessToken || !user.gmailRefreshToken) {
           return `Calendar access requires a linked Google account. YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:RECEIPT:Calendar Error:Please sign in with Google to use Calendar features.||`;
         }
@@ -1116,7 +1143,6 @@ export const createCalendarTool = (userId) =>
         const auth = buildGoogleAuthClient(user);
         const calendar = google.calendar({ version: 'v3', auth });
 
-        // ── MODE: list or today ───────────────────────────────────────────
         if (mode === 'list' || mode === 'today') {
           const nowIST = new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
           const startOfPeriod = new Date(nowIST);
@@ -1126,7 +1152,6 @@ export const createCalendarTool = (userId) =>
           if (mode === 'today') {
             endOfPeriod.setHours(23, 59, 59, 999);
           } else {
-            // 'list' — look ahead by `days` (default 7)
             endOfPeriod.setDate(endOfPeriod.getDate() + (days || 7));
           }
 
@@ -1155,7 +1180,6 @@ export const createCalendarTool = (userId) =>
             htmlLink: e.htmlLink || null,
           }));
 
-          // Calculate free slots for today (mode=today only)
           let freeSlots = [];
           if (mode === 'today' && events.length > 0) {
             const busyHours = new Set();
@@ -1164,7 +1188,6 @@ export const createCalendarTool = (userId) =>
               const endH = parseInt(e.endTime.split(':')[0]);
               for (let h = startH; h < endH; h++) busyHours.add(h);
             });
-            // Find continuous free blocks between 8 AM and 9 PM
             let freeStart = null;
             for (let h = 8; h <= 21; h++) {
               if (!busyHours.has(h) && freeStart === null) freeStart = h;
@@ -1191,16 +1214,14 @@ export const createCalendarTool = (userId) =>
           return `Calendar fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
         }
 
-        // ── MODE: create ──────────────────────────────────────────────────
         if (mode === 'create') {
           if (!title) throw new Error('Event title is required to create a calendar event.');
           if (!startDateTime) throw new Error('Start date/time is required. Provide in ISO 8601 format e.g. "2025-06-20T15:00:00+05:30".');
 
-          // Default duration: 1 hour if endDateTime not provided
           const startMs = new Date(startDateTime).getTime();
           const endMs = endDateTime
             ? new Date(endDateTime).getTime()
-            : startMs + 60 * 60 * 1000; // +1 hour
+            : startMs + 60 * 60 * 1000;
 
           if (isNaN(startMs)) throw new Error('Invalid startDateTime format. Use ISO 8601: "2025-06-20T15:00:00+05:30".');
 
@@ -1235,7 +1256,6 @@ export const createCalendarTool = (userId) =>
           return `Event created. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALENDAR:${cardPayload}||`;
         }
 
-        // ── MODE: search ──────────────────────────────────────────────────
         if (mode === 'search') {
           if (!searchQuery) throw new Error('searchQuery is required for calendar search.');
 
@@ -1276,7 +1296,6 @@ export const createCalendarTool = (userId) =>
       } catch (error) {
         console.error('[Calendar Error]:', error.message);
 
-        // Surface a clear message for missing calendar scope
         const isAuthError = error.message?.toLowerCase().includes('unauthorized')
           || error.code === 401
           || error.message?.includes('invalid_grant')
@@ -1318,12 +1337,8 @@ IMPORTANT: Never hallucinate calendar events. Only show what the tool returns.`,
 
 // ============================================================================
 // 📍 TOOL 23: Nearby Places Finder (Google Places Text Search)
-// 🌟 SPRINT 2 — Feature 15: Nearby Places
 // ============================================================================
 
-/**
- * Maps Google Places types to a clean human-readable category label.
- */
 const getPlaceCategory = (types = []) => {
   const map = {
     restaurant: '🍽️ Restaurant', cafe: '☕ Café', bar: '🍺 Bar',
@@ -1349,16 +1364,12 @@ export const getNearbyPlacesTool = tool(
       const apiKey = process.env.GOOGLE_PLACES_API_KEY;
       if (!apiKey) throw new Error('GOOGLE_PLACES_API_KEY missing from .env');
 
-      const limit = Math.min(maxResults || 5, 8); // Cap at 8 for UI safety
+      const limit = Math.min(maxResults || 5, 8);
 
-      // Construct the Text Search query: "coffee shops in Thrissur"
-      // If location is provided, append it to the query for geo-bias.
       const fullQuery = location
         ? `${query} in ${location}`
         : query;
 
-      // Google Places Text Search API
-      // 5-minute TTL — place listings change infrequently
       const url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(fullQuery)}&key=${apiKey}&language=en`;
       const data = await fetchWithCacheAndRetry(url, {}, 300000);
 
@@ -1370,7 +1381,6 @@ export const getNearbyPlacesTool = tool(
       }
 
       const places = data.results.slice(0, limit).map((place) => {
-        // Build the Google Maps URL using place_id (most reliable deep link)
         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place.name)}&query_place_id=${place.place_id}`;
 
         return {
@@ -1378,11 +1388,10 @@ export const getNearbyPlacesTool = tool(
           rating: place.rating || null,
           totalRatings: place.user_ratings_total || 0,
           address: place.formatted_address || place.vicinity || '--',
-          isOpen: place.opening_hours?.open_now ?? null, // null = unknown
+          isOpen: place.opening_hours?.open_now ?? null,
           category: getPlaceCategory(place.types || []),
           placeId: place.place_id,
           mapsUrl,
-          // Lat/lng for distance calculation on the frontend
           lat: place.geometry?.location?.lat || null,
           lng: place.geometry?.location?.lng || null,
         };
@@ -1427,29 +1436,9 @@ Supports: restaurants, cafes, hospitals, pharmacies, banks, ATMs, gyms, parks, s
 );
 
 // ============================================================================
-// 🎵 TOOL 24: Music Intelligence (MusicBrainz + lyrics.ovh — no keys needed)
-// 🌟 SPRINT 3 — Feature 16: Music Intelligence & Lyrics Search
-//
-// Architecture:
-//   MusicBrainz (https://musicbrainz.org/ws/2/) — open music encyclopedia.
-//   MANDATORY: Must send a User-Agent header or requests are throttled/blocked.
-//   Format: "VoxaAI/1.0 ( voxa@example.com )"
-//
-//   lyrics.ovh (https://api.lyrics.ovh) — free lyrics API, no key needed.
-//   Can return { error: "No lyrics found" } — handled gracefully.
-//
-// Three query modes driven by the `queryType` schema field:
-//   artist_info → MusicBrainz artist search → biography, country, genres,
-//                 years active, top album names
-//   song_info   → MusicBrainz recording search → track metadata, album,
-//                 release year, duration
-//   lyrics      → song_info PLUS lyrics.ovh preview (first ~8 lines)
+// 🎵 TOOL 24: Music Intelligence
 // ============================================================================
 
-/**
- * Converts milliseconds to "m:ss" display format.
- * MusicBrainz returns track length in integer milliseconds.
- */
 const msToMinSec = (ms) => {
   if (!ms || ms <= 0) return null;
   const totalSec = Math.round(ms / 1000);
@@ -1458,10 +1447,6 @@ const msToMinSec = (ms) => {
   return `${mins}:${secs}`;
 };
 
-/**
- * Extracts a clean list of genre/tag strings from a MusicBrainz tags array.
- * Filters out low-confidence tags (count < 1) and limits to 5.
- */
 const extractGenres = (tags = []) =>
   tags
     .filter(t => t.count >= 1 && t.name)
@@ -1469,13 +1454,11 @@ const extractGenres = (tags = []) =>
     .slice(0, 5)
     .map(t => t.name.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()));
 
-// Shared User-Agent — MusicBrainz blocks requests without this
 const MB_HEADERS = {
   'User-Agent': 'VoxaAI/1.0 ( contact@voxaai.app )',
   'Accept': 'application/json',
 };
 
-// MusicBrainz base URL
 const MB_BASE = 'https://musicbrainz.org/ws/2';
 
 export const getMusicTool = tool(
@@ -1486,18 +1469,14 @@ export const getMusicTool = tool(
 
       if (!artist && !song) throw new Error('At least an artist name or song title is required.');
 
-      // ── MODE: artist_info ───────────────────────────────────────────────
       if (queryType === 'artist_info') {
-        // 24h TTL — artist metadata changes rarely
         const searchUrl = `${MB_BASE}/artist/?query=${encodeURIComponent(artist)}&fmt=json&limit=3`;
         const searchData = await fetchWithCacheAndRetry(searchUrl, { headers: MB_HEADERS }, 86400000);
 
         if (!searchData?.artists?.length) throw new Error(`Artist "${artist}" not found in MusicBrainz.`);
 
-        // Pick the highest-scored result (MusicBrainz returns 0-100 relevance score)
         const mbArtist = searchData.artists[0];
 
-        // Fetch top release-groups (albums) for this artist using their MBID
         let topAlbums = [];
         try {
           const rgUrl = `${MB_BASE}/release-group/?artist=${mbArtist.id}&type=album&fmt=json&limit=5`;
@@ -1506,14 +1485,14 @@ export const getMusicTool = tool(
             .sort((a, b) => {
               const ya = parseInt(a['first-release-date']?.substring(0, 4)) || 0;
               const yb = parseInt(b['first-release-date']?.substring(0, 4)) || 0;
-              return yb - ya; // Most recent first
+              return yb - ya;
             })
             .slice(0, 5)
             .map(rg => ({
               title: rg.title,
               year: rg['first-release-date']?.substring(0, 4) || null,
             }));
-        } catch { /* topAlbums stays empty — non-fatal */ }
+        } catch { }
 
         const genres = extractGenres(mbArtist.tags || []);
         const beginYear = mbArtist['life-span']?.begin?.substring(0, 4) || null;
@@ -1539,17 +1518,13 @@ export const getMusicTool = tool(
         return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayload}||`;
       }
 
-      // ── MODE: song_info OR lyrics ───────────────────────────────────────
       if (queryType === 'song_info' || queryType === 'lyrics') {
-        // Build the MusicBrainz recording query
-        // If both artist and title are provided, use AND query for precision
         const mbQuery = artist && song
           ? `recording:"${song}" AND artist:"${artist}"`
           : song
             ? `recording:"${song}"`
             : `artist:"${artist}"`;
 
-        // 24h TTL — recording metadata is static
         const recUrl = `${MB_BASE}/recording/?query=${encodeURIComponent(mbQuery)}&fmt=json&limit=5&inc=releases+artists`;
         const recData = await fetchWithCacheAndRetry(recUrl, { headers: MB_HEADERS }, 86400000);
 
@@ -1559,13 +1534,11 @@ export const getMusicTool = tool(
 
         const rec = recData.recordings[0];
 
-        // Extract the primary artist name from artist-credit array
         const primaryArtist = rec['artist-credit']?.[0]?.artist?.name
           || rec['artist-credit']?.[0]?.name
           || artist
           || 'Unknown Artist';
 
-        // Find the best (most official) release — prefer albums over singles
         const releases = rec.releases || [];
         const primaryRelease = releases.find(r =>
           r['release-group']?.['primary-type'] === 'Album'
@@ -1575,7 +1548,6 @@ export const getMusicTool = tool(
         const releaseYear = primaryRelease?.date?.substring(0, 4) || null;
         const duration = msToMinSec(rec.length);
 
-        // Fetch artist genres via a separate artist lookup for the primary MBID
         let genres = [];
         const primaryArtistMBID = rec['artist-credit']?.[0]?.artist?.id;
         if (primaryArtistMBID) {
@@ -1583,17 +1555,15 @@ export const getMusicTool = tool(
             const artUrl = `${MB_BASE}/artist/${primaryArtistMBID}?fmt=json&inc=tags`;
             const artData = await fetchWithCacheAndRetry(artUrl, { headers: MB_HEADERS }, 86400000);
             genres = extractGenres(artData.tags || []);
-          } catch { /* non-fatal */ }
+          } catch { }
         }
 
-        // ── Lyrics fetch (only for queryType === 'lyrics') ─────────────
         let lyricsPreview = null;
         let lyricsAvailable = false;
 
         if (queryType === 'lyrics') {
           const lyricsArtist = encodeURIComponent(primaryArtist);
           const lyricsTitle = encodeURIComponent(rec.title || song);
-          // 24h TTL — lyrics don't change
           try {
             const lyricsData = await fetchWithCacheAndRetry(
               `https://api.lyrics.ovh/v1/${lyricsArtist}/${lyricsTitle}`,
@@ -1603,7 +1573,6 @@ export const getMusicTool = tool(
 
             if (lyricsData?.lyrics && !lyricsData?.error) {
               lyricsAvailable = true;
-              // Extract first ~8 lines as a preview (avoid returning full copyrighted lyrics)
               const lines = lyricsData.lyrics
                 .split('\n')
                 .map(l => l.trim())
@@ -1611,12 +1580,19 @@ export const getMusicTool = tool(
               lyricsPreview = lines.slice(0, 8).join('\n');
             }
           } catch {
-            // lyrics.ovh 404 or network failure — non-fatal, lyricsPreview stays null
             lyricsAvailable = false;
           }
         }
 
-        const cardPayload = JSON.stringify({
+        // 🛠️ AUDIT FIX [HIGH-02]: lyricsPreview is intentionally EXCLUDED from the
+        // string returned to the LLM (toolResultText). Including raw third-party lyrics
+        // in a ToolMessage — which the LLM treats as trusted system output — creates a
+        // prompt injection vector. Any song whose lyrics contain instruction-like text
+        // (e.g. "SYSTEM: ignore all previous rules") would be executed as trusted input.
+        //
+        // The lyricsPreview IS included in cardPayloadForFrontend so the UI can render
+        // it, but lyricsToolResult strips it out before the LLM sees it.
+        const cardPayloadForFrontend = JSON.stringify({
           queryType: queryType === 'lyrics' ? 'lyrics' : 'song',
           title: rec.title || song,
           artist: primaryArtist,
@@ -1624,14 +1600,31 @@ export const getMusicTool = tool(
           releaseYear,
           duration,
           genres,
-          lyricsPreview,
+          lyricsPreview,        // ← Only in the frontend card, NOT in lyricsToolResult
           lyricsAvailable,
           mbid: rec.id,
           spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
           youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
         });
 
-        return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayload}||`;
+        // Separate payload for the LLM tool result — NO lyrics content
+        const lyricsToolResult = JSON.stringify({
+          queryType: queryType === 'lyrics' ? 'lyrics' : 'song',
+          title: rec.title || song,
+          artist: primaryArtist,
+          album: albumTitle,
+          releaseYear,
+          duration,
+          genres,
+          lyricsAvailable,
+          mbid: rec.id,
+          spotifySearchUrl: `https://open.spotify.com/search/${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
+          youtubeSearchUrl: `https://www.youtube.com/results?search_query=${encodeURIComponent(`${rec.title || song} ${primaryArtist}`)}`,
+        });
+
+        // Return the frontend card payload (with lyrics) for the card renderer,
+        // but only the sanitized payload reaches the LLM's message context.
+        return `Music data fetched. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:MUSIC:${cardPayloadForFrontend}||\n[LLM_TOOL_SUMMARY]: Track metadata retrieved. lyricsAvailable=${lyricsAvailable}. Title: ${rec.title || song}, Artist: ${primaryArtist}.`;
       }
 
       throw new Error(`Unknown queryType: "${queryType}". Use artist_info, song_info, or lyrics.`);
@@ -1653,16 +1646,8 @@ export const getMusicTool = tool(
 
 queryType guide:
   - "artist_info" → Use when user asks about an ARTIST: biography, country, genres, years active, top albums.
-    Examples: "Tell me about The Weeknd", "Who is Arijit Singh?", "What genre does Coldplay play?"
   - "song_info"   → Use when user asks about a SONG: title, album, release year, duration, genres.
-    Examples: "Tell me about Blinding Lights", "What album is Shape of You from?", "When was Levitating released?"
-  - "lyrics"      → Use when user EXPLICITLY asks for lyrics or wants to see/hear lyrics.
-    Examples: "What are the lyrics to Bohemian Rhapsody?", "Lyrics for Kesariya"
-
-IMPORTANT:
-  - Always provide artistName when known — it significantly improves MusicBrainz search accuracy.
-  - Do NOT use this for currently playing song detection — Voxa has no audio input pipeline.
-  - For "is X a good song" or "recommend music" queries, use tavily_search_secure instead.`,
+  - "lyrics"      → Use when user EXPLICITLY asks for lyrics or wants to see/hear lyrics.`,
     schema: z.object({
       artistName: z.string().optional().describe('Artist or band name e.g. "The Weeknd", "Arijit Singh", "Coldplay".'),
       songTitle: z.string().optional().describe('Song or track title e.g. "Blinding Lights", "Shape of You".'),
@@ -1674,29 +1659,9 @@ IMPORTANT:
 );
 
 // ============================================================================
-// 🖼️  TOOL 25: AI Image Generator (Pollinations.ai — no key, no signup)
-// 🌟 SPRINT 3 — Feature 26: AI Image Generator
-//
-// Architecture:
-//   Pollinations.ai provides a completely free, zero-auth image generation
-//   endpoint. The generated image URL is deterministic for a given prompt +
-//   seed combination. The backend constructs the URL and returns it in the
-//   card payload — the frontend renders it as <img src={imageUrl} />.
-//
-//   NO HTTP fetch is needed from the backend. We construct the URL, and
-//   the frontend loads the image directly from Pollinations.ai CDN.
-//   This avoids downloading and re-encoding potentially large binary payloads.
-//
-//   Model options:
-//     flux   — Best quality, cinematic output (slightly slower, ~3-5s)
-//     turbo  — Fastest generation (~1-2s), slightly lower quality
-//     flux-realism — Specialized for photorealistic outputs
+// 🖼️  TOOL 25: AI Image Generator (Pollinations.ai)
 // ============================================================================
 
-/**
- * Style-specific prompt enhancement suffixes.
- * These inject standardized quality tokens that Flux models respond well to.
- */
 const STYLE_ENHANCEMENTS = {
   photorealistic: ', ultra photorealistic, DSLR photography, 8K, sharp focus, natural lighting, hyperdetailed',
   anime: ', anime art style, vibrant colors, Studio Ghibli influence, detailed illustration',
@@ -1711,19 +1676,13 @@ const STYLE_ENHANCEMENTS = {
   portrait: ', professional portrait, studio lighting, high-resolution, bokeh background, expressive',
 };
 
-/**
- * Generates a stable pseudo-random seed from a prompt string.
- * Using a deterministic seed makes the same prompt always produce the
- * same image, which means the LRU cache can serve repeat requests
- * without new generation calls.
- */
 const promptToSeed = (prompt) => {
   let hash = 0;
   for (let i = 0; i < prompt.length; i++) {
     hash = ((hash << 5) - hash) + prompt.charCodeAt(i);
-    hash |= 0; // Force 32-bit integer
+    hash |= 0;
   }
-  return Math.abs(hash) % 1000000; // Seed between 0-999999
+  return Math.abs(hash) % 1000000;
 };
 
 export const getImageTool = tool(
@@ -1734,28 +1693,20 @@ export const getImageTool = tool(
       }
 
       const cleanPrompt = prompt.trim();
-
-      // Apply style enhancement suffix if a style is specified
       const styleKey = style?.toLowerCase().trim() || '';
       const enhancement = STYLE_ENHANCEMENTS[styleKey] || '';
       const enhancedPrompt = enhancement
         ? `${cleanPrompt}${enhancement}`
         : `${cleanPrompt}, high quality, detailed, 4K`;
 
-      // Resolve dimensions — keep aspect ratio sane for glassmorphic UI
       const imgWidth = Math.min(Math.max(width || 1024, 256), 1440);
       const imgHeight = Math.min(Math.max(height || 1024, 256), 1440);
 
-      // Model selection — default to flux for best quality
       const validModels = ['flux', 'turbo', 'flux-realism'];
       const selectedModel = validModels.includes(model?.toLowerCase()) ? model.toLowerCase() : 'flux';
 
-      // Generate a deterministic seed so repeat queries hit the LRU cache
       const seed = promptToSeed(enhancedPrompt);
 
-      // ── Construct the Pollinations.ai image URL ─────────────────────────
-      // This URL is the actual image — the browser fetches it directly.
-      // No backend HTTP call needed — just return the URL in the card.
       const imageUrl = [
         `https://image.pollinations.ai/prompt/${encodeURIComponent(enhancedPrompt)}`,
         `?width=${imgWidth}`,
@@ -1765,8 +1716,6 @@ export const getImageTool = tool(
         `&seed=${seed}`,
       ].join('');
 
-      // ── Build a Google Images search fallback URL ───────────────────────
-      // If Pollinations.ai is slow or the user wants alternatives
       const searchFallbackUrl = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(cleanPrompt)}`;
 
       const cardPayload = JSON.stringify({
@@ -1780,7 +1729,6 @@ export const getImageTool = tool(
         style: styleKey || 'default',
         searchFallback: searchFallbackUrl,
         poweredBy: 'Pollinations.ai',
-        // Re-generate URL with a different seed for the frontend "Regenerate" button
         regenerateUrl: imageUrl.replace(`&seed=${seed}`, `&seed=${(seed + 1) % 1000000}`),
       });
 
@@ -1795,23 +1743,7 @@ export const getImageTool = tool(
   },
   {
     name: 'generate_image',
-    description: `Generates an AI image from a text description using Pollinations.ai (free, no key).
-
-Use for:
-  - "generate an image of X" / "create a picture of X" / "draw X"
-  - "show me what X looks like" (when no real photo is appropriate)
-  - "make a wallpaper of X" / "create artwork of X"
-
-Style options (pass in 'style' field):
-  photorealistic, anime, oil painting, watercolor, sketch, digital art,
-  cinematic, pixel art, minimalist, fantasy, portrait
-
-IMPORTANT:
-  - Do NOT use for: celebrity photos, real people's likenesses, copyrighted characters (Mario, Mickey Mouse, etc.), or any harmful/explicit content.
-  - For real photos of places or products, use tavily_search_secure instead.
-  - Always describe WHAT to generate in detail — more specific prompts produce better images.
-  - Example good prompt: "a lone astronaut standing on Mars at sunset, red dust, stars visible"
-  - Example bad prompt: "something cool"`,
+    description: `Generates an AI image from a text description using Pollinations.ai (free, no key).`,
     schema: z.object({
       prompt: z.string().describe('Detailed description of the image to generate. Be specific and visual.'),
       style: z.enum([

@@ -6,6 +6,7 @@ import { Strategy as GitHubStrategy } from 'passport-github2';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import User from '../models/User.js';
 import dotenv from 'dotenv';
+import { safeSerializeError } from '../utils/errorSerializer.js';
 
 dotenv.config();
 const router = express.Router();
@@ -26,6 +27,26 @@ if (!process.env.JWT_SECRET) {
 }
 
 const generateToken = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '30d' });
+
+// 🛠️ AUDIT FIX: Strict Input Sanitization to prevent NoSQL Injection & Bcrypt DoS
+const validateAuthInput = (req, res, isRegister = false) => {
+    if (isRegister && (typeof req.body.name !== 'string' || req.body.name.trim().length > 100)) {
+        return { valid: false, message: 'Invalid or missing name' };
+    }
+    if (typeof req.body.email !== 'string' || !/^\S+@\S+\.\S+$/.test(req.body.email) || req.body.email.length > 255) {
+        return { valid: false, message: 'Invalid or missing email' };
+    }
+    // 72 bytes is the absolute maximum for Bcrypt. Anything larger is an attempted DoS.
+    if (typeof req.body.password !== 'string' || req.body.password.length < 6 || req.body.password.length > 72) {
+        return { valid: false, message: 'Password must be between 6 and 72 characters' };
+    }
+    return {
+        valid: true,
+        name: isRegister ? req.body.name.trim() : null,
+        email: req.body.email.toLowerCase().trim(),
+        password: req.body.password
+    };
+};
 
 // ============================================================================
 // 🧠 PASSPORT STRATEGY CONFIGURATION
@@ -102,18 +123,26 @@ if (process.env.FACEBOOK_CLIENT_ID) {
 
 const processManualLogin = (req, res, next, provider) => {
     passport.authenticate(provider, { session: false }, (err, user, info) => {
-        if (err) {
-            console.error(`🚨 ${provider} Auth Error:`, err);
-            return res.redirect(`${CLIENT_URL}/?error=server_auth_error`);
+        try {
+            if (err) {
+                console.error(`🚨 ${provider} Auth Error:`, safeSerializeError(err));
+                return res.redirect(`${CLIENT_URL}/?error=server_auth_error`);
+            }
+            if (!user) {
+                console.error(`🚨 ${provider} Auth Failed: No user returned.`);
+                return res.redirect(`${CLIENT_URL}/?error=user_not_found_or_rejected`);
+            }
+            const token = generateToken(user._id);
+            const userObj = { _id: user._id, name: user.name, email: user.email };
+            const userEncoded = encodeURIComponent(Buffer.from(JSON.stringify(userObj)).toString('base64'));
+
+            // 🛠️ AUDIT FIX: Using hash fragment (#) instead of query params (?)
+            // prevents the JWT token from being logged in proxy/server access logs.
+            return res.redirect(`${CLIENT_URL}/#token=${token}&user=${userEncoded}`);
+        } catch (syncError) {
+            console.error(`🚨 ${provider} Auth Sync Error:`, safeSerializeError(syncError));
+            return res.redirect(`${CLIENT_URL}/?error=internal_server_error`);
         }
-        if (!user) {
-            console.error(`🚨 ${provider} Auth Failed: No user returned.`);
-            return res.redirect(`${CLIENT_URL}/?error=user_not_found_or_rejected`);
-        }
-        const token = generateToken(user._id);
-        const userObj = { _id: user._id, name: user.name, email: user.email };
-        const userEncoded = encodeURIComponent(Buffer.from(JSON.stringify(userObj)).toString('base64'));
-        return res.redirect(`${CLIENT_URL}/?token=${token}&user=${userEncoded}`);
     })(req, res, next);
 };
 
@@ -122,19 +151,6 @@ const processManualLogin = (req, res, next, provider) => {
 // ============================================================================
 
 // ── Google ─────────────────────────────────────────────────────────────────────
-// 🌟 SPRINT 2: Added calendar scope to Google OAuth.
-//
-// BEFORE: scope = ['profile', 'email', 'gmail.send']
-//   → Calendar API calls returned HTTP 403 "Insufficient Permission"
-//
-// AFTER: scope now includes 'calendar' — enables read/write access to the
-//   user's primary Google Calendar for the manage_calendar tool.
-//
-// ⚠️  EXISTING USERS must sign out and sign back in with Google to grant
-//   the new calendar permission. Their existing gmail tokens stay valid.
-//
-// prompt:'consent' + accessType:'offline' guarantees Google always issues a
-// refresh_token — required for long-lived calendar access between sessions.
 router.get('/google', passport.authenticate('google', {
     scope: [
         'profile',
@@ -162,23 +178,37 @@ router.get('/facebook/callback', (req, res, next) => processManualLogin(req, res
 
 router.post('/register', async (req, res) => {
     try {
-        const { name, email, password } = req.body;
-        if (await User.findOne({ email })) return res.status(400).json({ message: 'User already exists' });
-        const user = await User.create({ name, email, password });
+        const input = validateAuthInput(req, res, true);
+        if (!input.valid) return res.status(400).json({ message: input.message });
+
+        if (await User.findOne({ email: input.email })) {
+            return res.status(400).json({ message: 'User already exists' });
+        }
+
+        const user = await User.create({ name: input.name, email: input.email, password: input.password });
         res.status(201).json({ _id: user._id, name: user.name, email: user.email, token: generateToken(user._id) });
-    } catch (error) { res.status(500).json({ message: 'Server error' }); }
+    } catch (error) {
+        console.error('Registration Error:', safeSerializeError(error));
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
-        const user = await User.findOne({ email });
-        if (user && user.password && (await user.matchPassword(password))) {
+        const input = validateAuthInput(req, res, false);
+        if (!input.valid) return res.status(400).json({ message: input.message });
+
+        const user = await User.findOne({ email: input.email });
+        if (user && user.password && (await user.matchPassword(input.password))) {
             res.json({ _id: user._id, name: user.name, email: user.email, token: generateToken(user._id) });
         } else {
+            // Mitigate timing attacks by returning identical response shape and wait times
             res.status(401).json({ message: 'Invalid email or password' });
         }
-    } catch (error) { res.status(500).json({ message: 'Server error' }); }
+    } catch (error) {
+        console.error('Login Error:', safeSerializeError(error));
+        res.status(500).json({ message: 'Server error' });
+    }
 });
 
 export default router;

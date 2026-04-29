@@ -3,30 +3,6 @@
 // ============================================================================
 
 // 🛠️ AUDIT FIX: [QW-05] — Externalize Backend URL via Vite Environment Variable
-//
-// BEFORE: Both fetch() calls in this file hardcoded the production Render URL:
-//   "https://voxa-ai-zh5o.onrender.com/api/chat"
-//   "https://voxa-ai-zh5o.onrender.com/api/chat/history"
-//
-// This caused two concrete problems:
-//   1. Local development required manually editing source code before every
-//      dev session (and then reverting before committing) — a broken workflow.
-//   2. Any future domain change, migration to a different host, or addition
-//      of a staging environment required a code edit + full frontend redeploy.
-//
-// AFTER: The base URL is read from `import.meta.env.VITE_API_URL`, which Vite
-// injects at build time from the active .env file.
-//
-// Development  → create `voxa-frontend/.env.local` with:
-//                  VITE_API_URL=http://localhost:5000
-//
-// Production   → set `VITE_API_URL=https://voxa-ai-zh5o.onrender.com`
-//                in your Vercel / Netlify environment variables dashboard.
-//                No source code changes required for domain migrations.
-//
-// The fallback (`|| 'https://voxa-ai-zh5o.onrender.com'`) keeps the current
-// production deployment working with zero configuration until you set the
-// env var in your Vercel dashboard — nothing breaks on day one.
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://voxa-ai-zh5o.onrender.com';
 
 /**
@@ -35,13 +11,17 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://voxa-ai-zh5o.onren
  *
  * @param {object} payload   - { prompt, image, voice, mood, token }
  * @param {object} callbacks - { onStatus, onText, onAudio, onError }
+ * @returns {AbortController} - Returns the controller so React can abort on unmount
  */
 export const streamChatResponse = async (payload, callbacks) => {
     const { prompt, image, voice, mood, token } = payload;
     const { onStatus, onText, onAudio, onError } = callbacks;
 
-    // 🛠️ SURGICAL FIX: [V-12] Client-side SSE timeout — if no valid event arrives
-    // within 30s, abort the stream and show an error instead of hanging forever.
+    // 🛠️ AUDIT FIX: Master AbortController to instantly sever TCP socket if React unmounts
+    const abortController = new AbortController();
+    const { signal } = abortController;
+
+    // 🛠️ SURGICAL FIX: [V-12] Client-side SSE timeout
     let streamTimeoutId = null;
     const STREAM_TIMEOUT_MS = 30000;
 
@@ -49,13 +29,13 @@ export const streamChatResponse = async (payload, callbacks) => {
         if (streamTimeoutId) clearTimeout(streamTimeoutId);
         streamTimeoutId = setTimeout(() => {
             console.error('🚨 SSE STREAM TIMEOUT: No events received for 30s. Aborting.');
+            abortController.abort(); // Forcefully kill the fetch connection
             try { reader.cancel(); } catch (e) { /* ignore cancel errors on already-closed streams */ }
             onError('Request timed out. The server may be overloaded — please try again.');
         }, STREAM_TIMEOUT_MS);
     };
 
     try {
-        // 🛠️ AUDIT FIX: [QW-05] Dynamic base URL — no more hardcoded production domain
         const response = await fetch(`${API_BASE_URL}/api/chat`, {
             method: 'POST',
             headers: {
@@ -63,16 +43,13 @@ export const streamChatResponse = async (payload, callbacks) => {
                 'Authorization': `Bearer ${token}`,
             },
             body: JSON.stringify({ prompt, image, voice, mood }),
+            signal, // Wire up the abort signal
         });
 
-        // If the backend rejects the request (e.g. 401 Unauthorized, 429 Rate Limited,
-        // 500 Internal Error), catch it before attempting to parse an SSE stream.
         if (!response.ok) {
             const errorDetails = await response.text();
             console.error(`🚨 BACKEND CRASH (${response.status}):`, errorDetails);
 
-            // 🛠️ Rate limit: parse the structured JSON body from chatLimiter
-            // (Batch 2 fix) and surface a human-readable message
             if (response.status === 429) {
                 try {
                     const parsed = JSON.parse(errorDetails);
@@ -80,7 +57,7 @@ export const streamChatResponse = async (payload, callbacks) => {
                 } catch {
                     onError("You're sending messages too quickly. Please wait a moment.");
                 }
-                return;
+                return abortController;
             }
 
             throw new Error(`Server rejected the request with status ${response.status}.`);
@@ -93,7 +70,6 @@ export const streamChatResponse = async (payload, callbacks) => {
         let done = false;
         let buffer = '';
 
-        // 🛠️ SURGICAL FIX: [V-12] Start the timeout clock as soon as the stream opens
         resetStreamTimeout(reader);
 
         while (!done) {
@@ -103,7 +79,6 @@ export const streamChatResponse = async (payload, callbacks) => {
             if (value) {
                 buffer += decoder.decode(value, { stream: true });
                 const events = buffer.split('\n\n');
-                // The last element may be a partial event — keep it in the buffer
                 buffer = events.pop();
 
                 for (const event of events) {
@@ -113,7 +88,6 @@ export const streamChatResponse = async (payload, callbacks) => {
                             try {
                                 const data = JSON.parse(line.substring(6));
 
-                                // 🛠️ SURGICAL FIX: [V-12] Reset timeout on every valid event
                                 resetStreamTimeout(reader);
 
                                 if (data.type === 'status') onStatus(data.text);
@@ -124,8 +98,6 @@ export const streamChatResponse = async (payload, callbacks) => {
                                     onError(data.text);
                                 }
                             } catch (e) {
-                                // 🛠️ SURGICAL FIX: [V-06] Log malformed SSE data instead of
-                                // silently swallowing — aids debugging without crashing the loop
                                 console.warn(
                                     '⚠️ SSE JSON parse error (malformed frame):',
                                     e.message,
@@ -139,15 +111,19 @@ export const streamChatResponse = async (payload, callbacks) => {
             }
         }
 
-        // 🛠️ SURGICAL FIX: [V-12] Clean up timeout when stream completes normally
         if (streamTimeoutId) clearTimeout(streamTimeoutId);
 
     } catch (err) {
-        // 🛠️ SURGICAL FIX: [V-12] Clean up timeout on every error path
         if (streamTimeoutId) clearTimeout(streamTimeoutId);
-        console.error('🚨 FETCH FAILED:', err);
-        onError('Network connection dropped. Check the console.');
+        if (err.name === 'AbortError') {
+            console.log('🛑 Client forcefully aborted the stream.');
+        } else {
+            console.error('🚨 FETCH FAILED:', err);
+            onError('Network connection dropped. Check the console.');
+        }
     }
+
+    return abortController;
 };
 
 /**
@@ -158,7 +134,6 @@ export const streamChatResponse = async (payload, callbacks) => {
  */
 export const fetchChatHistory = async (token) => {
     try {
-        // 🛠️ AUDIT FIX: [QW-05] Dynamic base URL — no more hardcoded production domain
         const response = await fetch(`${API_BASE_URL}/api/chat/history`, {
             method: 'GET',
             headers: {
