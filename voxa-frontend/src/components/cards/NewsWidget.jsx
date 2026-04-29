@@ -1,126 +1,129 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Newspaper, ExternalLink, Clock } from 'lucide-react';
+import { Newspaper, ExternalLink, Clock, Globe, ChevronRight, AlertTriangle } from 'lucide-react';
 
 // ============================================================================
-// 📰 NewsWidget — Premium News Headlines Card
+// 📰 NewsWidget — Apple Premium Headlines Card
 // ============================================================================
-// Payload shape (from getNewsTool):
-//   category  — "Technology" | "Sports" | "Business" ...
-//   articles  — [{ title, source, url, publishedAt, description }]
+// Design DNA: iOS 17 Apple News / Cupertino Glassmorphism
+// Features: 32px backdrop blur, category-driven ambient glows, hairline 
+// dividers, and a premium typography hierarchy (Hero headline + standard list).
 // ============================================================================
 
 const CATEGORY_COLORS = {
-  Technology: '#3B82F6', Sports: '#22C55E', Business: '#F59E0B', Health: '#10B981',
-  Entertainment: '#A855F7', World: '#6366F1', Nation: '#EF4444', Science: '#0EA5E9',
-  'Breaking News': '#EF4444',
+  Technology: '#0A84FF', Sports: '#30D158', Business: '#FF9F0A', Health: '#FF375F',
+  Entertainment: '#BF5AF2', World: '#5E5CE6', Nation: '#FF453A', Science: '#32ADE6',
+  'Breaking News': '#FF453A', 'News': '#8E8E93',
 };
 
 const NewsWidget = ({ data }) => {
   const { category = 'News', articles, error } = data || {};
-  // 🧹 QA FIX: Null-safe array — destructuring default [] is bypassed when value is explicit null
   const safeArticles = articles || [];
-  const accent = CATEGORY_COLORS[category] || '#6366F1';
+  const themeColor = CATEGORY_COLORS[category] || '#0A84FF';
 
-  if (error || !safeArticles.length) {
+  // ─── Error State ───
+  if (error || (!error && safeArticles.length === 0)) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        // 📱 RESPONSIVE: Fluid error card
-        className="w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] p-4 sm:p-6 mt-5"
-        style={{ background: '#0B0B0C', border: '1px solid rgba(239,68,68,0.12)' }}
-      >
-        <span className="text-[12px] sm:text-[13px] text-red-400 font-medium break-words">{error || 'No articles found'}</span>
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[420px] rounded-[24px] sm:rounded-[28px] p-5 mt-5"
+        style={{ background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255,69,58,0.2)' }}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-[#FF453A] shrink-0" />
+          <span className="text-[13px] text-[#FF453A] font-medium tracking-tight break-words">
+            {error || 'No recent articles found for this topic.'}
+          </span>
+        </div>
       </motion.div>
     );
   }
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-      // 📱 RESPONSIVE: Fluid width, responsive corners
-      className="relative w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] md:rounded-[32px] overflow-hidden mt-5"
+      initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full max-w-[460px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
       style={{
-        background: '#0B0B0C',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'rgba(20, 20, 22, 0.65)',
+        backdropFilter: 'blur(32px)',
+        WebkitBackdropFilter: 'blur(32px)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
       }}
     >
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: `radial-gradient(ellipse at 50% 0%, ${accent}10 0%, transparent 60%)`,
+      {/* ─── Ambient Category Glow ─── */}
+      <div className="absolute top-0 left-0 w-full h-40 pointer-events-none opacity-20" style={{
+        background: `radial-gradient(ellipse at 20% -20%, ${themeColor} 0%, transparent 70%)`,
+        filter: 'blur(40px)',
       }} />
 
-      {/* 📱 RESPONSIVE: Mobile-first padding */}
-      <div className="relative z-10 p-4 sm:p-5 md:p-7">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-4 sm:mb-5">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0" style={{
-            background: `${accent}18`, border: `1px solid ${accent}25`,
-          }}>
-            <Newspaper className="w-3.5 h-3.5 sm:w-4 sm:h-4" style={{ color: accent }} />
+      <div className="relative z-10 p-5 sm:p-6">
+
+        {/* ─── Header: News Category ─── */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <Newspaper className="w-4 h-4 text-white/90" />
+            </div>
+            <span className="text-[14px] font-semibold text-white/80 tracking-tight uppercase">Top Stories</span>
           </div>
-          <div className="min-w-0">
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: `${accent}CC` }}>
-              {category}
-            </span>
-            {/* 🧹 QA FIX: Use safeArticles for count */}
-            <p className="text-[10px] sm:text-[11px] text-[#52525B] font-medium">{safeArticles.length} articles</p>
-          </div>
+          <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-full"
+            style={{ color: themeColor, background: `${themeColor}20`, border: `1px solid ${themeColor}30` }}>
+            {category}
+          </span>
         </div>
 
-        {/* Articles List */}
-        {/* 📱 RESPONSIVE: Single column list — flex-col, tighter gap on mobile */}
-        <div className="flex flex-col gap-0.5 sm:gap-1">
-          {/* 🧹 QA FIX: Map over safeArticles; use article.url as key with index fallback */}
-          {safeArticles.map((article, i) => (
-            <motion.a
-              key={article.url || `article-${i}`}
-              href={article.url || '#'}
-              target="_blank"
-              rel="noopener noreferrer"
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.1 + i * 0.06 }}
-              // 📱 RESPONSIVE: Touch-friendly padding, min-h for touch target
-              className="group flex gap-2.5 sm:gap-3 p-2.5 sm:p-3 rounded-lg sm:rounded-xl transition-colors duration-200 min-h-[44px]"
-              style={{ background: 'transparent' }}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.03)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-            >
-              {/* Number */}
-              <span className="text-[11px] sm:text-[12px] font-bold mt-0.5 shrink-0 w-4 sm:w-5 text-right" style={{ color: `${accent}60` }}>
-                {i + 1}
-              </span>
+        {/* ─── Article List ─── */}
+        <div className="flex flex-col gap-1">
+          {safeArticles.map((article, index) => {
+            const isHero = index === 0;
 
-              <div className="flex-1 min-w-0">
-                {/* 📱 RESPONSIVE: line-clamp-2 prevents long titles from breaking layout */}
-                <p className="text-[13px] sm:text-[14px] text-[#E4E4E7] font-medium leading-snug tracking-[-0.01em] group-hover:text-white transition-colors line-clamp-2">
-                  {/* 🧹 QA FIX: Null-safe title fallback */}
-                  {article.title || 'Untitled'}
-                </p>
-                {article.description && (
-                  // 📱 RESPONSIVE: line-clamp-1 on description
-                  <p className="text-[11px] sm:text-[12px] text-[#52525B] mt-0.5 sm:mt-1 leading-relaxed line-clamp-1">{article.description}</p>
-                )}
-                {/* 📱 RESPONSIVE: Wrap metadata on narrow screens */}
-                <div className="flex items-center flex-wrap gap-2 sm:gap-3 mt-1 sm:mt-1.5 text-[10px] sm:text-[11px] text-[#52525B]">
-                  {/* 🧹 QA FIX: Null-safe source fallback */}
-                  <span className="font-semibold truncate max-w-[120px]">{article.source || 'Unknown'}</span>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-2.5 h-2.5" />
-                    {/* 🧹 QA FIX: Null-safe publishedAt fallback */}
-                    <span className="truncate">{article.publishedAt || 'Recently'}</span>
-                  </div>
+            return (
+              <a
+                key={index}
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group block p-4 rounded-[20px] transition-all hover:bg-white/5 active:scale-[0.98]"
+                style={{
+                  background: isHero ? 'rgba(255,255,255,0.04)' : 'transparent',
+                  border: isHero ? '1px solid rgba(255,255,255,0.05)' : '1px solid transparent',
+                  borderTop: !isHero && index !== 0 ? '1px solid rgba(255,255,255,0.05)' : undefined,
+                  borderRadius: isHero ? '20px' : '0px'
+                }}
+              >
+                {/* Source & Time Metadata */}
+                <div className="flex items-center gap-2 mb-2 text-[11px] text-white/50 font-medium">
+                  <Globe className="w-3 h-3" />
+                  <span className="font-semibold text-white/70 truncate max-w-[120px]">{article.source || 'News Source'}</span>
+                  <span className="w-1 h-1 rounded-full bg-white/20" />
+                  <span className="truncate">{article.publishedAt || 'Recent'}</span>
                 </div>
-              </div>
 
-              <ExternalLink className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-[#3F3F46] mt-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
-            </motion.a>
-          ))}
+                {/* Article Title */}
+                <h3 className={`font-bold text-white/95 tracking-tight leading-snug group-hover:text-white transition-colors line-clamp-3 mb-2
+                  ${isHero ? 'text-[17px] sm:text-[19px]' : 'text-[15px] sm:text-[16px]'}`}>
+                  {article.title || 'Untitled Article'}
+                </h3>
+
+                {/* Description (Only for Hero or if it fits well) */}
+                {isHero && article.description && (
+                  <p className="text-[13px] text-white/60 leading-relaxed line-clamp-2 mb-3">
+                    {article.description}
+                  </p>
+                )}
+
+                {/* Read More Link (Hero Only) */}
+                {isHero && (
+                  <div className="flex items-center gap-1 text-[12px] font-semibold" style={{ color: themeColor }}>
+                    Read Full Story <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </a>
+            );
+          })}
         </div>
+
       </div>
     </motion.div>
   );

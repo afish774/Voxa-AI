@@ -1,14 +1,13 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Pill, AlertTriangle, ShieldAlert, Info, Factory } from 'lucide-react';
+import { Pill, AlertTriangle, ShieldAlert, Info, Factory, Activity, FileText } from 'lucide-react';
 
 // ============================================================================
-// 💊 MedicineWidget — Clinical Drug Information Card
+// 💊 MedicineWidget — Apple Premium Clinical Drug Card
 // ============================================================================
-// Payload shape (from getMedicineTool):
-//   name, genericName, brandNames[], purpose, dosage, warnings[],
-//   interactions, adverseReactions, manufacturer,
-//   hasBlackBoxWarning, disclaimer
+// Design DNA: iOS 17 Health App / Cupertino Glassmorphism
+// Features: 32px backdrop blur, highly legible typographic hierarchy for dense
+// medical text, and adaptive ambient glows (Cyan default, Red for Black Box).
 // ============================================================================
 
 const MedicineWidget = ({ data }) => {
@@ -17,155 +16,176 @@ const MedicineWidget = ({ data }) => {
     warnings, interactions, adverseReactions, manufacturer,
     hasBlackBoxWarning = false, disclaimer, error,
   } = data || {};
-  // 🧹 QA FIX: Null-safe arrays — destructuring default [] is bypassed when value is explicit null
-  const safeBrandNames = brandNames || [];
-  const safeWarnings = warnings || [];
 
+  // ─── Error State ───
   if (error) {
     return (
       <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
-        // 📱 RESPONSIVE: Fluid error card
-        className="w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] p-4 sm:p-6 mt-5"
-        style={{ background: '#0B0B0C', border: '1px solid rgba(239,68,68,0.12)' }}>
-        <span className="text-[12px] sm:text-[13px] text-red-400 font-medium break-words">{error}</span>
+        className="w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] p-5 mt-5"
+        style={{ background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255,69,58,0.2)' }}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-[#FF453A] shrink-0" />
+          <span className="text-[13px] text-[#FF453A] font-medium tracking-tight break-words">{error}</span>
+        </div>
       </motion.div>
     );
   }
 
-  const warningColor = hasBlackBoxWarning ? '#EF4444' : '#F59E0B';
+  const safeBrandNames = brandNames || [];
+  const safeWarnings = warnings || [];
+
+  // Adaptive Theme: Red for Black Box warnings, Cyan for standard meds
+  const themeColor = hasBlackBoxWarning ? '#FF453A' : '#32ADE6';
+  const IconColor = hasBlackBoxWarning ? '#FF453A' : '#32ADE6';
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-      // 📱 RESPONSIVE: Fluid width, responsive corners
-      className="relative w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] md:rounded-[32px] overflow-hidden mt-5"
+      initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full max-w-[460px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
       style={{
-        background: '#0B0B0C',
-        border: `1px solid ${hasBlackBoxWarning ? 'rgba(239,68,68,0.12)' : 'rgba(6, 182, 212, 0.08)'}`,
-        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'rgba(20, 20, 22, 0.65)',
+        backdropFilter: 'blur(32px)',
+        WebkitBackdropFilter: 'blur(32px)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
       }}
     >
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: `radial-gradient(ellipse at 50% 0%, ${hasBlackBoxWarning ? 'rgba(239,68,68,0.04)' : 'rgba(6,182,212,0.04)'} 0%, transparent 60%)`,
+      {/* ─── Ambient Clinical Glow ─── */}
+      <div className="absolute top-0 right-0 w-3/4 h-40 pointer-events-none opacity-20" style={{
+        background: `radial-gradient(ellipse at 80% -20%, ${themeColor} 0%, transparent 70%)`,
+        filter: 'blur(40px)',
       }} />
 
-      {/* 📱 RESPONSIVE: Mobile-first padding */}
-      <div className="relative z-10 p-4 sm:p-5 md:p-7">
-        {/* Header */}
-        {/* 📱 RESPONSIVE: Wrap black box badge on narrow screens */}
-        <div className="flex items-start justify-between gap-2 mb-3 sm:mb-4">
-          <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0" style={{
-              background: 'linear-gradient(135deg, rgba(6,182,212,0.15), rgba(14,165,233,0.1))',
-            }}>
-              <Pill className="w-4 h-4 sm:w-[18px] sm:h-[18px] text-cyan-400" />
+      <div className="relative z-10 p-5 sm:p-6">
+
+        {/* ─── Header: Drug Name & FDA Badge ─── */}
+        <div className="flex items-start justify-between gap-3 mb-5">
+          <div className="flex items-start gap-3.5">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0"
+              style={{ background: `rgba(${hasBlackBoxWarning ? '255, 69, 58' : '50, 173, 230'}, 0.15)` }}>
+              <Pill className="w-6 h-6" style={{ color: IconColor }} />
             </div>
-            <div className="min-w-0">
-              {/* 📱 RESPONSIVE: Fluid drug name, truncate if very long */}
-              <h3 className="text-[16px] sm:text-[17px] md:text-[18px] font-bold text-white/95 tracking-[-0.02em] truncate">{name}</h3>
-              {genericName && genericName !== name && (
-                <p className="text-[11px] sm:text-[12px] text-[#71717A] font-medium mt-0.5 truncate">{genericName}</p>
+            <div className="min-w-0 flex flex-col pt-0.5">
+              <h2 className="text-[22px] sm:text-[24px] font-bold text-white tracking-tight leading-none capitalize truncate pr-2">
+                {name}
+              </h2>
+              {genericName && genericName.toLowerCase() !== name.toLowerCase() && (
+                <p className="text-[13px] text-white/50 font-medium tracking-wide mt-1.5 capitalize">
+                  {genericName}
+                </p>
               )}
             </div>
           </div>
-          {hasBlackBoxWarning && (
-            <div className="flex items-center gap-1 px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-full shrink-0" style={{
-              background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)',
-            }}>
-              <ShieldAlert className="w-3 h-3 text-red-400" />
-              <span className="text-[8px] sm:text-[9px] font-bold uppercase tracking-wider text-red-400">Black Box</span>
-            </div>
-          )}
+          <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded-md shrink-0"
+            style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)' }}>
+            FDA Data
+          </span>
         </div>
 
-        {/* Brand Names — uses safeBrandNames */}
+        {/* ─── Black Box Warning (Highest Priority) ─── */}
+        {hasBlackBoxWarning && (
+          <div className="mb-4 p-4 rounded-[20px]" style={{ background: 'rgba(255, 69, 58, 0.1)', border: '1px solid rgba(255, 69, 58, 0.2)' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <ShieldAlert className="w-4 h-4 text-[#FF453A]" />
+              <span className="text-[13px] font-bold text-[#FF453A] uppercase tracking-wider">Black Box Warning</span>
+            </div>
+            <p className="text-[13px] text-white/90 font-medium leading-relaxed">
+              This medication carries a severe FDA warning. Please consult your doctor regarding critical safety risks.
+            </p>
+          </div>
+        )}
+
+        {/* ─── Brand Names Chips ─── */}
         {safeBrandNames.length > 0 && (
-          // 📱 RESPONSIVE: Flex-wrap for brand name tags
-          <div className="flex flex-wrap gap-1 sm:gap-1.5 mb-3 sm:mb-4">
-            {/* 🧹 QA FIX: Map over safeBrandNames */}
-            {safeBrandNames.map((b, i) => (
-              <span key={`brand-${i}`} className="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-semibold text-cyan-400/80" style={{
-                background: 'rgba(6,182,212,0.06)', border: '1px solid rgba(6,182,212,0.1)',
-              }}>{b}</span>
+          <div className="flex flex-wrap gap-2 mb-5">
+            {safeBrandNames.slice(0, 4).map((brand, i) => (
+              <span key={i} className="px-2.5 py-1 rounded-full text-[11px] font-semibold text-white/70"
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                {brand}
+              </span>
             ))}
           </div>
         )}
 
-        {/* Purpose */}
-        {purpose && (
-          // 📱 RESPONSIVE: Tighter padding, break-words for long clinical text
-          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl mb-2.5 sm:mb-3" style={{ background: 'rgba(6,182,212,0.03)', border: '1px solid rgba(6,182,212,0.06)' }}>
-            <p className="text-[9px] sm:text-[10px] text-cyan-400/60 font-semibold uppercase tracking-wider mb-1 sm:mb-1.5">Indications & Usage</p>
-            <p className="text-[12px] sm:text-[13px] text-[#D4D4D8] leading-relaxed break-words">{purpose}</p>
-          </div>
-        )}
+        {/* ─── Clinical Data Grid ─── */}
+        <div className="flex flex-col gap-3">
 
-        {/* Dosage */}
-        {dosage && (
-          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl mb-2.5 sm:mb-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-            <p className="text-[9px] sm:text-[10px] text-[#52525B] font-semibold uppercase tracking-wider mb-1 sm:mb-1.5">Dosage</p>
-            {/* 📱 RESPONSIVE: break-words for dosage instructions */}
-            <p className="text-[12px] sm:text-[13px] text-[#A1A1AA] leading-relaxed break-words">{dosage}</p>
-          </div>
-        )}
-
-        {/* Warnings — uses safeWarnings */}
-        {safeWarnings.length > 0 && (
-          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl mb-2.5 sm:mb-3" style={{
-            background: `${warningColor}08`,
-            border: `1px solid ${warningColor}18`,
-          }}>
-            <div className="flex items-center gap-1.5 mb-1.5 sm:mb-2">
-              <AlertTriangle className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" style={{ color: warningColor }} />
-              <p className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider" style={{ color: warningColor }}>
-                {hasBlackBoxWarning ? 'Black Box Warning' : 'Warnings'}
+          {/* Purpose */}
+          {purpose && (
+            <div className="p-4 rounded-[20px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Info className="w-4 h-4 text-[#32ADE6]" />
+                <span className="text-[12px] font-semibold text-white/60 tracking-tight">Purpose & Indication</span>
+              </div>
+              <p className="text-[13.5px] sm:text-[14px] text-white/90 font-medium leading-relaxed">
+                {purpose}
               </p>
             </div>
-            {/* 🧹 QA FIX: Map over safeWarnings */}
-            {/* 📱 RESPONSIVE: break-words on each warning line */}
-            {safeWarnings.map((w, i) => (
-              <p key={`warn-${i}`} className="text-[11px] sm:text-[12px] leading-relaxed mb-1 sm:mb-1.5 last:mb-0 break-words" style={{ color: `${warningColor}CC` }}>{w}</p>
-            ))}
-          </div>
-        )}
+          )}
 
-        {/* Interactions */}
-        {interactions && (
-          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl mb-2.5 sm:mb-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-            <p className="text-[9px] sm:text-[10px] text-[#52525B] font-semibold uppercase tracking-wider mb-1 sm:mb-1.5">Drug Interactions</p>
-            {/* 📱 RESPONSIVE: break-words for interaction text */}
-            <p className="text-[11px] sm:text-[12px] text-[#A1A1AA] leading-relaxed break-words">{interactions}</p>
-          </div>
-        )}
+          {/* Dosage */}
+          {dosage && (
+            <div className="p-4 rounded-[20px]" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <FileText className="w-4 h-4 text-[#32ADE6]" />
+                <span className="text-[12px] font-semibold text-white/60 tracking-tight">Dosage</span>
+              </div>
+              <p className="text-[13.5px] sm:text-[14px] text-white/90 font-medium leading-relaxed line-clamp-4">
+                {dosage}
+              </p>
+            </div>
+          )}
 
-        {/* Adverse Reactions */}
-        {adverseReactions && (
-          <div className="p-3 sm:p-3.5 rounded-xl sm:rounded-2xl mb-2.5 sm:mb-3" style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.04)' }}>
-            <p className="text-[9px] sm:text-[10px] text-[#52525B] font-semibold uppercase tracking-wider mb-1 sm:mb-1.5">Side Effects</p>
-            {/* 📱 RESPONSIVE: break-words for adverse reactions */}
-            <p className="text-[11px] sm:text-[12px] text-[#A1A1AA] leading-relaxed break-words">{adverseReactions}</p>
-          </div>
-        )}
+          {/* Adverse Reactions (Side Effects) */}
+          {adverseReactions && (
+            <div className="p-4 rounded-[20px]" style={{ background: 'rgba(255, 159, 10, 0.05)', border: '1px solid rgba(255, 159, 10, 0.1)' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Activity className="w-4 h-4 text-[#FF9F0A]" />
+                <span className="text-[12px] font-semibold text-[#FF9F0A] tracking-tight opacity-90">Side Effects</span>
+              </div>
+              <p className="text-[13.5px] sm:text-[14px] text-white/80 font-medium leading-relaxed line-clamp-3">
+                {adverseReactions}
+              </p>
+            </div>
+          )}
 
-        {/* Manufacturer */}
-        {manufacturer && (
-          <div className="flex items-center gap-1.5 mb-2.5 sm:mb-3 text-[10px] sm:text-[11px] text-[#52525B] min-w-0">
-            <Factory className="w-3 h-3 shrink-0" />
-            {/* 📱 RESPONSIVE: Truncate long manufacturer names */}
-            <span className="truncate">{manufacturer}</span>
-          </div>
-        )}
+          {/* Specific Warnings */}
+          {safeWarnings.length > 0 && !hasBlackBoxWarning && (
+            <div className="p-4 rounded-[20px]" style={{ background: 'rgba(255, 69, 58, 0.05)', border: '1px solid rgba(255, 69, 58, 0.1)' }}>
+              <div className="flex items-center gap-2 mb-1.5">
+                <AlertTriangle className="w-4 h-4 text-[#FF453A]" />
+                <span className="text-[12px] font-semibold text-[#FF453A] tracking-tight opacity-90">Warnings</span>
+              </div>
+              <p className="text-[13px] text-white/80 font-medium leading-relaxed line-clamp-3">
+                {safeWarnings[0]}
+              </p>
+            </div>
+          )}
 
-        {/* Disclaimer */}
-        <div className="flex items-start gap-1.5 p-2.5 sm:p-3 rounded-lg sm:rounded-xl" style={{ background: 'rgba(255,255,255,0.02)' }}>
-          <Info className="w-3 h-3 text-[#3F3F46] mt-0.5 shrink-0" />
-          {/* 📱 RESPONSIVE: break-words for disclaimer */}
-          <p className="text-[9px] sm:text-[10px] text-[#3F3F46] leading-relaxed italic break-words">
-            {disclaimer || 'Not medical advice. Consult a qualified healthcare professional.'}
-          </p>
         </div>
+
+        {/* ─── Footer: Manufacturer & Disclaimer ─── */}
+        <div className="mt-5 pt-4 flex flex-col gap-3" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+
+          {manufacturer && (
+            <div className="flex items-center gap-2 text-white/40">
+              <Factory className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[11px] font-semibold tracking-wide truncate uppercase">
+                Mfg: {manufacturer}
+              </span>
+            </div>
+          )}
+
+          <div className="p-3 rounded-[12px]" style={{ background: 'rgba(255,255,255,0.02)' }}>
+            <span className="text-[10px] text-white/30 font-semibold uppercase tracking-wider leading-relaxed block text-center">
+              {disclaimer || 'Not medical advice. Consult a healthcare provider.'}
+            </span>
+          </div>
+
+        </div>
+
       </div>
     </motion.div>
   );

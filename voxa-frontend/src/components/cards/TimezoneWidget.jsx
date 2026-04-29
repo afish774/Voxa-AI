@@ -1,172 +1,128 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Globe, Sun, Moon, Sunrise, Clock } from 'lucide-react';
+import { Globe, Sun, Moon, Sunrise, Clock, AlertTriangle } from 'lucide-react';
 
 // ============================================================================
-// 🕐 TimezoneWidget — World Clock Grid
+// 🕐 TimezoneWidget — Apple Premium World Clock
 // ============================================================================
-// Payload shape (from getTimezoneTool):
-//   cities: [{
-//     city           — "London"
-//     time           — "17:30:45"
-//     date           — "Sat, Apr 26"
-//     timezone       — "Europe/London"
-//     status         — "business" | "awake" | "sleeping"
-//     offsetFromIST  — "+4.5h from IST" | "-9.5h from IST"
-//   }]
-//   generatedAt — ISO timestamp
+// Design DNA: iOS 17 World Clock & Weather App
+// Features: 32px backdrop blur, midnight ambient glow, tabular numerals,
+// and adaptive status indicators (Awake/Business/Sleeping).
 // ============================================================================
 
 const STATUS_CONFIG = {
-  business: {
-    icon: Sun,
-    color: '#F59E0B',
-    bg: 'rgba(245,158,11,0.06)',
-    border: 'rgba(245,158,11,0.1)',
-    label: 'Business Hours',
-  },
-  awake: {
-    icon: Sunrise,
-    color: '#FB923C',
-    bg: 'rgba(251,146,60,0.06)',
-    border: 'rgba(251,146,60,0.1)',
-    label: 'Awake',
-  },
-  sleeping: {
-    icon: Moon,
-    color: '#6366F1',
-    bg: 'rgba(99,102,241,0.06)',
-    border: 'rgba(99,102,241,0.1)',
-    label: 'Sleeping',
-  },
+  business: { icon: Sun, color: '#FF9F0A', bg: 'rgba(255, 159, 10, 0.15)', label: 'Business Hours' },
+  awake: { icon: Sunrise, color: '#32ADE6', bg: 'rgba(50, 173, 230, 0.15)', label: 'Awake' },
+  sleeping: { icon: Moon, color: '#5E5CE6', bg: 'rgba(94, 92, 230, 0.15)', label: 'Sleeping' },
 };
 
 const TimezoneWidget = ({ data }) => {
-  const { cities, error } = data || {};
-  // 🧹 QA FIX: Null-safe array — destructuring default [] is bypassed when value is explicit null
-  const safeCities = cities || [];
+  const { cities = [], generatedAt, error } = data || {};
 
-  if (error || safeCities.length === 0) {
+  // ─── Error State ───
+  if (error || !cities.length) {
     return (
-      <motion.div
-        initial={{ opacity: 0, y: 15 }}
-        animate={{ opacity: 1, y: 0 }}
-        // 📱 RESPONSIVE: Fluid error card
-        className="w-full max-w-[440px] rounded-[24px] sm:rounded-[28px] p-4 sm:p-6 mt-5"
-        style={{ background: '#0B0B0C', border: '1px solid rgba(239,68,68,0.12)' }}
-      >
-        <span className="text-[12px] sm:text-[13px] text-red-400 font-medium break-words">{error || 'No timezone data available'}</span>
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[440px] rounded-[24px] sm:rounded-[28px] p-5 mt-5"
+        style={{ background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255,69,58,0.2)' }}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-[#FF453A] shrink-0" />
+          <span className="text-[13px] text-[#FF453A] font-medium tracking-tight break-words">
+            {error || 'No timezone data available.'}
+          </span>
+        </div>
       </motion.div>
     );
   }
 
-  // Format time to show just HH:MM
-  const formatTime = (timeStr) => {
-    if (!timeStr) return '--:--';
+  // ─── Time Parser Helpers ───
+  const parseTime = (timeStr) => {
+    if (!timeStr) return { time: '--:--', ampm: '' };
     const parts = timeStr.split(':');
-    return `${parts[0]}:${parts[1]}`;
-  };
-
-  // Determine AM/PM from 24h time
-  const getAmPm = (timeStr) => {
-    if (!timeStr) return '';
-    const hour = parseInt(timeStr.split(':')[0]);
-    return hour >= 12 ? 'PM' : 'AM';
-  };
-
-  // Convert 24h to 12h format
-  const to12h = (timeStr) => {
-    if (!timeStr) return '--:--';
-    const parts = timeStr.split(':');
-    let hour = parseInt(parts[0]);
-    const displayHour = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-    return `${displayHour}:${parts[1]}`;
+    let h = parseInt(parts[0], 10);
+    const m = parts[1] || '00';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return { time: `${h}:${m}`, ampm };
   };
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-      // 📱 RESPONSIVE: Fluid width, responsive corners
-      className="relative w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] md:rounded-[32px] overflow-hidden mt-5"
+      initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full max-w-[440px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
       style={{
-        background: '#0B0B0C',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'rgba(20, 20, 22, 0.65)',
+        backdropFilter: 'blur(32px)',
+        WebkitBackdropFilter: 'blur(32px)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
       }}
     >
-      {/* Ambient glow */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(56, 189, 248, 0.05) 0%, transparent 60%)',
+      {/* ─── Ambient Midnight Glow ─── */}
+      <div className="absolute top-0 right-0 w-3/4 h-48 pointer-events-none opacity-20" style={{
+        background: 'radial-gradient(ellipse at 80% -20%, #5E5CE6 0%, transparent 70%)',
+        filter: 'blur(40px)',
       }} />
 
-      {/* 📱 RESPONSIVE: Mobile-first padding */}
-      <div className="relative z-10 p-4 sm:p-5 md:p-7">
-        {/* Header */}
-        <div className="flex items-center gap-2 mb-4 sm:mb-5">
-          <Globe className="w-4 h-4 text-sky-400/70" />
-          <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-sky-400/70">World Clock</span>
-          {/* 🧹 QA FIX: Use safeCities for count */}
-          <span className="text-[10px] sm:text-[11px] text-[#52525B] ml-auto font-medium">{safeCities.length} cities</span>
+      <div className="relative z-10 p-5 sm:p-6 pb-4">
+
+        {/* ─── Header ─── */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+              <Globe className="w-4 h-4 text-white/90" />
+            </div>
+            <span className="text-[14px] font-semibold text-white/80 tracking-tight uppercase">World Clock</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-white/40">
+            <Clock className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider">Live</span>
+          </div>
         </div>
 
-        {/* City Grid — uses safeCities */}
-        {/* 📱 RESPONSIVE: grid-cols-1 on mobile, sm:grid-cols-2, lg:grid-cols-3 as user directive */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
-          {/* 🧹 QA FIX: Map over safeCities with stable key */}
-          {safeCities.map((city, i) => {
-            const cfg = STATUS_CONFIG[city.status] || STATUS_CONFIG.awake;
-            const StatusIcon = cfg.icon;
+        {/* ─── Cities List ─── */}
+        <div className="flex flex-col gap-3">
+          {cities.map((cityObj, idx) => {
+            const { time, ampm } = parseTime(cityObj.time);
+            const statusCfg = STATUS_CONFIG[cityObj.status] || STATUS_CONFIG.awake;
+            const StatusIcon = statusCfg.icon;
 
             return (
-              <motion.div
-                key={city.city || `tz-${i}`}
-                initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                transition={{ delay: 0.1 + i * 0.07, duration: 0.4 }}
-                // 📱 RESPONSIVE: On mobile (1-col), use horizontal row layout
-                // On sm+ (2-col grid), use vertical card layout
-                className="p-3 sm:p-4 rounded-xl sm:rounded-2xl flex sm:flex-col"
-                style={{
-                  background: cfg.bg,
-                  border: `1px solid ${cfg.border}`,
-                }}
+              <div
+                key={idx}
+                className="flex items-center justify-between p-4 rounded-[22px] transition-colors hover:bg-white/5"
+                style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.04)' }}
               >
-                {/* Mobile layout: single row with city, time, status */}
-                {/* Desktop layout: stacked vertical card */}
-
-                {/* City Name + Status Icon */}
-                <div className="flex items-center justify-between sm:mb-2.5 mr-3 sm:mr-0 min-w-0 shrink sm:shrink-0 sm:w-full">
-                  {/* 🧹 QA FIX: Null-safe city name fallback */}
-                  {/* 📱 RESPONSIVE: Truncate long city names */}
-                  <p className="text-[12px] sm:text-[13px] font-semibold text-white/90 tracking-tight truncate pr-2">{city.city || 'Unknown'}</p>
-                  <StatusIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" style={{ color: cfg.color }} />
-                </div>
-
-                {/* Time + Date — displayed inline on mobile, stacked on sm+ */}
-                <div className="flex items-baseline gap-1.5 sm:gap-1.5 shrink-0">
-                  {/* 📱 RESPONSIVE: Fluid time text */}
-                  <span className="text-[20px] sm:text-[22px] md:text-[24px] font-bold text-white/95 tracking-[-0.02em] leading-none tabular-nums">
-                    {to12h(city.time)}
+                {/* Left: City & Meta */}
+                <div className="flex flex-col min-w-0 pr-4">
+                  <span className="text-[11px] text-white/50 font-medium tracking-wide truncate mb-0.5">
+                    {cityObj.date} • {cityObj.offsetFromIST}
                   </span>
-                  <span className="text-[10px] sm:text-[11px] font-semibold text-[#71717A] uppercase">{getAmPm(city.time)}</span>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[20px] sm:text-[22px] font-bold text-white tracking-tight leading-none truncate">
+                      {cityObj.city}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <StatusIcon className="w-3 h-3" style={{ color: statusCfg.color }} />
+                    <span className="text-[11px] font-bold uppercase tracking-wider" style={{ color: statusCfg.color }}>
+                      {statusCfg.label}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Date — hidden on mobile row, shown on sm+ */}
-                <p className="hidden sm:block text-[10px] sm:text-[11px] text-[#52525B] mt-1.5 font-medium">{city.date || ''}</p>
-
-                {/* Offset — shown as badge on mobile, full row on sm+ */}
-                <div className="hidden sm:flex items-center gap-1 mt-2 pt-2" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-                  <Clock className="w-2.5 h-2.5 text-[#3F3F46]" />
-                  <span className="text-[9px] sm:text-[10px] text-[#3F3F46] font-medium truncate">{city.offsetFromIST || ''}</span>
+                {/* Right: Time Display */}
+                <div className="flex items-baseline gap-1 shrink-0">
+                  <span className="text-[36px] sm:text-[40px] font-light text-white tracking-tighter leading-none tabular-nums">
+                    {time}
+                  </span>
+                  <span className="text-[15px] sm:text-[17px] font-semibold text-white/60">
+                    {ampm}
+                  </span>
                 </div>
-
-                {/* Mobile-only: compact offset badge */}
-                <div className="flex sm:hidden items-center gap-1 ml-auto shrink-0">
-                  <span className="text-[9px] text-[#52525B] font-medium">{city.date || ''}</span>
-                </div>
-              </motion.div>
+              </div>
             );
           })}
         </div>

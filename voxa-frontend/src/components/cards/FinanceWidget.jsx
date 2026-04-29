@@ -1,102 +1,101 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Receipt, ArrowDownCircle, ArrowUpCircle, Wallet, PieChart, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Receipt, ArrowDownCircle, ArrowUpCircle, Wallet, PieChart, TrendingUp, TrendingDown, Minus, CheckCircle2 } from 'lucide-react';
 
 // ============================================================================
-// 💰 FinanceWidget — Personal Finance Card
+// 💰 FinanceWidget — Apple Premium Wallet & Insights Card
 // ============================================================================
-// Handles two modes:
-//   mode: 'receipt'  — Glowing success ticket after logging a transaction
-//     { mode, transactionId, type, amount, category, description, date, time, typeLabel }
-//   mode: 'summary'  — Sleek spending breakdown
-//     { mode, period, totalIncome, totalExpenses, balance, transactionCount,
-//       topCategories: [{name, amount, percent}],
-//       recentTransactions: [{desc, amount, category, date}],
-//       healthStatus: 'surplus'|'deficit'|'break-even' }
+// Design DNA: iOS 17 Apple Card / Cupertino Glassmorphism
+// Features: 32px backdrop blur, adaptive semantic glows (Surplus vs Deficit),
+// tabular numerals, and nested glass panels for transaction history.
 // ============================================================================
 
 const CATEGORY_COLORS = {
-  Food: '#F59E0B', Transport: '#3B82F6', Entertainment: '#A855F7', Health: '#10B981',
-  Shopping: '#EC4899', Utilities: '#6366F1', Rent: '#EF4444', Salary: '#22C55E',
-  Freelance: '#14B8A6', Travel: '#F97316', Education: '#8B5CF6', Investment: '#0EA5E9',
-  Other: '#71717A',
+  Food: '#FF9F0A', Transport: '#0A84FF', Entertainment: '#BF5AF2', Health: '#30D158',
+  Shopping: '#FF375F', Utilities: '#5E5CE6', Rent: '#FF453A', Salary: '#32ADE6',
+  Freelance: '#30D158', Travel: '#FF9F0A', Education: '#BF5AF2', Investment: '#0A84FF',
+  Other: '#8E8E93',
 };
 
 const FinanceWidget = ({ data }) => {
   if (!data) return null;
-  const { mode } = data;
+  const { mode, error } = data;
 
-  // ── Receipt Mode ──────────────────────────────────────────────────────────
+  // ─── Error State ───
+  if (error) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[420px] rounded-[24px] sm:rounded-[28px] p-5 mt-5"
+        style={{ background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255,69,58,0.2)' }}>
+        <span className="text-[13px] text-[#FF453A] font-medium tracking-tight break-words">{error}</span>
+      </motion.div>
+    );
+  }
+
+  // ==========================================================================
+  // 🎟️ MODE: RECEIPT (Transaction Logged)
+  // ==========================================================================
   if (mode === 'receipt') {
-    const { transactionId, type, amount, category, description, date, time, typeLabel } = data;
+    const { transactionId, type, amount, category, description, date, time } = data;
     const isIncome = type === 'income';
-    const accentColor = isIncome ? '#22C55E' : '#F59E0B';
+    const themeColor = isIncome ? '#30D158' : '#FF453A';
+    const TypeIcon = isIncome ? ArrowUpCircle : ArrowDownCircle;
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 15, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
-        // 📱 RESPONSIVE: Fluid width, responsive corners
-        className="relative w-full max-w-[420px] rounded-[24px] sm:rounded-[28px] overflow-hidden mt-5"
+        initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-[400px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
         style={{
-          background: '#0B0B0C',
-          border: `1px solid ${isIncome ? 'rgba(34,197,94,0.12)' : 'rgba(245,158,11,0.12)'}`,
-          boxShadow: `0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.05)`,
+          background: 'rgba(20, 20, 22, 0.65)',
+          backdropFilter: 'blur(32px)',
+          WebkitBackdropFilter: 'blur(32px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
         }}
       >
-        {/* Glow */}
-        <div className="absolute inset-0 pointer-events-none" style={{
-          background: `radial-gradient(ellipse at 50% 0%, ${isIncome ? 'rgba(34,197,94,0.06)' : 'rgba(245,158,11,0.06)'} 0%, transparent 60%)`,
+        <div className="absolute top-0 left-0 w-full h-32 pointer-events-none opacity-20" style={{
+          background: `radial-gradient(ellipse at 50% -20%, ${themeColor} 0%, transparent 70%)`,
+          filter: 'blur(40px)',
         }} />
 
-        {/* 📱 RESPONSIVE: Mobile-first padding */}
-        <div className="relative z-10 p-4 sm:p-5 md:p-6">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-3 sm:mb-4">
-            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0" style={{
-                background: `linear-gradient(135deg, ${accentColor}22, ${accentColor}11)`,
-              }}>
-                {isIncome
-                  ? <ArrowUpCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: accentColor }} />
-                  : <ArrowDownCircle className="w-4 h-4 sm:w-[18px] sm:h-[18px]" style={{ color: accentColor }} />
-                }
-              </div>
-              <div className="min-w-0">
-                <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em]" style={{ color: accentColor }}>
-                  {typeLabel || (isIncome ? '💰 Income' : '💸 Expense')}
-                </span>
-                {/* 🧹 QA FIX: Null-safe transactionId fallback */}
-                <p className="text-[10px] sm:text-[11px] text-[#52525B] font-medium">#{transactionId || '---'}</p>
+        <div className="relative z-10 p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5" style={{ color: themeColor }} />
+              <span className="text-[14px] font-semibold text-white/80 tracking-tight">Transaction Logged</span>
+            </div>
+            <span className="text-[11px] font-mono text-white/40 uppercase tracking-wider">{transactionId}</span>
+          </div>
+
+          <div className="flex flex-col items-center justify-center text-center mb-6">
+            <span className="text-[13px] font-medium text-white/50 mb-1">{isIncome ? 'Received' : 'Spent'}</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-[24px] sm:text-[28px] font-semibold text-white/50">$</span>
+              <span className="text-[44px] sm:text-[52px] font-bold text-white tracking-tighter leading-none tabular-nums">
+                {amount?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-[20px] flex flex-col gap-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] text-white/50 font-medium">Category</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2.5 h-2.5 rounded-full" style={{ background: CATEGORY_COLORS[category] || '#8E8E93' }} />
+                <span className="text-[14px] font-semibold text-white/90">{category}</span>
               </div>
             </div>
-            <Receipt className="w-4 h-4 text-[#3F3F46] shrink-0" />
-          </div>
-
-          {/* Amount */}
-          <div className="mb-3">
-            {/* 📱 RESPONSIVE: Fluid amount text */}
-            <span className="text-[24px] sm:text-[28px] md:text-[32px] font-semibold text-white/95 tracking-[-0.02em] leading-none">
-              {isIncome ? '+' : '-'}₹{parseFloat(amount || 0).toLocaleString('en-IN')}
-            </span>
-          </div>
-
-          {/* Details */}
-          <div className="flex flex-col gap-1.5">
-            {/* 🧹 QA FIX: Null-safe description fallback */}
-            {/* 📱 RESPONSIVE: Truncate long descriptions */}
-            <p className="text-[13px] sm:text-[14px] text-[#D4D4D8] font-medium capitalize truncate">{description || 'Transaction'}</p>
-            {/* 📱 RESPONSIVE: Wrap metadata on small screens */}
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-[11px] sm:text-[12px] text-[#71717A]">
-              <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-semibold" style={{
-                background: `${CATEGORY_COLORS[category] || '#71717A'}15`,
-                color: CATEGORY_COLORS[category] || '#71717A',
-              }}>
-                {category || 'Other'}
-              </span>
-              <span>{date || ''}</span>
-              {time && <span>{time}</span>}
+            <div className="w-full h-[1px]" style={{ background: 'rgba(255,255,255,0.05)' }} />
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] text-white/50 font-medium">Description</span>
+              <span className="text-[14px] font-medium text-white/90 max-w-[160px] truncate">{description}</span>
+            </div>
+            <div className="w-full h-[1px]" style={{ background: 'rgba(255,255,255,0.05)' }} />
+            <div className="flex justify-between items-center">
+              <span className="text-[13px] text-white/50 font-medium">Date & Time</span>
+              <span className="text-[13px] font-medium text-white/80">{date} at {time}</span>
             </div>
           </div>
         </div>
@@ -104,133 +103,102 @@ const FinanceWidget = ({ data }) => {
     );
   }
 
-  // ── Summary Mode ──────────────────────────────────────────────────────────
+  // ==========================================================================
+  // 📊 MODE: SUMMARY (Spending Report)
+  // ==========================================================================
   if (mode === 'summary') {
-    const { period, totalIncome = 0, totalExpenses = 0, balance = 0, transactionCount = 0, topCategories, recentTransactions, healthStatus } = data;
-    // 🧹 QA FIX: Null-safe arrays — destructuring default [] is bypassed when value is explicit null
+    const { period, totalIncome, totalExpenses, balance, topCategories, recentTransactions, healthStatus } = data;
     const safeTopCategories = topCategories || [];
     const safeRecentTransactions = recentTransactions || [];
-    const statusColor = healthStatus === 'surplus' ? '#22C55E' : healthStatus === 'deficit' ? '#EF4444' : '#71717A';
+
+    const isSurplus = healthStatus === 'surplus';
+    const isDeficit = healthStatus === 'deficit';
+    const themeColor = isSurplus ? '#30D158' : isDeficit ? '#FF453A' : '#8E8E93';
 
     return (
       <motion.div
-        initial={{ opacity: 0, y: 20, scale: 0.97 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-        // 📱 RESPONSIVE: Fluid width, responsive corners
-        className="relative w-full max-w-[460px] rounded-[24px] sm:rounded-[28px] md:rounded-[32px] overflow-hidden mt-5"
+        initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+        animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+        transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+        className="relative w-full max-w-[440px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
         style={{
-          background: '#0B0B0C',
-          border: '1px solid rgba(255,255,255,0.06)',
-          boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+          background: 'rgba(20, 20, 22, 0.65)',
+          backdropFilter: 'blur(32px)',
+          WebkitBackdropFilter: 'blur(32px)',
+          border: '1px solid rgba(255,255,255,0.08)',
+          boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
         }}
       >
-        <div className="absolute inset-0 pointer-events-none" style={{
-          background: 'radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 60%)',
+        <div className="absolute top-0 right-0 w-3/4 h-48 pointer-events-none opacity-20" style={{
+          background: `radial-gradient(ellipse at 80% -20%, ${themeColor} 0%, transparent 70%)`,
+          filter: 'blur(40px)',
         }} />
 
-        {/* 📱 RESPONSIVE: Mobile-first padding */}
-        <div className="relative z-10 p-4 sm:p-5 md:p-7">
+        <div className="relative z-10 p-5 sm:p-6">
           {/* Header */}
-          <div className="flex items-center gap-2 mb-1">
-            <Wallet className="w-4 h-4 text-indigo-400/70" />
-            <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.12em] text-indigo-400/70">Finance Summary</span>
+          <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.1)' }}>
+                <Wallet className="w-4 h-4 text-white/90" />
+              </div>
+              <span className="text-[14px] font-semibold text-white/80 tracking-tight">Spending Summary</span>
+            </div>
+            <span className="text-[11px] font-bold text-white/40 uppercase tracking-wider bg-white/5 px-2.5 py-1 rounded-full">{period}</span>
           </div>
-          {/* 🧹 QA FIX: Null-safe period fallback */}
-          <p className="text-[12px] sm:text-[13px] text-[#71717A] mb-4 sm:mb-5 font-medium">{period || 'Current Period'} · {transactionCount} transactions</p>
 
-          {/* Balance Banner */}
-          {/* 📱 RESPONSIVE: Stack balance on very small screens */}
-          <div className="flex items-center justify-between gap-3 p-3 sm:p-4 rounded-xl sm:rounded-2xl mb-3 sm:mb-4" style={{
-            background: `${statusColor}08`,
-            border: `1px solid ${statusColor}15`,
-          }}>
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-[11px] text-[#71717A] uppercase tracking-wider font-semibold mb-1">Net Balance</p>
-              {/* 📱 RESPONSIVE: Fluid balance text */}
-              <span className="text-[22px] sm:text-[26px] md:text-[28px] font-semibold text-white/95 tracking-[-0.02em] leading-none">
-                {balance >= 0 ? '+' : ''}₹{Math.abs(balance).toLocaleString('en-IN')}
+          {/* Balance Display */}
+          <div className="mb-6">
+            <p className="text-[12px] text-white/50 font-medium uppercase tracking-wider mb-1">Net Balance</p>
+            <div className="flex items-baseline gap-1">
+              <span className="text-[28px] sm:text-[32px] font-semibold" style={{ color: themeColor }}>{balance >= 0 ? '+' : '-'}$</span>
+              <span className="text-[40px] sm:text-[46px] font-bold text-white tracking-tighter leading-none tabular-nums">
+                {Math.abs(balance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl flex items-center justify-center shrink-0" style={{
-              background: `${statusColor}15`,
-            }}>
-              {healthStatus === 'surplus' ? <TrendingUp className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: statusColor }} />
-                : healthStatus === 'deficit' ? <TrendingDown className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: statusColor }} />
-                : <Minus className="w-4 h-4 sm:w-5 sm:h-5" style={{ color: statusColor }} />
-              }
-            </div>
           </div>
 
-          {/* Income / Expense Row */}
-          {/* 📱 RESPONSIVE: Stack to single column on very narrow screens */}
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4 sm:mb-5">
-            <div className="p-2.5 sm:p-3 rounded-lg sm:rounded-xl" style={{ background: 'rgba(34,197,94,0.04)', border: '1px solid rgba(34,197,94,0.08)' }}>
-              <p className="text-[10px] sm:text-[11px] text-emerald-400/60 font-semibold uppercase tracking-wider mb-1">Income</p>
-              <p className="text-[15px] sm:text-[16px] md:text-[18px] font-semibold text-emerald-400 tracking-tight">+₹{totalIncome.toLocaleString('en-IN')}</p>
-            </div>
-            <div className="p-2.5 sm:p-3 rounded-lg sm:rounded-xl" style={{ background: 'rgba(239,68,68,0.04)', border: '1px solid rgba(239,68,68,0.08)' }}>
-              <p className="text-[10px] sm:text-[11px] text-red-400/60 font-semibold uppercase tracking-wider mb-1">Expenses</p>
-              <p className="text-[15px] sm:text-[16px] md:text-[18px] font-semibold text-red-400 tracking-tight">-₹{totalExpenses.toLocaleString('en-IN')}</p>
-            </div>
-          </div>
-
-          {/* Top Categories — uses safeTopCategories */}
-          {safeTopCategories.length > 0 && (
-            <div className="mb-3 sm:mb-4">
-              <div className="flex items-center gap-2 mb-2.5 sm:mb-3">
-                <PieChart className="w-3.5 h-3.5 text-[#52525B]" />
-                <span className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.1em] text-[#52525B]">Top Spending</span>
+          {/* Income vs Expenses Bar */}
+          <div className="flex items-center gap-2 mb-6">
+            <div className="flex-1 p-3 rounded-[18px]" style={{ background: 'rgba(48, 209, 88, 0.1)', border: '1px solid rgba(48, 209, 88, 0.15)' }}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-[#30D158]" />
+                <span className="text-[11px] font-semibold text-[#30D158] uppercase tracking-wider">In</span>
               </div>
+              <span className="text-[16px] font-bold text-white tabular-nums tracking-tight">
+                ${totalIncome?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+            <div className="flex-1 p-3 rounded-[18px]" style={{ background: 'rgba(255, 69, 58, 0.1)', border: '1px solid rgba(255, 69, 58, 0.15)' }}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <TrendingDown className="w-3.5 h-3.5 text-[#FF453A]" />
+                <span className="text-[11px] font-semibold text-[#FF453A] uppercase tracking-wider">Out</span>
+              </div>
+              <span className="text-[16px] font-bold text-white tabular-nums tracking-tight">
+                ${totalExpenses?.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </span>
+            </div>
+          </div>
+
+          {/* Recent Transactions */}
+          {safeRecentTransactions.length > 0 && (
+            <div className="mb-4">
+              <p className="text-[12px] text-white/40 font-semibold uppercase tracking-wider mb-2.5">Recent Activity</p>
               <div className="flex flex-col gap-2">
-                {/* 🧹 QA FIX: Map over safeTopCategories with null-safe cat.amount */}
-                {safeTopCategories.map((cat, i) => (
-                  <div key={`cat-${i}`} className="flex items-center gap-2 sm:gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-1">
-                        {/* 📱 RESPONSIVE: Truncate long category names */}
-                        <span className="text-[12px] sm:text-[13px] text-[#D4D4D8] font-medium truncate">{cat.name || 'Other'}</span>
-                        <span className="text-[11px] sm:text-[12px] text-[#A1A1AA] font-semibold shrink-0 ml-2">₹{(cat.amount || 0).toLocaleString('en-IN')}</span>
-                      </div>
-                      <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.04)' }}>
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${cat.percent || 0}%` }}
-                          transition={{ delay: 0.3 + i * 0.1, duration: 0.6, ease: 'easeOut' }}
-                          className="h-full rounded-full"
-                          style={{ background: CATEGORY_COLORS[cat.name] || '#71717A' }}
-                        />
+                {safeRecentTransactions.map((tx, i) => (
+                  <div key={i} className="flex items-center justify-between p-3 rounded-[16px] transition-colors hover:bg-white/5" style={{ background: 'rgba(255,255,255,0.03)' }}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: CATEGORY_COLORS[tx.category] || '#8E8E93' }} />
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-[14px] font-semibold text-white/90 truncate capitalize">{tx.desc}</span>
+                        <span className="text-[11px] text-white/40 font-medium truncate">{tx.category} • {tx.date}</span>
                       </div>
                     </div>
-                    <span className="text-[10px] sm:text-[11px] text-[#52525B] font-bold w-7 sm:w-8 text-right shrink-0">{cat.percent || 0}%</span>
+                    <span className="text-[14px] font-semibold tabular-nums shrink-0 ml-3" style={{ color: tx.amount >= 0 ? '#30D158' : '#FF453A' }}>
+                      {tx.amount > 0 ? '+' : ''}{tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                    </span>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* Recent Transactions — uses safeRecentTransactions */}
-          {safeRecentTransactions.length > 0 && (
-            <div>
-              <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.1em] text-[#52525B] mb-2">Recent</p>
-              {/* 🧹 QA FIX: Map over safeRecentTransactions with null-safe tx fields */}
-              {safeRecentTransactions.map((tx, i) => (
-                <div key={`tx-${i}`} className="flex items-center justify-between py-1.5 sm:py-2" style={{
-                  borderBottom: i < safeRecentTransactions.length - 1 ? '1px solid rgba(255,255,255,0.03)' : 'none',
-                }}>
-                  <div className="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1">
-                    <div className="w-2 h-2 rounded-full shrink-0" style={{ background: (tx.amount || 0) >= 0 ? '#22C55E' : '#EF4444' }} />
-                    <div className="min-w-0">
-                      {/* 📱 RESPONSIVE: Truncate long transaction descriptions */}
-                      <p className="text-[12px] sm:text-[13px] text-[#D4D4D8] font-medium capitalize truncate">{tx.desc || 'Transaction'}</p>
-                      <p className="text-[10px] sm:text-[11px] text-[#52525B] truncate">{tx.category || 'Other'} · {tx.date || ''}</p>
-                    </div>
-                  </div>
-                  <span className="text-[12px] sm:text-[13px] font-semibold shrink-0 ml-2" style={{ color: (tx.amount || 0) >= 0 ? '#22C55E' : '#EF4444' }}>
-                    {(tx.amount || 0) >= 0 ? '+' : ''}₹{Math.abs(tx.amount || 0).toLocaleString('en-IN')}
-                  </span>
-                </div>
-              ))}
             </div>
           )}
         </div>

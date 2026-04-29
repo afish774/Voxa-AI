@@ -1,28 +1,18 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Telescope, Calendar, ChevronDown, ExternalLink, Sparkles, Copyright } from 'lucide-react';
+import { Sparkles, Calendar, ChevronDown, ExternalLink, Copyright, AlertTriangle, Image as ImageIcon, PlayCircle } from 'lucide-react';
 
 // ============================================================================
-// 🔭 NasaApodCard — Premium NASA Astronomy Picture of the Day Widget
+// 🔭 NasaApodCard — Apple Premium Astronomy Card
 // ============================================================================
-// Design DNA: Glassmorphic deep-space aesthetic matching Voxa's OS-level card
-// system. Features progressive image loading, expanding description, and
-// cinematic entrance animation.
-//
-// Expected props (from cardData):
-//   title       — Image title from NASA APOD API
-//   date        — YYYY-MM-DD date string
-//   explanation — Truncated description (≤400 chars from backend)
-//   imageUrl    — Standard resolution image URL
-//   hdUrl       — High-definition image URL
-//   mediaType   — 'image' or 'video'
-//   copyright   — Attribution string or 'NASA/Public Domain'
+// Design DNA: iOS 17 App Store "Today" Tab / Cupertino Glassmorphism
+// Features: Immersive edge-to-edge media with gradient blending, 32px 
+// backdrop blur, dynamic image loading, and spring-animated expandable text.
 // ============================================================================
 
 const NasaApodCard = ({ data }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const [imageError, setImageError] = useState(false);
 
   const {
     title = 'Astronomy Picture of the Day',
@@ -31,218 +21,151 @@ const NasaApodCard = ({ data }) => {
     imageUrl,
     hdUrl,
     mediaType = 'image',
-    copyright = 'NASA/Public Domain',
+    copyright = 'Public Domain',
+    error
   } = data || {};
 
-  // Format the date into a human-readable string
-  const formattedDate = useMemo(() => {
-    if (!date) return 'Today';
-    try {
-      return new Date(date + 'T00:00:00').toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-      });
-    } catch {
-      return date;
-    }
-  }, [date]);
+  // ─── Error State ───
+  if (error) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }}
+        className="w-full max-w-[440px] rounded-[24px] sm:rounded-[28px] p-5 mt-5"
+        style={{ background: 'rgba(28, 28, 30, 0.8)', border: '1px solid rgba(255,69,58,0.2)' }}>
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 text-[#FF453A] shrink-0" />
+          <span className="text-[13px] text-[#FF453A] font-medium tracking-tight break-words">{error}</span>
+        </div>
+      </motion.div>
+    );
+  }
 
-  // Truncate explanation for collapsed view
-  const shortExplanation = useMemo(() => {
-    if (!explanation) return '';
-    if (explanation.length <= 140) return explanation;
-    const truncated = explanation.substring(0, 140);
-    const lastSpace = truncated.lastIndexOf(' ');
-    return (lastSpace > 80 ? truncated.substring(0, lastSpace) : truncated) + '...';
-  }, [explanation]);
-
-  const displayUrl = imageUrl || hdUrl;
+  const isVideo = mediaType === 'video';
+  const cleanExplanation = explanation.replace(/\s+/g, ' ').trim();
+  const shortExplanation = cleanExplanation.length > 160
+    ? cleanExplanation.substring(0, 160) + '...'
+    : cleanExplanation;
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.97 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ duration: 0.6, ease: [0.23, 1, 0.32, 1] }}
-      className="relative w-full max-w-[460px] rounded-[32px] overflow-hidden mt-5"
+      initial={{ opacity: 0, y: 20, filter: 'blur(10px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+      className="relative w-full max-w-[460px] rounded-[32px] overflow-hidden mt-5 shadow-2xl"
       style={{
-        background: '#0B0B0C',
-        border: '1px solid rgba(255,255,255,0.06)',
-        boxShadow: '0 32px 64px -16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.05)',
+        background: 'rgba(20, 20, 22, 0.65)',
+        backdropFilter: 'blur(32px)',
+        WebkitBackdropFilter: 'blur(32px)',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 24px 48px -12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1)',
       }}
     >
-      {/* ─── Ambient Deep-Space Glow ─── */}
-      <div
-        className="absolute inset-0 pointer-events-none"
-        style={{
-          background: 'radial-gradient(ellipse at 50% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 70%)',
-        }}
-      />
+      {/* ─── Immersive Media Header ─── */}
+      <div className="relative w-full aspect-square sm:aspect-[4/3] bg-[#000000]">
 
-      {/* ─── Header Badge ─── */}
-      <div className="relative z-10 flex items-center justify-between px-7 pt-6 pb-3">
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-9 h-9 rounded-[12px] flex items-center justify-center"
-            style={{
-              background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.2))',
-              border: '1px solid rgba(139, 92, 246, 0.2)',
-            }}
-          >
-            <Telescope className="w-[18px] h-[18px] text-violet-400" strokeWidth={1.8} />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-400/80">
-              NASA · APOD
-            </span>
-            <span className="text-[11px] text-[#71717A] font-medium leading-tight flex items-center gap-1">
-              <Calendar className="w-3 h-3" />
-              {formattedDate}
-            </span>
-          </div>
-        </div>
-
-        {/* HD Link */}
-        {hdUrl && (
-          <a
-            href={hdUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium text-[#A1A1AA] hover:text-white transition-colors duration-200"
-            style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.06)',
-            }}
-          >
-            <ExternalLink className="w-3 h-3" />
-            HD
-          </a>
-        )}
-      </div>
-
-      {/* ─── Hero Image ─── */}
-      <div className="relative mx-4 rounded-[20px] overflow-hidden" style={{ aspectRatio: '16 / 10' }}>
-        {/* Shimmer Loading State */}
-        {!imageLoaded && !imageError && (
-          <div className="absolute inset-0 z-10">
-            <div
-              className="absolute inset-0 animate-pulse"
-              style={{
-                background: 'linear-gradient(135deg, rgba(30,30,35,1) 0%, rgba(45,45,55,1) 50%, rgba(30,30,35,1) 100%)',
-              }}
-            />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
-              >
-                <Sparkles className="w-8 h-8 text-violet-500/40" />
+        {/* Loading Skeleton / Placeholder */}
+        <AnimatePresence>
+          {!imageLoaded && (
+            <motion.div
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 flex flex-col items-center justify-center bg-[#111112]"
+            >
+              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}>
+                <Sparkles className="w-6 h-6 text-[#BF5AF2] opacity-40" />
               </motion.div>
-            </div>
-          </div>
-        )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-        {/* Error Fallback */}
-        {imageError && (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-            style={{ background: 'rgba(15,15,20,1)' }}
-          >
-            <Telescope className="w-10 h-10 text-violet-500/30" />
-            <span className="text-[13px] text-[#52525B]">Image unavailable</span>
-          </div>
-        )}
-
-        {/* Actual Image */}
-        {displayUrl && mediaType !== 'video' && (
+        {/* Media Element */}
+        {imageUrl && (
           <img
-            src={displayUrl}
+            src={imageUrl}
             alt={title}
-            loading="lazy"
-            className={`w-full h-full object-cover transition-opacity duration-700 ${
-              imageLoaded ? 'opacity-100' : 'opacity-0'
-            }`}
             onLoad={() => setImageLoaded(true)}
-            onError={() => {
-              setImageError(true);
-              setImageLoaded(true);
-            }}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-out
+              ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
           />
         )}
 
-        {/* Video Placeholder */}
-        {mediaType === 'video' && displayUrl && (
-          <div
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2"
-            style={{ background: 'rgba(15,15,20,1)' }}
-          >
-            <Telescope className="w-10 h-10 text-violet-500/50" />
-            <span className="text-[13px] text-[#71717A]">Video — tap HD to watch</span>
+        {/* Seamless Gradient Fade to Body */}
+        <div className="absolute inset-0 pointer-events-none" style={{
+          background: 'linear-gradient(to bottom, rgba(20,20,22,0.1) 0%, rgba(20,20,22,0.4) 50%, rgba(20,20,22,0.85) 85%, rgba(20,20,22,1) 100%)'
+        }} />
+
+        {/* Header Tags (Top Left/Right) */}
+        <div className="absolute top-5 left-5 flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.1)' }}>
+          <Sparkles className="w-3.5 h-3.5 text-[#BF5AF2]" />
+          <span className="text-[11px] font-bold text-white uppercase tracking-wider">NASA APOD</span>
+        </div>
+
+        {/* Play Icon Overlay (If Video) */}
+        {isVideo && (
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+            <PlayCircle className="w-16 h-16 text-white/80 drop-shadow-xl" strokeWidth={1.5} />
           </div>
         )}
 
-        {/* Bottom Gradient Veil */}
-        <div
-          className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
-          style={{
-            background: 'linear-gradient(to top, rgba(11,11,12,0.95) 0%, transparent 100%)',
-          }}
-        />
+        {/* Title & Date (Bottom of Media Area) */}
+        <div className="absolute bottom-0 left-0 w-full px-5 sm:px-6 pb-2 z-10">
+          <h2 className="text-[24px] sm:text-[28px] font-bold text-white tracking-tight leading-tight drop-shadow-lg">
+            {title}
+          </h2>
+          <div className="flex items-center gap-1.5 mt-2 text-white/70">
+            <Calendar className="w-3.5 h-3.5" />
+            <span className="text-[13px] font-semibold tracking-wide">{date}</span>
+          </div>
+        </div>
       </div>
 
-      {/* ─── Title & Description ─── */}
-      <div className="relative z-10 px-7 pt-4 pb-5">
-        <h3
-          className="text-[18px] font-semibold leading-snug tracking-[-0.02em] text-white/95"
-          style={{
-            display: '-webkit-box',
-            WebkitLineClamp: isExpanded ? 'unset' : 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-          }}
-        >
-          {title}
-        </h3>
+      {/* ─── Body Content ─── */}
+      <div className="relative z-10 px-5 sm:px-6 pt-3 pb-6" style={{ background: 'rgba(20,20,22,0.65)' }}>
 
-        {explanation && (
-          <>
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={isExpanded ? 'full' : 'short'}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.25 }}
-                className="mt-2.5 text-[13.5px] leading-[1.55] text-[#A1A1AA] font-normal"
-              >
-                {isExpanded ? explanation : shortExplanation}
-              </motion.p>
-            </AnimatePresence>
+        {/* Expandable Explanation */}
+        <div className="relative">
+          <motion.div
+            animate={{ height: isExpanded ? 'auto' : '68px' }}
+            transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+            className="overflow-hidden"
+          >
+            <p className="text-[14px] sm:text-[15px] text-white/80 leading-relaxed font-medium">
+              {isExpanded ? cleanExplanation : shortExplanation}
+            </p>
+          </motion.div>
 
-            {explanation.length > 140 && (
-              <button
-                onClick={() => setIsExpanded(!isExpanded)}
-                className="flex items-center gap-1 mt-2.5 text-[12px] font-semibold tracking-wide text-violet-400/80 hover:text-violet-300 transition-colors duration-200 bg-transparent border-none cursor-pointer p-0"
-              >
-                {isExpanded ? 'Show less' : 'Read more'}
-                <motion.div
-                  animate={{ rotate: isExpanded ? 180 : 0 }}
-                  transition={{ duration: 0.25 }}
-                >
-                  <ChevronDown className="w-3.5 h-3.5" />
-                </motion.div>
-              </button>
-            )}
-          </>
-        )}
+          {cleanExplanation.length > 160 && (
+            <button
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="flex items-center gap-1 mt-2 text-[13px] font-semibold text-[#BF5AF2] hover:opacity-80 transition-opacity active:scale-95"
+            >
+              {isExpanded ? 'Show less' : 'Read more'}
+              <motion.div animate={{ rotate: isExpanded ? 180 : 0 }} transition={{ duration: 0.3 }}>
+                <ChevronDown className="w-3.5 h-3.5" />
+              </motion.div>
+            </button>
+          )}
+        </div>
 
-        {/* ─── Copyright Footer ─── */}
-        <div className="flex items-center gap-1 mt-3.5 pt-3" style={{ borderTop: '1px solid rgba(255,255,255,0.04)' }}>
-          <Copyright className="w-3 h-3 text-[#52525B]" />
-          <span className="text-[11px] text-[#52525B] font-medium tracking-wide">
-            {copyright}
-          </span>
+        {/* Footer Actions & Meta */}
+        <div className="flex items-center justify-between mt-6 pt-4" style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+
+          <div className="flex items-center gap-1.5 text-white/40">
+            <Copyright className="w-3.5 h-3.5" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider line-clamp-1 max-w-[150px]">
+              {copyright}
+            </span>
+          </div>
+
+          <a
+            href={hdUrl || imageUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full text-[12px] font-bold text-white transition-all hover:bg-white/10 active:scale-95"
+            style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)' }}
+          >
+            {isVideo ? 'Watch Original' : 'View HD Image'} <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+
         </div>
       </div>
     </motion.div>
