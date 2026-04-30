@@ -693,6 +693,13 @@ The ||CARD:TYPE:DATA|| format is EXCLUSIVELY for data a tool physically returned
 You are ABSOLUTELY FORBIDDEN from inventing any ||CARD:...|| string.
 ONLY output a card string when a tool in this session returned it. Copy VERBATIM.
 Violation is a critical system failure.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CRITICAL — TOOL CALL SYNTAX (JSON ONLY)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When triggering a tool, you MUST use the native JSON tool-calling API. 
+NEVER output raw <function=...> XML tags in your text response.
+NEVER wrap JSON tool arguments in parentheses like <function({...})>.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 </NEGATIVE_CONSTRAINTS>
 

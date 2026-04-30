@@ -1120,7 +1120,8 @@ export const getWeatherForecastTool = tool(
   {
     name: 'get_weather_forecast',
     description: 'Fetches a 7-day weather forecast for any city.',
-    schema: z.object({ location: z.string().describe('City name.') }),
+    // 🚀 QA FIX: .passthrough() ensures Groq doesn't crash if it hallucinates extra JSON keys
+    schema: z.object({ location: z.string().describe('City name.') }).passthrough(),
   }
 );
 
@@ -1164,50 +1165,55 @@ const convertTemperature = (value, from, to) => {
 };
 
 export const calculateTool = tool(
-  async ({ calculationType, expression, num1, num2, num3, operator, unitFrom, unitTo }) => {
+  async (args) => {
     try {
+      const { calculationType, expression, operator, unitFrom, unitTo } = args;
       let activeOperator = "+";
       if (operator && ['+', '-', '*', '/', '^', 'sqrt'].includes(operator)) activeOperator = operator;
 
-      // 🚀 QA FIX: Safely parse strings into floats if the LLM hallucinates string types
-      const val1 = num1 !== undefined && num1 !== null ? parseFloat(num1) : undefined;
-      const val2 = num2 !== undefined && num2 !== null ? parseFloat(num2) : undefined;
-      const val3 = num3 !== undefined && num3 !== null ? parseFloat(num3) : undefined;
+      // 🚀 QA FIX: Safely parse strings into floats, and aggressively catch LLM hallucinated keys
+      const raw1 = args.num1 ?? args.principal ?? args.weight ?? args.amount;
+      const raw2 = args.num2 ?? args.rate ?? args.height ?? args.discount ?? args.tip ?? args.base;
+      const raw3 = args.num3 ?? args.time ?? args.years ?? args.duration;
+
+      const val1 = raw1 !== undefined && raw1 !== null ? parseFloat(raw1) : undefined;
+      const val2 = raw2 !== undefined && raw2 !== null ? parseFloat(raw2) : undefined;
+      const val3 = raw3 !== undefined && raw3 !== null ? parseFloat(raw3) : undefined;
 
       let result = null, formula = '', steps = [], extras = {}, displayType = calculationType;
 
       switch (calculationType) {
         case 'arithmetic':
-          if (val1 === undefined) throw new Error('num1 is required.');
+          if (val1 === undefined) throw new Error('First number is required.');
           const opSymbols = { '+': '+', '-': '−', '*': '×', '/': '÷', '^': '^', sqrt: '√' };
           if (activeOperator === 'sqrt') {
             if (val1 < 0) throw new Error('Cannot take square root of a negative number.');
             result = Math.sqrt(val1); formula = `√${val1} = ${fmtNum(result)}`; steps = [`Square root of ${val1}`, `= ${fmtNum(result)}`];
           } else {
-            if (val2 === undefined) throw new Error('num2 is required.');
+            if (val2 === undefined) throw new Error('Second number is required.');
             if (activeOperator === '/' && val2 === 0) throw new Error('Division by zero.');
             if (activeOperator === '+') result = val1 + val2; else if (activeOperator === '-') result = val1 - val2; else if (activeOperator === '*') result = val1 * val2; else if (activeOperator === '/') result = val1 / val2; else if (activeOperator === '^') result = Math.pow(val1, val2);
             formula = `${val1} ${opSymbols[activeOperator]} ${val2} = ${fmtNum(result)}`; steps = [`${fmtNum(val1)} ${opSymbols[activeOperator]} ${fmtNum(val2)}`, `= ${fmtNum(result)}`];
           }
           break;
         case 'percentage_value':
-          if (val1 === undefined || val2 === undefined) throw new Error('num1 (%) and num2 (base) required.');
+          if (val1 === undefined || val2 === undefined) throw new Error('Percentage and base amount required.');
           result = (val1 / 100) * val2; formula = `${val1}% of ${fmtNum(val2)} = ${fmtNum(result)}`; steps = [`Convert ${val1}% → decimal: ${val1 / 100}`, `Multiply: ${val1 / 100} × ${fmtNum(val2)}`, `Result: ${fmtNum(result)}`]; displayType = 'percentage';
           break;
         case 'percentage_what':
-          if (val1 === undefined || val2 === undefined || val2 === 0) throw new Error('Valid num1 and num2 required.');
+          if (val1 === undefined || val2 === undefined || val2 === 0) throw new Error('Valid numbers required.');
           result = (val1 / val2) * 100; formula = `(${fmtNum(val1)} ÷ ${fmtNum(val2)}) × 100 = ${fmtNum(result)}%`; steps = [`Divide: ${fmtNum(val1)} ÷ ${fmtNum(val2)} = ${fmtNum(val1 / val2)}`, `Multiply by 100: ${fmtNum(result)}%`]; displayType = 'percentage';
           break;
         case 'tip':
-          if (val1 === undefined || val2 === undefined) throw new Error('tip% and bill amount required.');
+          if (val1 === undefined || val2 === undefined) throw new Error('Tip% and bill amount required.');
           const tipAmt = (val1 / 100) * val2; const totalAmt = val2 + tipAmt; result = tipAmt; formula = `${val1}% tip on ${fmtNum(val2)}`; steps = [`Tip: ${fmtNum(val2)} × ${val1 / 100} = ${fmtNum(tipAmt)}`, `Total: ${fmtNum(val2)} + ${fmtNum(tipAmt)} = ${fmtNum(totalAmt)}`]; extras = { tipAmount: fmtNum(tipAmt), totalWithTip: fmtNum(totalAmt) };
           break;
         case 'discount':
-          if (val1 === undefined || val2 === undefined) throw new Error('discount% and original price required.');
+          if (val1 === undefined || val2 === undefined) throw new Error('Discount% and original price required.');
           const discAmt = (val1 / 100) * val2; const finalPrice = val2 - discAmt; result = finalPrice; formula = `${val2} − ${val1}% = ${fmtNum(finalPrice)}`; steps = [`Discount: ${fmtNum(val2)} × ${val1 / 100} = ${fmtNum(discAmt)}`, `Final price: ${fmtNum(val2)} − ${fmtNum(discAmt)} = ${fmtNum(finalPrice)}`]; extras = { discount: fmtNum(discAmt), finalPrice: fmtNum(finalPrice), savings: fmtNum(discAmt) };
           break;
         case 'unit_conversion':
-          if (!unitFrom || !unitTo || val1 === undefined) throw new Error('units and value required.');
+          if (!unitFrom || !unitTo || val1 === undefined) throw new Error('Units and value required.');
           const tempKeys = ['c', 'f', 'k', 'celsius', 'fahrenheit', 'kelvin', '°c', '°f', '°k'];
           const fromKey = unitFrom.toLowerCase().replace('°', '').trim(), toKey = unitTo.toLowerCase().replace('°', '').trim();
           if (tempKeys.some((k) => fromKey.includes(k)) || tempKeys.some((k) => toKey.includes(k))) {
@@ -1223,7 +1229,7 @@ export const calculateTool = tool(
           formula = `${val1} ${unitFrom} = ${fmtNum(converted)} ${unitTo}`; steps = [`${val1} ${unitFrom} → SI base: ${fmtNum(inSI)}`, `÷ ${toUnit.factor} → ${fmtNum(converted)} ${unitTo}`];
           break;
         case 'bmi':
-          if (val1 === undefined || val2 === undefined) throw new Error('weight kg and height cm required.');
+          if (val1 === undefined || val2 === undefined) throw new Error('Weight (kg) and height (cm) required.');
           const heightM = val2 > 3 ? val2 / 100 : val2;
           const bmi = val1 / (heightM * heightM);
           let category, advice;
@@ -1231,17 +1237,17 @@ export const calculateTool = tool(
           result = parseFloat(bmi.toFixed(1)); formula = `BMI = ${val1} kg ÷ (${heightM.toFixed(2)} m)² = ${result}`; steps = [`Weight: ${val1} kg`, `Height: ${heightM.toFixed(2)} m`, `BMI = ${val1} ÷ ${(heightM * heightM).toFixed(4)} = ${result}`, `Classification: ${category}`]; extras = { category, advice, weightKg: val1, heightCm: Math.round(heightM * 100), normalRange: '18.5 – 24.9' }; displayType = 'bmi';
           break;
         case 'compound_interest':
-          if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('principal, rate%, years required.');
+          if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('Principal, rate%, years required.');
           const amount = val1 * Math.pow(1 + val2 / 100, val3); const interest = amount - val1;
           result = parseFloat(amount.toFixed(2)); formula = `A = ${fmtNum(val1)} × (1 + ${val2}%)^${val3}`; steps = [`Principal: ${fmtNum(val1)}`, `Rate: ${val2}%`, `Time: ${val3} years`, `Interest earned: ${fmtNum(interest)}`, `Total amount: ${fmtNum(amount)}`]; extras = { principal: fmtNum(val1), interestEarned: fmtNum(interest), totalAmount: fmtNum(amount), years: val3, rate: `${val2}%` }; displayType = 'compound_interest';
           break;
         case 'simple_interest':
-          if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('principal, rate%, years required.');
+          if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('Principal, rate%, years required.');
           const si = (val1 * val2 * val3) / 100; const total = val1 + si;
           result = parseFloat(si.toFixed(2)); formula = `SI = (${fmtNum(val1)} × ${val2} × ${val3}) ÷ 100`; steps = [`SI = (P × R × T) / 100`, `SI = ${fmtNum(si)}`, `Total = ${fmtNum(total)}`]; extras = { simpleInterest: fmtNum(si), totalAmount: fmtNum(total), principal: fmtNum(val1) }; displayType = 'simple_interest';
           break;
         case 'age':
-          if (val1 === undefined) throw new Error('birth year required.');
+          if (val1 === undefined) throw new Error('Birth year required.');
           const currentYear = new Date().getFullYear(); const age = currentYear - Math.round(val1);
           result = age; formula = `${currentYear} − ${Math.round(val1)} = ${age} years`; steps = [`Current year: ${currentYear}`, `Birth year: ${Math.round(val1)}`, `Age: ${age} years`]; displayType = 'age';
           break;
@@ -1252,12 +1258,13 @@ export const calculateTool = tool(
       return `Calculation complete. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${cardPayload}||`;
     } catch (error) {
       console.error('[Calculator Error]:', error.message);
-      return `Calculation failed: ${error.message}. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${JSON.stringify({ expression: expression || '', error: error.message, type: calculationType })}||`;
+      return `Calculation failed: ${error.message}. CRITICAL DIRECTIVE: YOU MUST APPEND THIS EXACT STRING TO YOUR RESPONSE: ||CARD:CALCULATOR:${JSON.stringify({ expression: args.expression || '', error: error.message, type: args.calculationType })}||`;
     }
   },
   {
     name: 'calculate',
     description: 'Performs calculations and unit conversions.',
+    // 🚀 QA FIX: .passthrough() completely solves Zod validation crashing on hallucinated LLM variables
     schema: z.object({
       calculationType: z.string(),
       expression: z.string().optional(),
@@ -1267,9 +1274,10 @@ export const calculateTool = tool(
       operator: z.string().optional(),
       unitFrom: z.string().optional(),
       unitTo: z.string().optional(),
-    }),
+    }).passthrough(),
   }
 );
+
 // ============================================================================
 // 🌅 TOOL 21: The Morning Orchestrator (Daily Briefing)
 // ============================================================================
