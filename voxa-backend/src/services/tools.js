@@ -1074,18 +1074,36 @@ const wmoCodeToCondition = (code) => {
 };
 
 export const getWeatherForecastTool = tool(
-  async ({ location }) => {
+  async (args) => {
     try {
-      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location.trim())}&count=1&language=en&format=json`;
-      const geoData = await fetchWithCacheAndRetry(geoUrl, {}, 86400000);
-      if (!geoData?.results?.length) throw new Error(`City "${location}" not found.`);
+      // 1. Extract and sanitize the location
+      const location = args.location;
 
+      // 2. STRCIT VALIDATION: Catch empty or undefined locations BEFORE hitting the API
+      if (!location || location.trim() === '') {
+        throw new Error("A valid city name is required to fetch the forecast.");
+      }
+
+      const safeLoc = encodeURIComponent(location.trim());
+
+      // 3. Make the API call
+      const geoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${safeLoc}&count=1&language=en&format=json`;
+      const geoData = await fetchWithCacheAndRetry(geoUrl, {}, 86400000);
+
+      if (!geoData?.results?.length) {
+        throw new Error(`City "${location}" not found.`);
+      }
+
+      // ... (rest of the existing logic)
       const { latitude, longitude, timezone, name: cityName, country_code } = geoData.results[0];
       const resolvedTZ = timezone || 'Asia/Kolkata';
 
       const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,weathercode,windspeed_10m_max&current_weather=true&timezone=${encodeURIComponent(resolvedTZ)}&forecast_days=7`;
       const forecastData = await fetchWithCacheAndRetry(forecastUrl, {}, 3600000);
-      if (!forecastData?.daily?.time?.length) throw new Error('Open-Meteo returned no forecast data.');
+
+      if (!forecastData?.daily?.time?.length) {
+        throw new Error('Open-Meteo returned no forecast data.');
+      }
 
       const daily = forecastData.daily;
       const days = daily.time.map((dateStr, idx) => {
