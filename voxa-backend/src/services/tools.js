@@ -406,8 +406,6 @@ export const getFlightTool = tool(
       }
       const cleanFlight = rawFlight;
 
-      // 🚀 L9 ARCHITECT FIX: Dynamic Protocol Fallback for Free Tier
-      // AviationStack blocks `https` for free users. We default to `http` unless explicitly configured.
       const protocol = process.env.AVIATIONSTACK_HTTPS === 'true' ? 'https' : 'http';
       const url = `${protocol}://api.aviationstack.com/v1/flights?access_key=${apiKey}&flight_iata=${cleanFlight}&limit=1`;
 
@@ -437,6 +435,7 @@ export const getFlightTool = tool(
     schema: z.object({ flightNumber: z.string().describe('IATA flight number e.g. "AI131".') }),
   }
 );
+
 // ============================================================================
 // 📰 TOOL 7: Intelligent News Briefing (GNews API)
 // ============================================================================
@@ -714,8 +713,6 @@ export const getMedicineTool = tool(
 export const getTranslateTool = tool(
   async ({ text, fromLanguage, toLanguage }) => {
     try {
-      // 🚀 L9 ARCHITECT FIX: [SEC-API-03] Force length bound to prevent 414 URI Too Long.
-      // MyMemory enforces a strict 500 byte limit for free users.
       const safeText = text.length > 500 ? text.substring(0, 497) + '...' : text;
 
       const langCodes = { english: 'en', spanish: 'es', french: 'fr', german: 'de', italian: 'it', portuguese: 'pt', dutch: 'nl', russian: 'ru', arabic: 'ar', hindi: 'hi', bengali: 'bn', urdu: 'ur', malayalam: 'ml', tamil: 'ta', telugu: 'te', kannada: 'kn', marathi: 'mr', gujarati: 'gu', punjabi: 'pa', japanese: 'ja', korean: 'ko', chinese: 'zh', mandarin: 'zh', thai: 'th', vietnamese: 'vi', turkish: 'tr', polish: 'pl', swedish: 'sv', danish: 'da', norwegian: 'no', finnish: 'fi', greek: 'el', hebrew: 'iw', indonesian: 'id', malay: 'ms', swahili: 'sw', persian: 'fa', farsi: 'fa' };
@@ -925,7 +922,6 @@ export const createFitnessTool = (userId) =>
 export const getNASATool = tool(
   async ({ data_type }) => {
     try {
-      // 🛡️ DEFENSIVE MAPPING: Catch the verbose strings the LLM hallucinates
       let activeQuery = (data_type || "apod").toLowerCase();
 
       if (activeQuery.includes("astronomy") || activeQuery === "apod") {
@@ -1238,13 +1234,15 @@ export const calculateTool = tool(
           break;
         case 'compound_interest':
           if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('Principal, rate%, years required.');
-          const amount = val1 * Math.pow(1 + val2 / 100, val3); const interest = amount - val1;
-          result = parseFloat(amount.toFixed(2)); formula = `A = ${fmtNum(val1)} × (1 + ${val2}%)^${val3}`; steps = [`Principal: ${fmtNum(val1)}`, `Rate: ${val2}%`, `Time: ${val3} years`, `Interest earned: ${fmtNum(interest)}`, `Total amount: ${fmtNum(amount)}`]; extras = { principal: fmtNum(val1), interestEarned: fmtNum(interest), totalAmount: fmtNum(amount), years: val3, rate: `${val2}%` }; displayType = 'compound_interest';
+          const compRate = (val2 <= 1 && val2 > 0) ? val2 * 100 : val2; // 🚀 QA FIX: auto-correct decimal rates
+          const amount = val1 * Math.pow(1 + compRate / 100, val3); const interest = amount - val1;
+          result = parseFloat(amount.toFixed(2)); formula = `A = ${fmtNum(val1)} × (1 + ${compRate}%)^${val3}`; steps = [`Principal: ${fmtNum(val1)}`, `Rate: ${compRate}%`, `Time: ${val3} years`, `Interest earned: ${fmtNum(interest)}`, `Total amount: ${fmtNum(amount)}`]; extras = { principal: fmtNum(val1), interestEarned: fmtNum(interest), totalAmount: fmtNum(amount), years: val3, rate: `${compRate}%` }; displayType = 'compound_interest';
           break;
         case 'simple_interest':
           if (val1 === undefined || val2 === undefined || val3 === undefined) throw new Error('Principal, rate%, years required.');
-          const si = (val1 * val2 * val3) / 100; const total = val1 + si;
-          result = parseFloat(si.toFixed(2)); formula = `SI = (${fmtNum(val1)} × ${val2} × ${val3}) ÷ 100`; steps = [`SI = (P × R × T) / 100`, `SI = ${fmtNum(si)}`, `Total = ${fmtNum(total)}`]; extras = { simpleInterest: fmtNum(si), totalAmount: fmtNum(total), principal: fmtNum(val1) }; displayType = 'simple_interest';
+          const simpRate = (val2 <= 1 && val2 > 0) ? val2 * 100 : val2; // 🚀 QA FIX: auto-correct decimal rates
+          const si = (val1 * simpRate * val3) / 100; const total = val1 + si;
+          result = parseFloat(si.toFixed(2)); formula = `SI = (${fmtNum(val1)} × ${simpRate} × ${val3}) ÷ 100`; steps = [`SI = (P × R × T) / 100`, `SI = ${fmtNum(si)}`, `Total = ${fmtNum(total)}`]; extras = { simpleInterest: fmtNum(si), totalAmount: fmtNum(total), principal: fmtNum(val1) }; displayType = 'simple_interest';
           break;
         case 'age':
           if (val1 === undefined) throw new Error('Birth year required.');
@@ -1367,7 +1365,6 @@ export const createCalendarTool = (userId) =>
         if (activeMode === 'create_event') {
           if (!startTime || !endTime || !summary) throw new Error('Start time, end time, and summary are required.');
 
-          // 🚀 L9 ARCHITECT FIX: Catch LLM hallucinated NaN dates to prevent RangeError crash
           const st = new Date(startTime);
           const et = new Date(endTime);
           if (isNaN(st.getTime()) || isNaN(et.getTime())) {
@@ -1486,8 +1483,6 @@ export const getMusicTool = tool(
       const type = queryType || 'song_info';
       let cardPayload;
 
-      // 🚀 L9 ARCHITECT FIX: Guaranteed MusicBrainz Rate Limit Protection
-      // MusicBrainz strictly bans IPs that exceed 1 request per second.
       const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
       if (type === 'artist_info') {
@@ -1498,7 +1493,7 @@ export const getMusicTool = tool(
         if (!mbData?.artists?.length) throw new Error(`Artist "${artist}" not found.`);
         const bestMatch = mbData.artists[0];
 
-        await sleep(1050); // Strict sleep to respect MusicBrainz 1 req/sec limit
+        await sleep(1050);
 
         const relUrl = `https://musicbrainz.org/ws/2/release-group?artist=${bestMatch.id}&type=album&fmt=json`;
         const relData = await fetchWithCacheAndRetry(relUrl, { headers: { 'User-Agent': 'VoxaAI/1.0.0' } }, 86400000);
